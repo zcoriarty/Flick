@@ -1432,14 +1432,27 @@ Milestone 9 — Future Platform Prep
 
 1. Will TikTok accept Supabase-hosted image URLs directly, or do we need a custom verified domain/prefix?
 2. Which TikTok scopes are approved on the existing developer app?
-3. Is direct photo posting approved, upload-only approved, or both?
+user.info.basic
+user.info.basic
+Read a user's profile info (open id, avatar, display name ...)
+Included in Login Kit
+video.publish
+video.publish
+Directly post content to a user's TikTok profile.
+Included in Content Posting API
+video.upload
+video.upload
+Share content to creator's account as a draft to further edit and post in TikTok.
+Included in Content Posting API
+user.info.profile
+user.info.profile
+Read access to profile_web_link, profile_deep_link, bio_description, is_verified.
 4. Should generation be local, API-based, or configurable?
+- For generation we can use OpenAI since we have the API key
 5. Will Flick use a dedicated Supabase user/auth model, or only project-level storage credentials?
+- We have the credentials for direct access in the env file
 6. Should iPhone be allowed to publish directly, or should all publishing route through the Mac worker?
-7. What app-store attribution or downstream conversion metrics are available?
-8. Do we need an App Store Connect integration later?
-9. Should user approval be required for all posts until analytics quality crosses a threshold?
-10. What minimum analytics metrics does TikTok expose for the approved account/API access?
+- It can publish directly, but can not have background processes like we can on mac
 
 ⸻
 
@@ -1467,6 +1480,8 @@ It should be:
 A native Apple-platform creative operations system for generating, publishing, measuring, and iterating on short-form marketing content.
 
 TikTok is simply the first platform adapter.
+
+Do not have needless fallbacks.
 
 ⸻
 
