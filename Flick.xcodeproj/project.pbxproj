@@ -6,6 +6,12 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		9B038BBF2FB232D3007B4287 /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = 9B038BBE2FB232D3007B4287 /* Auth */; };
+		9B038BC12FB232D3007B4287 /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = 9B038BC02FB232D3007B4287 /* Storage */; };
+		9B038BC32FB232D3007B4287 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 9B038BC22FB232D3007B4287 /* Supabase */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		9B038B9E2FB2289D007B4287 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -65,6 +71,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9B038BC12FB232D3007B4287 /* Storage in Frameworks */,
+				9B038BBF2FB232D3007B4287 /* Auth in Frameworks */,
+				9B038BC32FB232D3007B4287 /* Supabase in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -125,6 +134,9 @@
 			);
 			name = Flick;
 			packageProductDependencies = (
+				9B038BBE2FB232D3007B4287 /* Auth */,
+				9B038BC02FB232D3007B4287 /* Storage */,
+				9B038BC22FB232D3007B4287 /* Supabase */,
 			);
 			productName = Flick;
 			productReference = 9B038B892FB2289B007B4287 /* Flick.app */;
@@ -208,6 +220,9 @@
 			);
 			mainGroup = 9B038B802FB2289B007B4287;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				9B038BBD2FB232D3007B4287 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 9B038B8A2FB2289B007B4287 /* Products */;
 			projectDirPath = "";
@@ -285,7 +300,7 @@
 		9B038BB12FB2289D007B4287 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Flick-01";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -330,7 +345,7 @@
 		9B038BB22FB2289D007B4287 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Flick-01";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -630,6 +645,35 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		9B038BBD2FB232D3007B4287 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.5.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		9B038BBE2FB232D3007B4287 /* Auth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9B038BBD2FB232D3007B4287 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Auth;
+		};
+		9B038BC02FB232D3007B4287 /* Storage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9B038BBD2FB232D3007B4287 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Storage;
+		};
+		9B038BC22FB232D3007B4287 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9B038BBD2FB232D3007B4287 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 9B038B812FB2289B007B4287 /* Project object */;
 }
