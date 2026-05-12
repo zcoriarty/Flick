@@ -11,11 +11,13 @@ import CoreData
 @main
 struct FlickApp: App {
     let persistenceController = PersistenceController.shared
+    @State private var appModel = FlickAppModel.live()
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            FlickRootView()
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                .environment(appModel)
         }
     }
 }
