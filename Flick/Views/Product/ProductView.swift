@@ -70,12 +70,12 @@ struct ProductView: View {
                     guard let movie = try await item.loadTransferable(type: ProductMovieTransfer.self) else {
                         throw ProductMediaImportError.missingData
                     }
-                    try appModel.addProductMedia(fileURL: movie.fileURL, contentType: contentType)
+                    try await appModel.addProductMedia(fileURL: movie.fileURL, contentType: contentType)
                 } else {
                     guard let image = try await item.loadTransferable(type: ProductImageTransfer.self) else {
                         throw ProductMediaImportError.missingData
                     }
-                    try appModel.addProductMedia(fileURL: image.fileURL, contentType: contentType)
+                    try await appModel.addProductMedia(fileURL: image.fileURL, contentType: contentType)
                 }
             } catch {
                 appModel.lastErrorMessage = error.localizedDescription
@@ -349,8 +349,14 @@ private struct ProductMediaDetailSheet: View {
     }
 
     private func deleteAsset() {
-        appModel.removeProductMedia(asset)
-        dismiss()
+        Task {
+            do {
+                try await appModel.removeProductMedia(asset)
+                dismiss()
+            } catch {
+                appModel.lastErrorMessage = error.localizedDescription
+            }
+        }
     }
 }
 

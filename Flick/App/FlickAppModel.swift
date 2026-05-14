@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import CoreData
 import Observation
 import UniformTypeIdentifiers
 
@@ -35,6 +36,13 @@ final class FlickAppModel {
 
     static func live() -> FlickAppModel {
         FlickAppModel(repository: EmptyFlickRepository(), configuration: .current)
+    }
+
+    static func live(persistenceController: PersistenceController) -> FlickAppModel {
+        FlickAppModel(
+            repository: CoreDataFlickRepository(context: persistenceController.container.viewContext),
+            configuration: .current
+        )
     }
 
     var canManageAccounts: Bool {
@@ -212,17 +220,17 @@ final class FlickAppModel {
         selectedSection = .create
     }
 
-    func addProductMedia(data: Data, contentType: UTType) throws {
+    func addProductMedia(data: Data, contentType: UTType) async throws {
         let storedMedia = try localMediaLibrary.store(data: data, contentType: contentType)
-        addProductMedia(storedMedia)
+        try await addProductMedia(storedMedia)
     }
 
-    func addProductMedia(fileURL: URL, contentType: UTType) throws {
+    func addProductMedia(fileURL: URL, contentType: UTType) async throws {
         let storedMedia = try localMediaLibrary.store(fileURL: fileURL, contentType: contentType)
-        addProductMedia(storedMedia)
+        try await addProductMedia(storedMedia)
     }
 
-    private func addProductMedia(_ storedMedia: StoredLocalMedia) {
+    private func addProductMedia(_ storedMedia: StoredLocalMedia) async throws {
         let now = Date()
         let asset = MediaAsset(
             id: UUID(),
@@ -244,11 +252,26 @@ final class FlickAppModel {
         )
 
         overview.assets.insert(asset, at: 0)
-        lastErrorMessage = nil
+        do {
+            try await repository.upsertAsset(asset)
+            lastErrorMessage = nil
+        } catch {
+            overview.assets.removeAll { $0.id == asset.id }
+            throw error
+        }
     }
 
-    func removeProductMedia(_ asset: MediaAsset) {
-        overview.assets.removeAll { $0.id == asset.id }
+    func removeProductMedia(_ asset: MediaAsset) async throws {
+        guard let index = overview.assets.firstIndex(where: { $0.id == asset.id }) else { return }
+        let removedAsset = overview.assets.remove(at: index)
+
+        do {
+            try await repository.deleteAsset(id: asset.id)
+            lastErrorMessage = nil
+        } catch {
+            overview.assets.insert(removedAsset, at: min(index, overview.assets.count))
+            throw error
+        }
     }
 
     func secureCredentialValues() -> [String: String] {
