@@ -24,7 +24,9 @@ struct AccountsView: View {
         }
         .flickScrollablePage()
         .sheet(item: $selectedPlatform) { platform in
-            PlatformPublishSettingsView(platform: platform, accounts: accounts(for: platform))
+            NavigationStack {
+                PlatformPublishSettingsView(platform: platform, accounts: accounts(for: platform))
+            }
         }
         .toolbarTitleDisplayMode(.inline)
         .toolbar {

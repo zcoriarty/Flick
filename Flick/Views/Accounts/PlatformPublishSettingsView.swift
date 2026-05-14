@@ -15,65 +15,153 @@ struct PlatformPublishSettingsView: View {
 
     var body: some View {
         List {
-            Section("Platform") {
-                LabeledContent("Adapter", value: adapterStatus)
-                LabeledContent("Authorized accounts", value: accounts.count.formatted())
-                LabeledContent("Publishing", value: publishingStatus)
-            }
-
-            if sortedAccounts.isEmpty {
-                Section("Accounts") {
-                    Text("No authorized \(platform.displayName) accounts")
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                ForEach(sortedAccounts) { account in
-                    Section(account.displayName) {
-                        LabeledContent("Status", value: account.status.displayName)
-                        LabeledContent("Publishing", value: account.isPublishingEnabled ? "Enabled" : "Disabled")
-                        LabeledContent("Default privacy", value: account.defaultPrivacyLevel)
-                        LabeledContent("Token", value: account.tokenStatus.displayName)
-                        LabeledContent("Platform ID", value: account.platformUserID.isEmpty ? "Not set" : account.platformUserID)
-                        LabeledContent("Scopes") {
-                            Text(account.scopes.isEmpty ? "None" : account.scopes.joined(separator: ", "))
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.trailing)
-                        }
-                        LabeledContent("Validated") {
-                            if let lastValidatedAt = account.lastValidatedAt {
-                                Text(lastValidatedAt, style: .relative)
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                Text("Never")
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-            }
-
-            Section("Post Options") {
-                if platform == .tiktok {
-                    LabeledContent("Privacy levels") {
-                        Text(TikTokPrivacyLevel.directPostOptions.joined(separator: ", "))
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.trailing)
-                    }
-                    LabeledContent("Comments", value: "Allowed")
-                    LabeledContent("Duet", value: "Refresh before post")
-                    LabeledContent("Stitch", value: "Refresh before post")
-                    LabeledContent("Commercial flags", value: "Brand organic per job")
-                } else {
-                    LabeledContent("Availability", value: "Future adapter")
-                }
-            }
+            platformSection
+            accountsSection
+            postOptionsSection
         }
-        .listStyle(.plain)
+        .flickSettingsListStyle()
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text("\(platform.displayName) Publish Settings")
                     .font(.system(.body, weight: .semibold))
+            }
+        }
+    }
+
+    private var platformSection: some View {
+        Section("Platform") {
+            FlickSettingsValueRow(
+                title: "Adapter",
+                systemImage: "square.stack.3d.up",
+                iconColor: platform.tint,
+                value: adapterStatus
+            )
+            FlickSettingsValueRow(
+                title: "Authorized accounts",
+                systemImage: "person.2",
+                iconColor: .blue,
+                value: accounts.count.formatted()
+            )
+            FlickSettingsValueRow(
+                title: "Publishing",
+                systemImage: "paperplane",
+                iconColor: publishingTint,
+                value: publishingStatus
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var accountsSection: some View {
+        if sortedAccounts.isEmpty {
+            Section("Accounts") {
+                FlickSettingsValueRow(
+                    title: "No authorized \(platform.displayName) accounts",
+                    systemImage: "person.crop.circle.badge.xmark",
+                    iconColor: .secondary
+                )
+            }
+        } else {
+            ForEach(sortedAccounts) { account in
+                accountSection(account)
+            }
+        }
+    }
+
+    private func accountSection(_ account: ConnectedAccount) -> some View {
+        Section(account.displayName) {
+            FlickSettingsValueRow(
+                title: "Status",
+                systemImage: "checkmark.circle",
+                iconColor: account.status.tint,
+                value: account.status.displayName
+            )
+            FlickSettingsValueRow(
+                title: "Publishing",
+                systemImage: "paperplane",
+                iconColor: account.isPublishingEnabled ? .green : .secondary,
+                value: account.isPublishingEnabled ? "Enabled" : "Disabled"
+            )
+            FlickSettingsValueRow(
+                title: "Default privacy",
+                systemImage: "lock.shield",
+                iconColor: .blue,
+                value: account.defaultPrivacyLevel,
+                valueLineLimit: 2
+            )
+            FlickSettingsValueRow(
+                title: "Token",
+                systemImage: "key",
+                iconColor: tokenTint(for: account.tokenStatus),
+                value: account.tokenStatus.displayName
+            )
+            FlickSettingsValueRow(
+                title: "Platform ID",
+                systemImage: "number",
+                iconColor: .secondary,
+                value: account.platformUserID.isEmpty ? "Not set" : account.platformUserID
+            )
+            FlickSettingsValueRow(
+                title: "Scopes",
+                systemImage: "checklist",
+                iconColor: .purple,
+                value: account.scopes.isEmpty ? "None" : account.scopes.joined(separator: ", "),
+                valueLineLimit: 2
+            )
+            FlickSettingsRow(
+                title: "Validated",
+                systemImage: "calendar.badge.checkmark",
+                iconColor: .teal
+            ) {
+                validatedAccessory(for: account)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var postOptionsSection: some View {
+        Section("Post Options") {
+            if platform == .tiktok {
+                FlickSettingsValueRow(
+                    title: "Privacy levels",
+                    systemImage: "eye",
+                    iconColor: .blue,
+                    value: TikTokPrivacyLevel.directPostOptions.joined(separator: ", "),
+                    valueLineLimit: 2
+                )
+                FlickSettingsValueRow(
+                    title: "Comments",
+                    systemImage: "bubble.left",
+                    iconColor: .green,
+                    value: "Allowed"
+                )
+                FlickSettingsValueRow(
+                    title: "Duet",
+                    systemImage: "person.2",
+                    iconColor: .orange,
+                    value: "Refresh before post"
+                )
+                FlickSettingsValueRow(
+                    title: "Stitch",
+                    systemImage: "rectangle.on.rectangle",
+                    iconColor: .orange,
+                    value: "Refresh before post"
+                )
+                FlickSettingsValueRow(
+                    title: "Commercial flags",
+                    systemImage: "tag",
+                    iconColor: .indigo,
+                    value: "Brand organic per job",
+                    valueLineLimit: 2
+                )
+            } else {
+                FlickSettingsValueRow(
+                    title: "Availability",
+                    systemImage: "clock",
+                    iconColor: .secondary,
+                    value: "Future adapter"
+                )
             }
         }
     }
@@ -87,5 +175,34 @@ struct PlatformPublishSettingsView: View {
             return "Enabled"
         }
         return platform == .tiktok ? "Needs account" : "Not enabled"
+    }
+
+    private var publishingTint: Color {
+        accounts.contains(where: \.isPublishingEnabled) ? .green : .orange
+    }
+
+    private func tokenTint(for status: OAuthTokenStatus) -> Color {
+        switch status {
+        case .valid:
+            .green
+        case .expiresSoon:
+            .orange
+        case .expired:
+            .red
+        case .notStored:
+            .secondary
+        }
+    }
+
+    private func validatedAccessory(for account: ConnectedAccount) -> some View {
+        Group {
+            if let lastValidatedAt = account.lastValidatedAt {
+                Text(lastValidatedAt, style: .relative)
+            } else {
+                Text("Never")
+            }
+        }
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.trailing)
     }
 }
