@@ -19,7 +19,17 @@ struct SettingsView: View {
                 diagnostics
             }
             .flickScrollablePage()
-            .navigationTitle("Settings")
+            .toolbar {
+                #if os(macOS)
+                ToolbarItem(placement: .principal) {
+                    Text("Settings")
+                }
+                #else
+                ToolbarItem(placement: .title) {
+                    Text("Settings")
+                }
+                #endif
+            }
             .onAppear(perform: reloadCredentialDrafts)
         }
     }

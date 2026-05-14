@@ -17,8 +17,16 @@ struct TrendsView: View {
                 tagLibrary
             }
             .flickScrollablePage()
-            .navigationTitle("Trends")
             .toolbar {
+                #if os(macOS)
+                ToolbarItem(placement: .principal) {
+                    Text("Trends")
+                }
+                #else
+                ToolbarItem(placement: .title) {
+                    Text("Trends")
+                }
+                #endif
                 ToolbarItem(placement: .primaryAction) {
                     Button("Add trend", systemImage: "plus") { }
                         .buttonStyle(.glassProminent)

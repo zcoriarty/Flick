@@ -8,35 +8,43 @@ import SwiftUI
 struct AccountsView: View {
     @Environment(FlickAppModel.self) private var appModel
 
+    private var authorizedAccounts: [ConnectedAccount] {
+        appModel.overview.accounts.filter { $0.authorizationSource == .loginKit }
+    }
+
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
-                accountScale
+                PlatformAccountTilesSection(authorizedAccounts: authorizedAccounts)
                 connectionStatus
-                connectedAccounts
-                futurePlatforms
-                publishingSettings
+                AuthorizedAccountsSection(accounts: authorizedAccounts)
+                PlatformAdaptersSection()
             }
             .flickScrollablePage()
-            .navigationTitle("Accounts")
-            .toolbar {
-                if appModel.canManageAccounts {
-                    ToolbarItem(placement: .primaryAction) {
-                        Menu("Add account", systemImage: "plus") {
-                            ForEach(SocialPlatform.allCases) { platform in
-                                Button(platform.displayName, systemImage: platform.systemImage) {
-                                    Task {
-                                        await appModel.connectAccount(platform: platform)
-                                    }
-                                }
+            .navigationDestination(for: SocialPlatform.self) { platform in
+                PlatformPublishSettingsView(platform: platform, accounts: accounts(for: platform))
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Accounts")
+            }
+            if appModel.canManageAccounts {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        ForEach(SocialPlatform.allCases) { platform in
+                            Button(platform.displayName, systemImage: platform.systemImage) {
+                                connect(platform)
                             }
                         }
-                        .buttonStyle(.glassProminent)
-                        .disabled(appModel.connectingPlatform != nil)
+                    } label: {
+                        Label("Add Account", systemImage: "plus")
                     }
+                    .disabled(appModel.connectingPlatform != nil)
                 }
             }
         }
+
     }
 
     @ViewBuilder
@@ -76,92 +84,137 @@ struct AccountsView: View {
         }
     }
 
-    private var accountScale: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Accounts by platform", subtitle: "Account records are per handle, so each platform can hold many publishing identities", systemImage: "person.3")
-            ResponsiveGrid(minimum: 180) {
-                ForEach(SocialPlatform.allCases) { platform in
-                    let accounts = accounts(for: platform)
-                    FlickGlassCard {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Image(systemName: platform.systemImage)
-                                .font(.title2)
-                                .foregroundStyle(platform.tint)
-                            Text(platform.displayName)
-                                .font(.headline)
-                            Text("\(accounts.count) accounts")
-                                .font(.title3.weight(.bold))
-                            Text("\(accounts.filter(\.isPublishingEnabled).count) publishing enabled")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+    private func accounts(for platform: SocialPlatform) -> [ConnectedAccount] {
+        authorizedAccounts.filter { $0.platform == platform }
+    }
+
+    private func connect(_ platform: SocialPlatform) {
+        Task {
+            await appModel.connectAccount(platform: platform)
+        }
+    }
+}
+
+private struct PlatformAccountTilesSection: View {
+    var authorizedAccounts: [ConnectedAccount]
+
+    var body: some View {
+        ResponsiveGrid(minimum: 180) {
+            ForEach(SocialPlatform.allCases) { platform in
+                NavigationLink(value: platform) {
+                    PlatformAccountTile(
+                        platform: platform,
+                        accounts: accounts(for: platform)
+                    )
                 }
+                .buttonStyle(.plain)
             }
         }
     }
 
-    private var connectedAccounts: some View {
+    private func accounts(for platform: SocialPlatform) -> [ConnectedAccount] {
+        authorizedAccounts.filter { $0.platform == platform }
+    }
+}
+
+private struct PlatformAccountTile: View {
+    var platform: SocialPlatform
+    var accounts: [ConnectedAccount]
+
+    private var publishingEnabledCount: Int {
+        accounts.filter(\.isPublishingEnabled).count
+    }
+
+    var body: some View {
+        FlickGlassCard(interactive: true) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Image(systemName: platform.systemImage)
+                        .font(.title2)
+                        .foregroundStyle(platform.tint)
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+
+                Text(platform.displayName)
+                    .font(.headline)
+
+                Text("\(accounts.count) accounts")
+                    .font(.title3.weight(.bold))
+
+                Text("\(publishingEnabledCount) publishing enabled")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct AuthorizedAccountsSection: View {
+    var accounts: [ConnectedAccount]
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Authorized accounts", subtitle: "Only real accounts returned by platform Login Kit authorization appear here", systemImage: "person.2.badge.gearshape")
-            if authorizedAccounts.isEmpty {
+            SectionTitle(title: "Authorized accounts")
+            if accounts.isEmpty {
                 NoAuthorizedAccountsView()
             } else {
                 ResponsiveGrid(minimum: 320) {
-                    ForEach(authorizedAccounts.sortedForAccountsView) { account in
+                    ForEach(accounts.sortedForAccountsView) { account in
                         AccountCard(account: account)
                     }
                 }
             }
         }
     }
+}
 
-    private var futurePlatforms: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Platform adapters", subtitle: "TikTok is V1; Instagram, Threads, and X are isolated future adapters", systemImage: "point.3.connected.trianglepath.dotted")
-            ResponsiveGrid(minimum: 220) {
-                ForEach(SocialPlatform.allCases) { platform in
-                    let enabled = platform == .tiktok
-                    FlickGlassCard {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                Image(systemName: platform.systemImage)
-                                    .foregroundStyle(platform.tint)
-                                Text(platform.displayName)
-                                    .font(.headline)
-                            }
-                            StatusBadge(title: enabled ? "V1 adapter" : "Future stub", tint: enabled ? .green : .secondary, systemImage: "circle.fill")
-                        }
+private struct PlatformAdaptersSection: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionTitle(title: "Platform adapters")
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(SocialPlatform.allCases) { platform in
+                        PlatformAdapterChip(platform: platform)
                     }
                 }
             }
         }
     }
+}
 
-    private var publishingSettings: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "TikTok publish settings", subtitle: "Creator info should drive final privacy and interaction options", systemImage: "slider.horizontal.3")
-            FlickGlassCard {
-                ResponsiveGrid(minimum: 210) {
-                    SettingSummary(title: "Default privacy", value: defaultTikTokAccount?.defaultPrivacyLevel ?? "Not connected", systemImage: "lock")
-                    SettingSummary(title: "Comments", value: "Allowed unless creator info says otherwise", systemImage: "text.bubble")
-                    SettingSummary(title: "Duet", value: "Refresh before direct post", systemImage: "person.2.wave.2")
-                    SettingSummary(title: "Commercial flags", value: "Brand organic per job", systemImage: "checkmark.shield")
+private struct PlatformAdapterChip: View {
+    var platform: SocialPlatform
+
+    private var isEnabled: Bool {
+        platform == .tiktok
+    }
+
+    var body: some View {
+        FlickGlassCard {
+            HStack(spacing: 10) {
+                Image(systemName: platform.systemImage)
+                    .foregroundStyle(platform.tint)
+                    .frame(width: 20)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(platform.displayName)
+                        .font(.callout.weight(.semibold))
+                    Text(isEnabled ? "V1 adapter" : "Future")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
+
+                Spacer(minLength: 0)
             }
         }
-    }
-
-    private var defaultTikTokAccount: ConnectedAccount? {
-        authorizedAccounts.first { $0.platform == .tiktok }
-    }
-
-    private var authorizedAccounts: [ConnectedAccount] {
-        appModel.overview.accounts.filter { $0.authorizationSource == .loginKit }
-    }
-
-    private func accounts(for platform: SocialPlatform) -> [ConnectedAccount] {
-        authorizedAccounts.filter { $0.platform == platform }
+        .frame(width: 150)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -286,61 +339,6 @@ private struct AccountConnectionStatusView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-        }
-    }
-}
-
-private extension Array where Element == ConnectedAccount {
-    var sortedForAccountsView: [ConnectedAccount] {
-        sorted {
-            if $0.platform.rawValue == $1.platform.rawValue {
-                return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
-            }
-            return $0.platform.displayName < $1.platform.displayName
-        }
-    }
-}
-
-private extension SocialPlatform {
-    var tint: Color {
-        switch self {
-        case .tiktok: .pink
-        case .instagram: .purple
-        case .threads: .indigo
-        case .x: .primary
-        }
-    }
-}
-
-private struct SettingSummary: View {
-    var title: String
-    var value: String
-    var systemImage: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: systemImage)
-                .foregroundStyle(.orange)
-                .frame(width: 24)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(value)
-                    .font(.callout.weight(.semibold))
-                    .lineLimit(3)
-            }
-        }
-    }
-}
-
-private extension OAuthTokenStatus {
-    var displayName: String {
-        switch self {
-        case .valid: "Valid"
-        case .expiresSoon: "Expires soon"
-        case .expired: "Expired"
-        case .notStored: "Not stored"
         }
     }
 }

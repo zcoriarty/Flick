@@ -12,8 +12,16 @@ struct DashboardView: View {
         NavigationStack {
             dashboardContent
                 .flickScrollablePage()
-                .navigationTitle("Dashboard")
                 .toolbar {
+                    #if os(macOS)
+                    ToolbarItem(placement: .principal) {
+                        Text("Dashboard")
+                    }
+                    #else
+                    ToolbarItem(placement: .title) {
+                        Text("Dashboard")
+                    }
+                    #endif
                     ToolbarItem(placement: .primaryAction) {
                         Button("Generate batch", systemImage: "wand.and.sparkles") {
                             appModel.selectedSection = .create
