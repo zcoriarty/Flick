@@ -70,15 +70,9 @@ struct PlatformPublishSettingsView: View {
         }
         .listStyle(.plain)
         .toolbar {
-            #if os(macOS)
             ToolbarItem(placement: .principal) {
                 Text("\(platform.displayName) Publish Settings")
             }
-            #else
-            ToolbarItem(placement: .title) {
-                Text("\(platform.displayName) Publish Settings")
-            }
-            #endif
         }
     }
 

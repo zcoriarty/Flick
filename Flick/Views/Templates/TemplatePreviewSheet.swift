@@ -37,15 +37,9 @@ struct TemplatePreviewSheet: View {
                     }
                     .keyboardShortcut(.cancelAction)
                 }
-                #if os(macOS)
                 ToolbarItem(placement: .principal) {
                     Text("Template")
                 }
-                #else
-                ToolbarItem(placement: .title) {
-                    Text("Template")
-                }
-                #endif
                 ToolbarItem(placement: .primaryAction) {
                     Button("Use Template", systemImage: "wand.and.sparkles") {
                         appModel.createDraft(from: template)

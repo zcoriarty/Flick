@@ -18,15 +18,9 @@ struct AnalyticsView: View {
             }
             .flickScrollablePage()
             .toolbar {
-                #if os(macOS)
                 ToolbarItem(placement: .principal) {
                     Text("Analytics")
                 }
-                #else
-                ToolbarItem(placement: .title) {
-                    Text("Analytics")
-                }
-                #endif
             }
         }
     }

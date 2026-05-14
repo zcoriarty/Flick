@@ -20,15 +20,9 @@ struct SettingsView: View {
             }
             .flickScrollablePage()
             .toolbar {
-                #if os(macOS)
                 ToolbarItem(placement: .principal) {
                     Text("Settings")
                 }
-                #else
-                ToolbarItem(placement: .title) {
-                    Text("Settings")
-                }
-                #endif
             }
             .onAppear(perform: reloadCredentialDrafts)
         }

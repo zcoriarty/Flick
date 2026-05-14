@@ -19,15 +19,9 @@ struct CreateView: View {
             }
             .flickScrollablePage()
             .toolbar {
-                #if os(macOS)
                 ToolbarItem(placement: .principal) {
                     Text("Create")
                 }
-                #else
-                ToolbarItem(placement: .title) {
-                    Text("Create")
-                }
-                #endif
                 ToolbarItem(placement: .primaryAction) {
                     Button("Send to queue", systemImage: "tray.and.arrow.down") {
                         appModel.selectedSection = .queue

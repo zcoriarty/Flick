@@ -16,15 +16,9 @@ struct QueueView: View {
             }
             .flickScrollablePage()
             .toolbar {
-                #if os(macOS)
                 ToolbarItem(placement: .principal) {
                     Text("Queue")
                 }
-                #else
-                ToolbarItem(placement: .title) {
-                    Text("Queue")
-                }
-                #endif
                 ToolbarItem(placement: .primaryAction) {
                     Button(appModel.overview.workspace.automationPaused ? "Resume" : "Pause", systemImage: appModel.overview.workspace.automationPaused ? "play.fill" : "pause.fill") {
                         appModel.toggleAutomationPaused()

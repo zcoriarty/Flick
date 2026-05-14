@@ -16,15 +16,9 @@ struct TemplatesView: View {
         NavigationStack {
             content
                 .toolbar {
-                    #if os(macOS)
                     ToolbarItem(placement: .principal) {
                         Text("Templates")
                     }
-                    #else
-                    ToolbarItem(placement: .title) {
-                        Text("Templates")
-                    }
-                    #endif
                     ToolbarItem(placement: .primaryAction) {
                         Button("Reload", systemImage: "arrow.clockwise") {
                             loadTemplates()
