@@ -23,7 +23,6 @@ struct QueueView: View {
                     Button(appModel.overview.workspace.automationPaused ? "Resume" : "Pause", systemImage: appModel.overview.workspace.automationPaused ? "play.fill" : "pause.fill") {
                         appModel.toggleAutomationPaused()
                     }
-                    .buttonStyle(.glass)
                 }
             }
         }
@@ -164,7 +163,6 @@ private struct PublishingJobRow: View {
                         Button("Pause", systemImage: "pause") {
                             appModel.pause(job: job)
                         }
-                        .buttonStyle(.glass)
                     }
                     if job.status == .paused {
                         Button("Resume", systemImage: "play") {
@@ -178,7 +176,6 @@ private struct PublishingJobRow: View {
                             appModel.duplicateDraft(draft)
                         }
                     }
-                    .buttonStyle(.glass)
                 }
             }
         }

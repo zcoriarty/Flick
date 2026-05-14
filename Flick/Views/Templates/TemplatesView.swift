@@ -23,7 +23,6 @@ struct TemplatesView: View {
                         Button("Reload", systemImage: "arrow.clockwise") {
                             loadTemplates()
                         }
-                        .buttonStyle(.glass)
                     }
                 }
                 .sheet(item: $selectedTemplate) { template in

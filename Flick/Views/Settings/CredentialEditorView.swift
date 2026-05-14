@@ -124,7 +124,6 @@ private struct CredentialEditorRow: View {
             Button("Delete", systemImage: "trash", role: .destructive) {
                 isDeleteConfirmationPresented = true
             }
-                .buttonStyle(.glass)
                 .disabled(!draft.isStoredSecurely)
                 .confirmationDialog("Delete \(draft.definition.name)?", isPresented: $isDeleteConfirmationPresented) {
                     Button("Delete", role: .destructive, action: deleteAction)

@@ -184,7 +184,6 @@ private struct ProductMediaCard: View {
                     Button(role: .destructive, action: removeAction) {
                         Image(systemName: "trash")
                     }
-                    .buttonStyle(.glass)
                     .accessibilityLabel("Remove product media")
                 }
 

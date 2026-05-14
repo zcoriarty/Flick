@@ -26,7 +26,6 @@ struct DashboardView: View {
                         Button("Refresh", systemImage: "arrow.clockwise") {
                             Task { await appModel.refresh() }
                         }
-                        .buttonStyle(.glass)
                     }
                 }
         }
@@ -175,7 +174,6 @@ struct DashboardView: View {
                                 appModel.duplicateDraft(draft)
                             }
                         }
-                        .buttonStyle(.glass)
                     }
                 }
             }
@@ -237,7 +235,7 @@ private struct WorkerAutomationButtonStyle: ViewModifier {
         if isPaused {
             content.buttonStyle(.glassProminent)
         } else {
-            content.buttonStyle(.glass)
+            content
         }
     }
 }

@@ -123,7 +123,7 @@ private struct GlassSelectionButtonStyle: ViewModifier {
         if isSelected {
             content.buttonStyle(.glassProminent)
         } else {
-            content.buttonStyle(.glass)
+            content
         }
     }
 }

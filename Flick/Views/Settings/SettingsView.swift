@@ -43,7 +43,6 @@ struct SettingsView: View {
                     Button("Clear stored", systemImage: "trash", role: .destructive) {
                         isClearCredentialsConfirmationPresented = true
                     }
-                    .buttonStyle(.glass)
                     .confirmationDialog("Clear stored credentials?", isPresented: $isClearCredentialsConfirmationPresented) {
                         Button("Clear stored", role: .destructive) {
                             clearStoredCredentials()

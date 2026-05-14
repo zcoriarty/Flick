@@ -119,7 +119,6 @@ struct FlickEmptyStateCard: View {
 
                 if let actionTitle, let action {
                     Button(actionTitle, systemImage: actionSystemImage ?? "arrow.right", action: action)
-                        .buttonStyle(.glass)
                         .padding(.top, 2)
                 }
             }
