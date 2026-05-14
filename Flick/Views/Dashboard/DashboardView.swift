@@ -14,9 +14,10 @@ struct DashboardView: View {
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text("Flick")
+                    Text("Dashboard")
                         .font(.system(.body, weight: .semibold))
                 }
+                .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .primaryAction) {
                     Button("Generate batch", systemImage: "wand.and.sparkles") {
                         appModel.selectedSection = .create

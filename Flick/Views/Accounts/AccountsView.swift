@@ -34,6 +34,7 @@ struct AccountsView: View {
                 Text("Accounts")
                     .font(.system(.body, weight: .semibold))
             }
+            .sharedBackgroundVisibility(.hidden)
 
             if appModel.canManageAccounts {
                 ToolbarItem(placement: .primaryAction) {

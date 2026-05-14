@@ -22,6 +22,7 @@ struct TemplateDetailView: View {
                 Text(template.title)
                     .font(.system(.body, weight: .semibold))
             }
+            .sharedBackgroundVisibility(.hidden)
             ToolbarItem(placement: .primaryAction) {
                 Button("Use Template", systemImage: "wand.and.sparkles") {
                     appModel.createDraft(from: template)

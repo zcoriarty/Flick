@@ -24,6 +24,7 @@ struct SettingsView: View {
                 Text("Settings")
                     .font(.system(.body, weight: .semibold))
             }
+            .sharedBackgroundVisibility(.hidden)
         }
         .onAppear(perform: reloadCredentialDrafts)
     }

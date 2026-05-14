@@ -22,6 +22,7 @@ struct AnalyticsView: View {
                 Text("Analytics")
                     .font(.system(.body, weight: .semibold))
             }
+            .sharedBackgroundVisibility(.hidden)
         }
     }
 

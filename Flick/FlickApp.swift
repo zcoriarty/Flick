@@ -28,5 +28,10 @@ struct FlickApp: App {
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 .environment(appModel)
         }
+        #if os(macOS)
+        .commands {
+            SidebarCommands()
+        }
+        #endif
     }
 }

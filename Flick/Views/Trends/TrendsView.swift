@@ -22,6 +22,7 @@ struct TrendsView: View {
                 Text("Trends")
                     .font(.system(.body, weight: .semibold))
             }
+            .sharedBackgroundVisibility(.hidden)
             ToolbarItem(placement: .primaryAction) {
                 Button("Add trend", systemImage: "plus") { }
             }

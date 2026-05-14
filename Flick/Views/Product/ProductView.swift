@@ -31,6 +31,7 @@ struct ProductView: View {
                 Text("Product")
                     .font(.system(.body, weight: .semibold))
             }
+            .sharedBackgroundVisibility(.hidden)
             ToolbarItem(placement: .primaryAction) {
                 PhotosPicker(
                     selection: $selectedMediaItems,
@@ -212,6 +213,7 @@ private struct ProductMediaDetailSheet: View {
                     Text("Media Details")
                         .font(.system(.body, weight: .semibold))
                 }
+                .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Confirm", systemImage: "checkmark") {
                         dismiss()

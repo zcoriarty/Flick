@@ -22,6 +22,33 @@ enum FlickStyle {
     }
 }
 
+private struct FlickAppBackgroundModifier: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content
+            .background(FlickStyle.pageBackground.ignoresSafeArea())
+            .toolbarBackground(FlickStyle.pageBackground, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(FlickStyle.pageBackground, for: .tabBar)
+            .toolbarBackground(.visible, for: .tabBar)
+        #elseif os(macOS)
+        content
+            .background(FlickStyle.pageBackground.ignoresSafeArea())
+            .toolbarBackground(.hidden, for: .windowToolbar)
+        #else
+        content
+            .background(FlickStyle.pageBackground.ignoresSafeArea())
+        #endif
+    }
+}
+
+extension View {
+    func flickAppBackground() -> some View {
+        modifier(FlickAppBackgroundModifier())
+    }
+}
+
 extension SocialPlatform {
     var systemImage: String {
         switch self {

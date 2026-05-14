@@ -20,6 +20,7 @@ struct TemplatesView: View {
                     Text("Templates")
                         .font(.system(.body, weight: .semibold))
                 }
+                .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .primaryAction) {
                     Button("Reload", systemImage: "arrow.clockwise") {
                         loadTemplates()

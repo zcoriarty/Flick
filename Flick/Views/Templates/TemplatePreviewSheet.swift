@@ -28,7 +28,7 @@ struct TemplatePreviewSheet: View {
             }
             .padding(FlickStyle.pagePadding)
         }
-        .background(FlickStyle.pageBackground.ignoresSafeArea())
+        .flickAppBackground()
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
@@ -41,6 +41,7 @@ struct TemplatePreviewSheet: View {
                 Text("Template")
                     .font(.system(.body, weight: .semibold))
             }
+            .sharedBackgroundVisibility(.hidden)
             ToolbarItem(placement: .primaryAction) {
                 Button("Use Template", systemImage: "wand.and.sparkles") {
                     appModel.createDraft(from: template)

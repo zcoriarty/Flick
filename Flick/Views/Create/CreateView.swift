@@ -23,6 +23,7 @@ struct CreateView: View {
                 Text("Create")
                     .font(.system(.body, weight: .semibold))
             }
+            .sharedBackgroundVisibility(.hidden)
             ToolbarItem(placement: .primaryAction) {
                 Button("Send to queue", systemImage: "tray.and.arrow.down") {
                     appModel.selectedSection = .queue

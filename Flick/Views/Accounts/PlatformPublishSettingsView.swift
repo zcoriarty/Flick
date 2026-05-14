@@ -26,6 +26,7 @@ struct PlatformPublishSettingsView: View {
                 Text("\(platform.displayName) Publish Settings")
                     .font(.system(.body, weight: .semibold))
             }
+            .sharedBackgroundVisibility(.hidden)
         }
     }
 

@@ -56,8 +56,13 @@ struct FlickRootView: View {
                 SettingsView()
             }
         }
+        #if os(macOS) || targetEnvironment(macCatalyst)
+        .tabViewStyle(.sidebarAdaptable)
+        #else
         .tint(FlickStyle.appTint)
+        #endif
         .preferredColorScheme(.dark)
+        .flickAppBackground()
         .task {
             await appModel.refresh()
         }
