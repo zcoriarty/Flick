@@ -193,7 +193,11 @@ struct FlickSettingsRouteRow<Route: Hashable>: View {
 private struct FlickSettingsListStyleModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .listStyle(.insetGrouped)
+        #if os(macOS)
+        .listStyle(.inset)
+        #else
+        .listStyle(.insetGrouped)
+        #endif
     }
 }
 
