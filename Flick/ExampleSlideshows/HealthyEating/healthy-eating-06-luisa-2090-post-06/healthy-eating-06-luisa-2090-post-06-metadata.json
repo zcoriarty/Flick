@@ -1,0 +1,101 @@
+{
+  "id": "healthy-eating-06-luisa-2090-post-06",
+  "niche": "Healthy Eating",
+  "nicheSlug": "healthy-eating",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/healthy-eating",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/healthy-eating?post=luisa.2090%3A5",
+  "postNumber": 6,
+  "profile": "luisa.2090",
+  "profileDisplayName": "luisa",
+  "slideshowIndex": 5,
+  "folder": "healthy-eating-06-luisa-2090-post-06",
+  "slideCount": 8,
+  "metrics": {
+    "views": "2.8M",
+    "likes": "448.6K",
+    "bookmarks": "134.5K",
+    "shares": null
+  },
+  "product": {
+    "medium": "None",
+    "name": "Healthy lifestyle content",
+    "linkInBio": null
+  },
+  "creator": {
+    "followerCount": "13.1K",
+    "signature": "hauslui2909@gmail.com",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/luisa.2090/avatar_2ec81fea.webp",
+    "region": "DE",
+    "audienceRegions": [
+      {
+        "count": 46,
+        "country": "United Kingdom",
+        "percentage": "20.00%",
+        "countryCode": "GB"
+      },
+      {
+        "count": 24,
+        "country": "United States",
+        "percentage": "10.43%",
+        "countryCode": "US"
+      },
+      {
+        "count": 22,
+        "country": "Germany",
+        "percentage": "9.57%",
+        "countryCode": "DE"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/luisa.2090/slideshow_629964ff.jpg",
+      "filename": "healthy-eating-06-luisa-2090-post-06-slide-01.jpg",
+      "relativePath": "healthy-eating-06-luisa-2090-post-06/healthy-eating-06-luisa-2090-post-06-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/luisa.2090/slideshow_ef84cde4.jpg",
+      "filename": "healthy-eating-06-luisa-2090-post-06-slide-02.jpg",
+      "relativePath": "healthy-eating-06-luisa-2090-post-06/healthy-eating-06-luisa-2090-post-06-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/luisa.2090/slideshow_65c951c3.jpg",
+      "filename": "healthy-eating-06-luisa-2090-post-06-slide-03.jpg",
+      "relativePath": "healthy-eating-06-luisa-2090-post-06/healthy-eating-06-luisa-2090-post-06-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/luisa.2090/slideshow_3be6ab31.jpg",
+      "filename": "healthy-eating-06-luisa-2090-post-06-slide-04.jpg",
+      "relativePath": "healthy-eating-06-luisa-2090-post-06/healthy-eating-06-luisa-2090-post-06-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/luisa.2090/slideshow_8b72dd13.jpg",
+      "filename": "healthy-eating-06-luisa-2090-post-06-slide-05.jpg",
+      "relativePath": "healthy-eating-06-luisa-2090-post-06/healthy-eating-06-luisa-2090-post-06-slide-05.jpg"
+    },
+    {
+      "index": 6,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/luisa.2090/slideshow_264be76b.jpg",
+      "filename": "healthy-eating-06-luisa-2090-post-06-slide-06.jpg",
+      "relativePath": "healthy-eating-06-luisa-2090-post-06/healthy-eating-06-luisa-2090-post-06-slide-06.jpg"
+    },
+    {
+      "index": 7,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/luisa.2090/slideshow_7b704c59.jpg",
+      "filename": "healthy-eating-06-luisa-2090-post-06-slide-07.jpg",
+      "relativePath": "healthy-eating-06-luisa-2090-post-06/healthy-eating-06-luisa-2090-post-06-slide-07.jpg"
+    },
+    {
+      "index": 8,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/luisa.2090/slideshow_374d6faa.jpg",
+      "filename": "healthy-eating-06-luisa-2090-post-06-slide-08.jpg",
+      "relativePath": "healthy-eating-06-luisa-2090-post-06/healthy-eating-06-luisa-2090-post-06-slide-08.jpg"
+    }
+  ]
+}

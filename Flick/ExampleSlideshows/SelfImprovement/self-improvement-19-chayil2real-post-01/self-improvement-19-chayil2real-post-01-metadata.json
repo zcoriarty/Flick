@@ -1,0 +1,59 @@
+{
+  "id": "self-improvement-19-chayil2real-post-01",
+  "niche": "Self Improvement",
+  "nicheSlug": "self-improvement",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/self-improvement",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/self-improvement?post=chayil2real%3A0",
+  "postNumber": 19,
+  "profile": "chayil2real",
+  "profileDisplayName": "Chayil",
+  "slideshowIndex": 0,
+  "folder": "self-improvement-19-chayil2real-post-01",
+  "slideCount": 1,
+  "metrics": {
+    "views": "2.2M",
+    "likes": "393.5K",
+    "bookmarks": "49.8K",
+    "shares": null
+  },
+  "product": {
+    "medium": "None",
+    "name": "None",
+    "linkInBio": null
+  },
+  "creator": {
+    "followerCount": "60.1K",
+    "signature": "Ig: @c.dinero1k",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/chayil2real/avatar_aa8b1538.webp",
+    "region": "US",
+    "audienceRegions": [
+      {
+        "count": 28,
+        "country": "United Kingdom",
+        "percentage": "21.54%",
+        "countryCode": "GB"
+      },
+      {
+        "count": 27,
+        "country": "United States",
+        "percentage": "20.77%",
+        "countryCode": "US"
+      },
+      {
+        "count": 9,
+        "country": "Philippines",
+        "percentage": "6.92%",
+        "countryCode": "PH"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/chayil2real/slideshow_456db1e6.jpg",
+      "filename": "self-improvement-19-chayil2real-post-01-slide-01.jpg",
+      "relativePath": "self-improvement-19-chayil2real-post-01/self-improvement-19-chayil2real-post-01-slide-01.jpg"
+    }
+  ]
+}

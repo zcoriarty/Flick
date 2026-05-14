@@ -1,0 +1,34 @@
+{
+  "name": "Flick example slideshows",
+  "updatedAt": "2026-05-12T17:10:49.404Z",
+  "niches": [
+    {
+      "folder": "Fitness",
+      "nicheSlug": "fitness",
+      "manifest": "Fitness/Fitness-manifest.json",
+      "slideshowCount": 20,
+      "totalSlideCount": 103
+    },
+    {
+      "folder": "HealthyEating",
+      "nicheSlug": "healthy-eating",
+      "manifest": "HealthyEating/HealthyEating-manifest.json",
+      "slideshowCount": 20,
+      "totalSlideCount": 168
+    },
+    {
+      "folder": "SelfImprovement",
+      "nicheSlug": "self-improvement",
+      "manifest": "SelfImprovement/SelfImprovement-manifest.json",
+      "slideshowCount": 20,
+      "totalSlideCount": 117
+    },
+    {
+      "folder": "Wellness",
+      "nicheSlug": "wellness",
+      "manifest": "Wellness/Wellness-manifest.json",
+      "slideshowCount": 20,
+      "totalSlideCount": 138
+    }
+  ]
+}

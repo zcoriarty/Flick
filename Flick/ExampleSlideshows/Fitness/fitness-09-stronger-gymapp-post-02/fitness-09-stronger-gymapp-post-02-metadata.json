@@ -1,0 +1,64 @@
+{
+  "id": "fitness-09-stronger-gymapp-post-02",
+  "niche": "fitness",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/fitness",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/fitness?post=stronger_gymapp%3A1",
+  "postNumber": 9,
+  "profile": "stronger_gymapp",
+  "profileDisplayName": "stronger_gymapp",
+  "slideshowIndex": 1,
+  "folder": "fitness-09-stronger-gymapp-post-02",
+  "slideCount": 2,
+  "metrics": {
+    "views": "15.4M",
+    "likes": "182.2K",
+    "bookmarks": "6.5K",
+    "shares": null
+  },
+  "product": {
+    "medium": "Mobile app",
+    "name": "Gym workout tracking app",
+    "linkInBio": "strongermobileapp.com"
+  },
+  "creator": {
+    "followerCount": "29.9K",
+    "signature": "Stronger on iOS and Android 💪",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/stronger_gymapp/avatar_1087a348.jpg",
+    "region": "GB",
+    "audienceRegions": [
+      {
+        "count": 103,
+        "country": "United States",
+        "percentage": "92.79%",
+        "countryCode": "US"
+      },
+      {
+        "count": 6,
+        "country": "United Kingdom",
+        "percentage": "5.41%",
+        "countryCode": "GB"
+      },
+      {
+        "count": 1,
+        "country": "Czech Republic",
+        "percentage": "0.90%",
+        "countryCode": "CZ"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/stronger_gymapp/slideshow_30b098ff.jpg",
+      "filename": "fitness-09-stronger-gymapp-post-02-slide-01.jpg",
+      "relativePath": "fitness-09-stronger-gymapp-post-02/fitness-09-stronger-gymapp-post-02-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/stronger_gymapp/slideshow_ce7ae212.jpg",
+      "filename": "fitness-09-stronger-gymapp-post-02-slide-02.jpg",
+      "relativePath": "fitness-09-stronger-gymapp-post-02/fitness-09-stronger-gymapp-post-02-slide-02.jpg"
+    }
+  ]
+}

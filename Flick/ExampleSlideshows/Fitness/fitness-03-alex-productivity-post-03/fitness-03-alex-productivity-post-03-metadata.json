@@ -1,0 +1,88 @@
+{
+  "id": "fitness-03-alex-productivity-post-03",
+  "niche": "fitness",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/fitness",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/fitness?post=alex_productivity%3A2",
+  "postNumber": 3,
+  "profile": "alex_productivity",
+  "profileDisplayName": "Alex’s diary",
+  "slideshowIndex": 2,
+  "folder": "fitness-03-alex-productivity-post-03",
+  "slideCount": 6,
+  "metrics": {
+    "views": "3.2M",
+    "likes": "451.9K",
+    "bookmarks": "69.0K",
+    "shares": null
+  },
+  "product": {
+    "medium": "Mobile App",
+    "name": "JournAI fitness tracking app",
+    "linkInBio": null
+  },
+  "creator": {
+    "followerCount": "11.1K",
+    "signature": "Since so many of you were asking, I use the app JournAI",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/alex_productivity/avatar_e68eb9d9.webp",
+    "region": "MT",
+    "audienceRegions": [
+      {
+        "count": 32,
+        "country": "United States",
+        "percentage": "18.50%",
+        "countryCode": "US"
+      },
+      {
+        "count": 19,
+        "country": "United Kingdom",
+        "percentage": "10.98%",
+        "countryCode": "GB"
+      },
+      {
+        "count": 10,
+        "country": "Germany",
+        "percentage": "5.78%",
+        "countryCode": "DE"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/alex_productivity/slideshow_cc0e1dce.jpg",
+      "filename": "fitness-03-alex-productivity-post-03-slide-01.jpg",
+      "relativePath": "fitness-03-alex-productivity-post-03/fitness-03-alex-productivity-post-03-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/alex_productivity/slideshow_8844b00a.jpg",
+      "filename": "fitness-03-alex-productivity-post-03-slide-02.jpg",
+      "relativePath": "fitness-03-alex-productivity-post-03/fitness-03-alex-productivity-post-03-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/alex_productivity/slideshow_4b1e3698.jpg",
+      "filename": "fitness-03-alex-productivity-post-03-slide-03.jpg",
+      "relativePath": "fitness-03-alex-productivity-post-03/fitness-03-alex-productivity-post-03-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/alex_productivity/slideshow_8154705d.jpg",
+      "filename": "fitness-03-alex-productivity-post-03-slide-04.jpg",
+      "relativePath": "fitness-03-alex-productivity-post-03/fitness-03-alex-productivity-post-03-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/alex_productivity/slideshow_fcfc9503.jpg",
+      "filename": "fitness-03-alex-productivity-post-03-slide-05.jpg",
+      "relativePath": "fitness-03-alex-productivity-post-03/fitness-03-alex-productivity-post-03-slide-05.jpg"
+    },
+    {
+      "index": 6,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/alex_productivity/slideshow_81e0d713.jpg",
+      "filename": "fitness-03-alex-productivity-post-03-slide-06.jpg",
+      "relativePath": "fitness-03-alex-productivity-post-03/fitness-03-alex-productivity-post-03-slide-06.jpg"
+    }
+  ]
+}

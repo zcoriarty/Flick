@@ -1,0 +1,89 @@
+{
+  "id": "wellness-12-velvetmuuse-post-01",
+  "niche": "Wellness",
+  "nicheSlug": "wellness",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/wellness",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/wellness?post=velvetmuuse%3A0",
+  "postNumber": 12,
+  "profile": "velvetmuuse",
+  "profileDisplayName": "esprit.léger",
+  "slideshowIndex": 0,
+  "folder": "wellness-12-velvetmuuse-post-01",
+  "slideCount": 6,
+  "metrics": {
+    "views": "671.8K",
+    "likes": "155.0K",
+    "bookmarks": "33.2K",
+    "shares": null
+  },
+  "product": {
+    "medium": "None",
+    "name": "Lifestyle wellness aesthetic content",
+    "linkInBio": null
+  },
+  "creator": {
+    "followerCount": "4.0K",
+    "signature": null,
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/velvetmuuse/avatar_9f23d131.jpg",
+    "region": "UA",
+    "audienceRegions": [
+      {
+        "count": 55,
+        "country": "United States",
+        "percentage": "47.01%",
+        "countryCode": "US"
+      },
+      {
+        "count": 7,
+        "country": "United Kingdom",
+        "percentage": "5.98%",
+        "countryCode": "GB"
+      },
+      {
+        "count": 5,
+        "country": "Mexico",
+        "percentage": "4.27%",
+        "countryCode": "MX"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/velvetmuuse/slideshow_eb28a1fd.jpg",
+      "filename": "wellness-12-velvetmuuse-post-01-slide-01.jpg",
+      "relativePath": "wellness-12-velvetmuuse-post-01/wellness-12-velvetmuuse-post-01-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/velvetmuuse/slideshow_48006409.jpg",
+      "filename": "wellness-12-velvetmuuse-post-01-slide-02.jpg",
+      "relativePath": "wellness-12-velvetmuuse-post-01/wellness-12-velvetmuuse-post-01-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/velvetmuuse/slideshow_ea25c40c.jpg",
+      "filename": "wellness-12-velvetmuuse-post-01-slide-03.jpg",
+      "relativePath": "wellness-12-velvetmuuse-post-01/wellness-12-velvetmuuse-post-01-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/velvetmuuse/slideshow_82b87c8d.jpg",
+      "filename": "wellness-12-velvetmuuse-post-01-slide-04.jpg",
+      "relativePath": "wellness-12-velvetmuuse-post-01/wellness-12-velvetmuuse-post-01-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/velvetmuuse/slideshow_2fceaa05.jpg",
+      "filename": "wellness-12-velvetmuuse-post-01-slide-05.jpg",
+      "relativePath": "wellness-12-velvetmuuse-post-01/wellness-12-velvetmuuse-post-01-slide-05.jpg"
+    },
+    {
+      "index": 6,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/velvetmuuse/slideshow_3b5b5c67.jpg",
+      "filename": "wellness-12-velvetmuuse-post-01-slide-06.jpg",
+      "relativePath": "wellness-12-velvetmuuse-post-01/wellness-12-velvetmuuse-post-01-slide-06.jpg"
+    }
+  ]
+}

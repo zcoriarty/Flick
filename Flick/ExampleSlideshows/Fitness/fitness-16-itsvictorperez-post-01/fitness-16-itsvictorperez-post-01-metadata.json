@@ -1,0 +1,70 @@
+{
+  "id": "fitness-16-itsvictorperez-post-01",
+  "niche": "fitness",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/fitness",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/fitness?post=itsvictorperez%3A0",
+  "postNumber": 16,
+  "profile": "itsvictorperez",
+  "profileDisplayName": "Victor Perez | Fitness Coach",
+  "slideshowIndex": 0,
+  "folder": "fitness-16-itsvictorperez-post-01",
+  "slideCount": 3,
+  "metrics": {
+    "views": "1.3M",
+    "likes": "89.0K",
+    "bookmarks": "29.5K",
+    "shares": null
+  },
+  "product": {
+    "medium": "1:1 Coaching",
+    "name": "Fitness coaching services",
+    "linkInBio": "https://linktr.ee/itsvictorperez"
+  },
+  "creator": {
+    "followerCount": "13.3K",
+    "signature": "I help you build your dream physique!   📥 DM me COACH for 1-1 Coaching",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/itsvictorperez/avatar_e239958f.jpg",
+    "region": "PT",
+    "audienceRegions": [
+      {
+        "count": 16,
+        "country": "United Kingdom",
+        "percentage": "16.00%",
+        "countryCode": "GB"
+      },
+      {
+        "count": 6,
+        "country": "Germany",
+        "percentage": "6.00%",
+        "countryCode": "DE"
+      },
+      {
+        "count": 6,
+        "country": "Netherlands",
+        "percentage": "6.00%",
+        "countryCode": "NL"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/itsvictorperez/slideshow_1a571a29.webp",
+      "filename": "fitness-16-itsvictorperez-post-01-slide-01.webp",
+      "relativePath": "fitness-16-itsvictorperez-post-01/fitness-16-itsvictorperez-post-01-slide-01.webp"
+    },
+    {
+      "index": 2,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/itsvictorperez/slideshow_e6e88d8d.webp",
+      "filename": "fitness-16-itsvictorperez-post-01-slide-02.webp",
+      "relativePath": "fitness-16-itsvictorperez-post-01/fitness-16-itsvictorperez-post-01-slide-02.webp"
+    },
+    {
+      "index": 3,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/itsvictorperez/slideshow_db665fb1.webp",
+      "filename": "fitness-16-itsvictorperez-post-01-slide-03.webp",
+      "relativePath": "fitness-16-itsvictorperez-post-01/fitness-16-itsvictorperez-post-01-slide-03.webp"
+    }
+  ]
+}

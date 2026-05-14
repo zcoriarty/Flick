@@ -1,0 +1,83 @@
+{
+  "id": "wellness-15-deskofreference-post-03",
+  "niche": "Wellness",
+  "nicheSlug": "wellness",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/wellness",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/wellness?post=deskofreference%3A2",
+  "postNumber": 15,
+  "profile": "deskofreference",
+  "profileDisplayName": "deskofreference",
+  "slideshowIndex": 2,
+  "folder": "wellness-15-deskofreference-post-03",
+  "slideCount": 5,
+  "metrics": {
+    "views": "649.6K",
+    "likes": "140.7K",
+    "bookmarks": "36.0K",
+    "shares": null
+  },
+  "product": {
+    "medium": "Slideshow Education",
+    "name": "Nervous system regulation content",
+    "linkInBio": null
+  },
+  "creator": {
+    "followerCount": "9.3K",
+    "signature": "a desk for visual reference  hot girls have hobbies & regulated nervous systems  <3",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/deskofreference/avatar_6b2d9d2e.webp",
+    "region": "AU",
+    "audienceRegions": [
+      {
+        "count": 34,
+        "country": "United States",
+        "percentage": "26.15%",
+        "countryCode": "US"
+      },
+      {
+        "count": 15,
+        "country": "Philippines",
+        "percentage": "11.54%",
+        "countryCode": "PH"
+      },
+      {
+        "count": 7,
+        "country": "United Kingdom",
+        "percentage": "5.38%",
+        "countryCode": "GB"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/deskofreference/slideshow_0c384728.jpg",
+      "filename": "wellness-15-deskofreference-post-03-slide-01.jpg",
+      "relativePath": "wellness-15-deskofreference-post-03/wellness-15-deskofreference-post-03-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/deskofreference/slideshow_0e797539.jpg",
+      "filename": "wellness-15-deskofreference-post-03-slide-02.jpg",
+      "relativePath": "wellness-15-deskofreference-post-03/wellness-15-deskofreference-post-03-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/deskofreference/slideshow_027318ec.jpg",
+      "filename": "wellness-15-deskofreference-post-03-slide-03.jpg",
+      "relativePath": "wellness-15-deskofreference-post-03/wellness-15-deskofreference-post-03-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/deskofreference/slideshow_8fbd62ca.jpg",
+      "filename": "wellness-15-deskofreference-post-03-slide-04.jpg",
+      "relativePath": "wellness-15-deskofreference-post-03/wellness-15-deskofreference-post-03-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/deskofreference/slideshow_a9439335.jpg",
+      "filename": "wellness-15-deskofreference-post-03-slide-05.jpg",
+      "relativePath": "wellness-15-deskofreference-post-03/wellness-15-deskofreference-post-03-slide-05.jpg"
+    }
+  ]
+}

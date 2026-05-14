@@ -16,8 +16,16 @@ struct FlickRootView: View {
                 DashboardView()
             }
 
+            Tab(FlickSection.product.title, systemImage: FlickSection.product.systemImage, value: FlickSection.product) {
+                ProductView()
+            }
+
             Tab(FlickSection.create.title, systemImage: FlickSection.create.systemImage, value: FlickSection.create) {
                 CreateView()
+            }
+
+            Tab(FlickSection.templates.title, systemImage: FlickSection.templates.systemImage, value: FlickSection.templates) {
+                TemplatesView()
             }
 
             Tab(FlickSection.queue.title, systemImage: FlickSection.queue.systemImage, value: FlickSection.queue) {

@@ -1,0 +1,106 @@
+{
+  "id": "fitness-02-thegymgirlssociety-post-01",
+  "niche": "fitness",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/fitness",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/fitness?post=thegymgirlssociety%3A0",
+  "postNumber": 2,
+  "profile": "thegymgirlssociety",
+  "profileDisplayName": "The GymGirls’ Society",
+  "slideshowIndex": 0,
+  "folder": "fitness-02-thegymgirlssociety-post-01",
+  "slideCount": 9,
+  "metrics": {
+    "views": "9.7M",
+    "likes": "913.7K",
+    "bookmarks": "808.7K",
+    "shares": null
+  },
+  "product": {
+    "medium": "Digital Planners",
+    "name": "Fitness planners and guides",
+    "linkInBio": "https://linktr.ee/thegymgirlssociety"
+  },
+  "creator": {
+    "followerCount": "64.9K",
+    "signature": "Guides,planners & more👇✨  💌 Thegymgirlssociety@gmail.com",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/thegymgirlssociety/avatar_7c1184fe.jpg",
+    "region": "DE",
+    "audienceRegions": [
+      {
+        "count": 22,
+        "country": "United States",
+        "percentage": "20.95%",
+        "countryCode": "US"
+      },
+      {
+        "count": 21,
+        "country": "United Kingdom",
+        "percentage": "20.00%",
+        "countryCode": "GB"
+      },
+      {
+        "count": 6,
+        "country": "Philippines",
+        "percentage": "5.71%",
+        "countryCode": "PH"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/thegymgirlssociety/slideshow_65a335bc.jpg",
+      "filename": "fitness-02-thegymgirlssociety-post-01-slide-01.jpg",
+      "relativePath": "fitness-02-thegymgirlssociety-post-01/fitness-02-thegymgirlssociety-post-01-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/thegymgirlssociety/slideshow_7e027852.jpg",
+      "filename": "fitness-02-thegymgirlssociety-post-01-slide-02.jpg",
+      "relativePath": "fitness-02-thegymgirlssociety-post-01/fitness-02-thegymgirlssociety-post-01-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/thegymgirlssociety/slideshow_d164dec5.jpg",
+      "filename": "fitness-02-thegymgirlssociety-post-01-slide-03.jpg",
+      "relativePath": "fitness-02-thegymgirlssociety-post-01/fitness-02-thegymgirlssociety-post-01-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/thegymgirlssociety/slideshow_254018ae.jpg",
+      "filename": "fitness-02-thegymgirlssociety-post-01-slide-04.jpg",
+      "relativePath": "fitness-02-thegymgirlssociety-post-01/fitness-02-thegymgirlssociety-post-01-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/thegymgirlssociety/slideshow_57c3728d.jpg",
+      "filename": "fitness-02-thegymgirlssociety-post-01-slide-05.jpg",
+      "relativePath": "fitness-02-thegymgirlssociety-post-01/fitness-02-thegymgirlssociety-post-01-slide-05.jpg"
+    },
+    {
+      "index": 6,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/thegymgirlssociety/slideshow_7df5ab5a.jpg",
+      "filename": "fitness-02-thegymgirlssociety-post-01-slide-06.jpg",
+      "relativePath": "fitness-02-thegymgirlssociety-post-01/fitness-02-thegymgirlssociety-post-01-slide-06.jpg"
+    },
+    {
+      "index": 7,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/thegymgirlssociety/slideshow_9dcce14d.jpg",
+      "filename": "fitness-02-thegymgirlssociety-post-01-slide-07.jpg",
+      "relativePath": "fitness-02-thegymgirlssociety-post-01/fitness-02-thegymgirlssociety-post-01-slide-07.jpg"
+    },
+    {
+      "index": 8,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/thegymgirlssociety/slideshow_9e31ed0c.jpg",
+      "filename": "fitness-02-thegymgirlssociety-post-01-slide-08.jpg",
+      "relativePath": "fitness-02-thegymgirlssociety-post-01/fitness-02-thegymgirlssociety-post-01-slide-08.jpg"
+    },
+    {
+      "index": 9,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/thegymgirlssociety/slideshow_04320ad4.jpg",
+      "filename": "fitness-02-thegymgirlssociety-post-01-slide-09.jpg",
+      "relativePath": "fitness-02-thegymgirlssociety-post-01/fitness-02-thegymgirlssociety-post-01-slide-09.jpg"
+    }
+  ]
+}

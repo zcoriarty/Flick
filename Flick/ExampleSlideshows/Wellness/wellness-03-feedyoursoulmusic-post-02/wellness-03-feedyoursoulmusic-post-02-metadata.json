@@ -1,0 +1,83 @@
+{
+  "id": "wellness-03-feedyoursoulmusic-post-02",
+  "niche": "Wellness",
+  "nicheSlug": "wellness",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/wellness",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/wellness?post=feedyoursoulmusic%3A1",
+  "postNumber": 3,
+  "profile": "feedyoursoulmusic",
+  "profileDisplayName": "Feed Your Soul",
+  "slideshowIndex": 1,
+  "folder": "wellness-03-feedyoursoulmusic-post-02",
+  "slideCount": 5,
+  "metrics": {
+    "views": "7.9M",
+    "likes": "455.9K",
+    "bookmarks": "206.6K",
+    "shares": null
+  },
+  "product": {
+    "medium": "None",
+    "name": "Analysis failed",
+    "linkInBio": "linktr.ee/feedyoursoulmusic"
+  },
+  "creator": {
+    "followerCount": "584.4K",
+    "signature": "Heal your mind, body and soul through music 🌞  Feed Your Soul on Spotify 🌿",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/feedyoursoulmusic/avatar_663bc140.webp",
+    "region": "SI",
+    "audienceRegions": [
+      {
+        "count": 23,
+        "country": "United States",
+        "percentage": "18.85%",
+        "countryCode": "US"
+      },
+      {
+        "count": 12,
+        "country": "United Kingdom",
+        "percentage": "9.84%",
+        "countryCode": "GB"
+      },
+      {
+        "count": 6,
+        "country": "Brazil",
+        "percentage": "4.92%",
+        "countryCode": "BR"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/feedyoursoulmusic/slideshow_318a5ce1.jpg",
+      "filename": "wellness-03-feedyoursoulmusic-post-02-slide-01.jpg",
+      "relativePath": "wellness-03-feedyoursoulmusic-post-02/wellness-03-feedyoursoulmusic-post-02-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/feedyoursoulmusic/slideshow_cf1379d8.jpg",
+      "filename": "wellness-03-feedyoursoulmusic-post-02-slide-02.jpg",
+      "relativePath": "wellness-03-feedyoursoulmusic-post-02/wellness-03-feedyoursoulmusic-post-02-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/feedyoursoulmusic/slideshow_b61a4913.jpg",
+      "filename": "wellness-03-feedyoursoulmusic-post-02-slide-03.jpg",
+      "relativePath": "wellness-03-feedyoursoulmusic-post-02/wellness-03-feedyoursoulmusic-post-02-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/feedyoursoulmusic/slideshow_e170e5e7.jpg",
+      "filename": "wellness-03-feedyoursoulmusic-post-02-slide-04.jpg",
+      "relativePath": "wellness-03-feedyoursoulmusic-post-02/wellness-03-feedyoursoulmusic-post-02-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/feedyoursoulmusic/slideshow_dd96bb26.jpg",
+      "filename": "wellness-03-feedyoursoulmusic-post-02-slide-05.jpg",
+      "relativePath": "wellness-03-feedyoursoulmusic-post-02/wellness-03-feedyoursoulmusic-post-02-slide-05.jpg"
+    }
+  ]
+}

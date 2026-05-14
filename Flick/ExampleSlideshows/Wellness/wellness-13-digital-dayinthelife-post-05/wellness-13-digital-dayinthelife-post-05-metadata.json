@@ -1,0 +1,83 @@
+{
+  "id": "wellness-13-digital-dayinthelife-post-05",
+  "niche": "Wellness",
+  "nicheSlug": "wellness",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/wellness",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/wellness?post=digital.dayinthelife%3A4",
+  "postNumber": 13,
+  "profile": "digital.dayinthelife",
+  "profileDisplayName": "🪷",
+  "slideshowIndex": 4,
+  "folder": "wellness-13-digital-dayinthelife-post-05",
+  "slideCount": 5,
+  "metrics": {
+    "views": "673.4K",
+    "likes": "153.9K",
+    "bookmarks": "81.4K",
+    "shares": null
+  },
+  "product": {
+    "medium": "YouTube",
+    "name": "YouTube channel growth content",
+    "linkInBio": "https://youtube.com/@digital.dayinthelife?si=yPfgkhOPUONGsFYS"
+  },
+  "creator": {
+    "followerCount": "1.6K",
+    "signature": "posting my mind safe space🕯️",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/digital.dayinthelife/avatar_5effc91e.webp",
+    "region": "US",
+    "audienceRegions": [
+      {
+        "count": 40,
+        "country": "United States",
+        "percentage": "27.97%",
+        "countryCode": "US"
+      },
+      {
+        "count": 8,
+        "country": "Canada",
+        "percentage": "5.59%",
+        "countryCode": "CA"
+      },
+      {
+        "count": 8,
+        "country": "Brazil",
+        "percentage": "5.59%",
+        "countryCode": "BR"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/digital.dayinthelife/slideshow_d71e617a.jpg",
+      "filename": "wellness-13-digital-dayinthelife-post-05-slide-01.jpg",
+      "relativePath": "wellness-13-digital-dayinthelife-post-05/wellness-13-digital-dayinthelife-post-05-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/digital.dayinthelife/slideshow_21651d03.jpg",
+      "filename": "wellness-13-digital-dayinthelife-post-05-slide-02.jpg",
+      "relativePath": "wellness-13-digital-dayinthelife-post-05/wellness-13-digital-dayinthelife-post-05-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/digital.dayinthelife/slideshow_2293ab24.jpg",
+      "filename": "wellness-13-digital-dayinthelife-post-05-slide-03.jpg",
+      "relativePath": "wellness-13-digital-dayinthelife-post-05/wellness-13-digital-dayinthelife-post-05-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/digital.dayinthelife/slideshow_fa3fb550.jpg",
+      "filename": "wellness-13-digital-dayinthelife-post-05-slide-04.jpg",
+      "relativePath": "wellness-13-digital-dayinthelife-post-05/wellness-13-digital-dayinthelife-post-05-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/digital.dayinthelife/slideshow_dcae4fac.jpg",
+      "filename": "wellness-13-digital-dayinthelife-post-05-slide-05.jpg",
+      "relativePath": "wellness-13-digital-dayinthelife-post-05/wellness-13-digital-dayinthelife-post-05-slide-05.jpg"
+    }
+  ]
+}

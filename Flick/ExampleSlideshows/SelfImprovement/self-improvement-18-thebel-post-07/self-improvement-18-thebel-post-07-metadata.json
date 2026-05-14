@@ -1,0 +1,95 @@
+{
+  "id": "self-improvement-18-thebel-post-07",
+  "niche": "Self Improvement",
+  "nicheSlug": "self-improvement",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/self-improvement",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/self-improvement?post=thebel_%3A6",
+  "postNumber": 18,
+  "profile": "thebel_",
+  "profileDisplayName": "THEBEL",
+  "slideshowIndex": 6,
+  "folder": "self-improvement-18-thebel-post-07",
+  "slideCount": 7,
+  "metrics": {
+    "views": "1.6M",
+    "likes": "393.6K",
+    "bookmarks": "184.1K",
+    "shares": null
+  },
+  "product": {
+    "medium": "E-commerce store",
+    "name": "Personal development/productivity content",
+    "linkInBio": "https://shopmy.us/thebel"
+  },
+  "creator": {
+    "followerCount": "139.9K",
+    "signature": "Changing your perception✨ PR: thebelwork@gmail.com💌",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/thebel_/avatar_636b8cb2.jpg",
+    "region": "FR",
+    "audienceRegions": [
+      {
+        "count": 16,
+        "country": "United States",
+        "percentage": "16.00%",
+        "countryCode": "US"
+      },
+      {
+        "count": 12,
+        "country": "United Kingdom",
+        "percentage": "12.00%",
+        "countryCode": "GB"
+      },
+      {
+        "count": 8,
+        "country": "Philippines",
+        "percentage": "8.00%",
+        "countryCode": "PH"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/thebel_/slideshow_410ba8f9.jpg",
+      "filename": "self-improvement-18-thebel-post-07-slide-01.jpg",
+      "relativePath": "self-improvement-18-thebel-post-07/self-improvement-18-thebel-post-07-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/thebel_/slideshow_a36195df.jpg",
+      "filename": "self-improvement-18-thebel-post-07-slide-02.jpg",
+      "relativePath": "self-improvement-18-thebel-post-07/self-improvement-18-thebel-post-07-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/thebel_/slideshow_4dcd7014.jpg",
+      "filename": "self-improvement-18-thebel-post-07-slide-03.jpg",
+      "relativePath": "self-improvement-18-thebel-post-07/self-improvement-18-thebel-post-07-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/thebel_/slideshow_b19f7b1c.jpg",
+      "filename": "self-improvement-18-thebel-post-07-slide-04.jpg",
+      "relativePath": "self-improvement-18-thebel-post-07/self-improvement-18-thebel-post-07-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/thebel_/slideshow_e5d5eedd.jpg",
+      "filename": "self-improvement-18-thebel-post-07-slide-05.jpg",
+      "relativePath": "self-improvement-18-thebel-post-07/self-improvement-18-thebel-post-07-slide-05.jpg"
+    },
+    {
+      "index": 6,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/thebel_/slideshow_d06a3ff8.jpg",
+      "filename": "self-improvement-18-thebel-post-07-slide-06.jpg",
+      "relativePath": "self-improvement-18-thebel-post-07/self-improvement-18-thebel-post-07-slide-06.jpg"
+    },
+    {
+      "index": 7,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/thebel_/slideshow_8b20d1e2.jpg",
+      "filename": "self-improvement-18-thebel-post-07-slide-07.jpg",
+      "relativePath": "self-improvement-18-thebel-post-07/self-improvement-18-thebel-post-07-slide-07.jpg"
+    }
+  ]
+}

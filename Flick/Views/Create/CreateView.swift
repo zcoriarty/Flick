@@ -69,7 +69,7 @@ struct CreateView: View {
                     ResponsiveGrid(minimum: 190) {
                         StrategyBriefTile(title: "App feature", value: appModel.overview.campaigns.first?.appFeature ?? "Unassigned", systemImage: "app.badge")
                         StrategyBriefTile(title: "Audience", value: appModel.overview.campaigns.first?.audience ?? "Unassigned", systemImage: "person.text.rectangle")
-                        StrategyBriefTile(title: "CTA", value: "Unassigned", systemImage: "arrow.up.forward.circle")
+                        StrategyBriefTile(title: "Product media", value: "\(appModel.productMediaAssets.count)", systemImage: "photo.stack")
                         StrategyBriefTile(title: "Slide count", value: "\(appModel.overview.drafts.first?.slides.count ?? 0)", systemImage: "rectangle.stack")
                     }
                 }
@@ -80,12 +80,14 @@ struct CreateView: View {
     @ViewBuilder
     private var draftPreview: some View {
         if let draft = appModel.overview.drafts.first {
+            let assetsByID = Dictionary(uniqueKeysWithValues: appModel.overview.assets.map { ($0.id, $0) })
+
             VStack(alignment: .leading, spacing: 12) {
                 SectionTitle(title: "Slideshow draft", subtitle: "Text overlays, ordering, preview, and platform targets", systemImage: "rectangle.stack.badge.play")
 
                 ResponsiveGrid(minimum: 230) {
                     ForEach(draft.slides) { slide in
-                        SlidePreviewCard(slide: slide)
+                        SlidePreviewCard(slide: slide, asset: slide.imageAssetID.flatMap { assetsByID[$0] })
                     }
                 }
 
@@ -199,16 +201,23 @@ private struct StrategyBriefTile: View {
 
 private struct SlidePreviewCard: View {
     var slide: Slide
+    var asset: MediaAsset?
 
     var body: some View {
         FlickGlassCard {
             VStack(alignment: .leading, spacing: 12) {
                 ZStack {
-                    LinearGradient(
-                        colors: [slide.role.tint.opacity(0.65), .black.opacity(0.8)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+                    if let localFilePath = asset?.localFilePath {
+                        LocalAssetImage(fileURL: URL(fileURLWithPath: localFilePath))
+                            .overlay(.black.opacity(0.18))
+                    } else {
+                        LinearGradient(
+                            colors: [slide.role.tint.opacity(0.65), .black.opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    }
+
                     VStack(spacing: 14) {
                         Text(slide.overlayText)
                             .font(.system(.title3, design: .rounded, weight: .black))

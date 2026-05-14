@@ -1,0 +1,88 @@
+{
+  "id": "fitness-05-app-journai-post-08",
+  "niche": "fitness",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/fitness",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/fitness?post=app.journai%3A7",
+  "postNumber": 5,
+  "profile": "app.journai",
+  "profileDisplayName": "💪",
+  "slideshowIndex": 7,
+  "folder": "fitness-05-app-journai-post-08",
+  "slideCount": 6,
+  "metrics": {
+    "views": "1.7M",
+    "likes": "269.8K",
+    "bookmarks": "35.6K",
+    "shares": null
+  },
+  "product": {
+    "medium": "Mobile App",
+    "name": "JournAI fitness tracking app",
+    "linkInBio": "linktr.ee/stella_diaries"
+  },
+  "creator": {
+    "followerCount": "3.3K",
+    "signature": "🤍 Search JounAI in the App store",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/app.journai/avatar_45a451e1.webp",
+    "region": "MT",
+    "audienceRegions": [
+      {
+        "count": 22,
+        "country": "United States",
+        "percentage": "21.15%",
+        "countryCode": "US"
+      },
+      {
+        "count": 11,
+        "country": "United Kingdom",
+        "percentage": "10.58%",
+        "countryCode": "GB"
+      },
+      {
+        "count": 10,
+        "country": "Australia",
+        "percentage": "9.62%",
+        "countryCode": "AU"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/app.journai/slideshow_9466bae2.jpg",
+      "filename": "fitness-05-app-journai-post-08-slide-01.jpg",
+      "relativePath": "fitness-05-app-journai-post-08/fitness-05-app-journai-post-08-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/app.journai/slideshow_294412e0.jpg",
+      "filename": "fitness-05-app-journai-post-08-slide-02.jpg",
+      "relativePath": "fitness-05-app-journai-post-08/fitness-05-app-journai-post-08-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/app.journai/slideshow_d2a02327.jpg",
+      "filename": "fitness-05-app-journai-post-08-slide-03.jpg",
+      "relativePath": "fitness-05-app-journai-post-08/fitness-05-app-journai-post-08-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/app.journai/slideshow_8b33cbfb.jpg",
+      "filename": "fitness-05-app-journai-post-08-slide-04.jpg",
+      "relativePath": "fitness-05-app-journai-post-08/fitness-05-app-journai-post-08-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/app.journai/slideshow_ada7532e.jpg",
+      "filename": "fitness-05-app-journai-post-08-slide-05.jpg",
+      "relativePath": "fitness-05-app-journai-post-08/fitness-05-app-journai-post-08-slide-05.jpg"
+    },
+    {
+      "index": 6,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/app.journai/slideshow_07140681.jpg",
+      "filename": "fitness-05-app-journai-post-08-slide-06.jpg",
+      "relativePath": "fitness-05-app-journai-post-08/fitness-05-app-journai-post-08-slide-06.jpg"
+    }
+  ]
+}

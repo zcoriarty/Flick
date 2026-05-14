@@ -1,0 +1,89 @@
+{
+  "id": "self-improvement-14-my-audio-diary-post-02",
+  "niche": "Self Improvement",
+  "nicheSlug": "self-improvement",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/self-improvement",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/self-improvement?post=my.audio.diary%3A1",
+  "postNumber": 14,
+  "profile": "my.audio.diary",
+  "profileDisplayName": "audio.diary",
+  "slideshowIndex": 1,
+  "folder": "self-improvement-14-my-audio-diary-post-02",
+  "slideCount": 6,
+  "metrics": {
+    "views": "2.6M",
+    "likes": "465.3K",
+    "bookmarks": "239.9K",
+    "shares": null
+  },
+  "product": {
+    "medium": "B2C App",
+    "name": "Podcast learning app (Recite)",
+    "linkInBio": "https://apps.apple.com/app/apple-store/id6727002784?pt=127250431&ct=tiktok&mt=8"
+  },
+  "creator": {
+    "followerCount": "38.0K",
+    "signature": "mindful living for deep thinkers 🌿  Checkout recite on the App Store👇🏼",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/my.audio.diary/avatar_f057edd9.jpg",
+    "region": "CA",
+    "audienceRegions": [
+      {
+        "count": 27,
+        "country": "United States",
+        "percentage": "26.47%",
+        "countryCode": "US"
+      },
+      {
+        "count": 8,
+        "country": "Germany",
+        "percentage": "7.84%",
+        "countryCode": "DE"
+      },
+      {
+        "count": 7,
+        "country": "Canada",
+        "percentage": "6.86%",
+        "countryCode": "CA"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/my.audio.diary/slideshow_9e290e88.jpg",
+      "filename": "self-improvement-14-my-audio-diary-post-02-slide-01.jpg",
+      "relativePath": "self-improvement-14-my-audio-diary-post-02/self-improvement-14-my-audio-diary-post-02-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/my.audio.diary/slideshow_3919009d.jpg",
+      "filename": "self-improvement-14-my-audio-diary-post-02-slide-02.jpg",
+      "relativePath": "self-improvement-14-my-audio-diary-post-02/self-improvement-14-my-audio-diary-post-02-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/my.audio.diary/slideshow_22cc6b9f.jpg",
+      "filename": "self-improvement-14-my-audio-diary-post-02-slide-03.jpg",
+      "relativePath": "self-improvement-14-my-audio-diary-post-02/self-improvement-14-my-audio-diary-post-02-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/my.audio.diary/slideshow_a31439e2.jpg",
+      "filename": "self-improvement-14-my-audio-diary-post-02-slide-04.jpg",
+      "relativePath": "self-improvement-14-my-audio-diary-post-02/self-improvement-14-my-audio-diary-post-02-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/my.audio.diary/slideshow_1888ae7a.jpg",
+      "filename": "self-improvement-14-my-audio-diary-post-02-slide-05.jpg",
+      "relativePath": "self-improvement-14-my-audio-diary-post-02/self-improvement-14-my-audio-diary-post-02-slide-05.jpg"
+    },
+    {
+      "index": 6,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/my.audio.diary/slideshow_e3787bd6.jpg",
+      "filename": "self-improvement-14-my-audio-diary-post-02-slide-06.jpg",
+      "relativePath": "self-improvement-14-my-audio-diary-post-02/self-improvement-14-my-audio-diary-post-02-slide-06.jpg"
+    }
+  ]
+}

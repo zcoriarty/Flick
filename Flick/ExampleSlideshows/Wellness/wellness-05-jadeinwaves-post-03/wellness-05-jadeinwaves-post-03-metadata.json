@@ -1,0 +1,89 @@
+{
+  "id": "wellness-05-jadeinwaves-post-03",
+  "niche": "Wellness",
+  "nicheSlug": "wellness",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/wellness",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/wellness?post=jadeinwaves%3A2",
+  "postNumber": 5,
+  "profile": "jadeinwaves",
+  "profileDisplayName": "jade",
+  "slideshowIndex": 2,
+  "folder": "wellness-05-jadeinwaves-post-03",
+  "slideCount": 6,
+  "metrics": {
+    "views": "3.9M",
+    "likes": "438.2K",
+    "bookmarks": "157.0K",
+    "shares": null
+  },
+  "product": {
+    "medium": "Mobile App",
+    "name": "Vent Now app",
+    "linkInBio": null
+  },
+  "creator": {
+    "followerCount": "8.4K",
+    "signature": "your go to for the girls niche advice✨ CEO of 5 tips ♥️ 💌: jadeheals123@gmail.com",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/jadeinwaves/avatar_027fb2a2.webp",
+    "region": "US",
+    "audienceRegions": [
+      {
+        "count": 29,
+        "country": "United States",
+        "percentage": "25.00%",
+        "countryCode": "US"
+      },
+      {
+        "count": 15,
+        "country": "Australia",
+        "percentage": "12.93%",
+        "countryCode": "AU"
+      },
+      {
+        "count": 13,
+        "country": "United Kingdom",
+        "percentage": "11.21%",
+        "countryCode": "GB"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/jadeinwaves/slideshow_cdbf7c5f.jpg",
+      "filename": "wellness-05-jadeinwaves-post-03-slide-01.jpg",
+      "relativePath": "wellness-05-jadeinwaves-post-03/wellness-05-jadeinwaves-post-03-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/jadeinwaves/slideshow_2526194d.jpg",
+      "filename": "wellness-05-jadeinwaves-post-03-slide-02.jpg",
+      "relativePath": "wellness-05-jadeinwaves-post-03/wellness-05-jadeinwaves-post-03-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/jadeinwaves/slideshow_6495a604.jpg",
+      "filename": "wellness-05-jadeinwaves-post-03-slide-03.jpg",
+      "relativePath": "wellness-05-jadeinwaves-post-03/wellness-05-jadeinwaves-post-03-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/jadeinwaves/slideshow_7f08bbee.jpg",
+      "filename": "wellness-05-jadeinwaves-post-03-slide-04.jpg",
+      "relativePath": "wellness-05-jadeinwaves-post-03/wellness-05-jadeinwaves-post-03-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/jadeinwaves/slideshow_2e780fec.jpg",
+      "filename": "wellness-05-jadeinwaves-post-03-slide-05.jpg",
+      "relativePath": "wellness-05-jadeinwaves-post-03/wellness-05-jadeinwaves-post-03-slide-05.jpg"
+    },
+    {
+      "index": 6,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/jadeinwaves/slideshow_3530f467.jpg",
+      "filename": "wellness-05-jadeinwaves-post-03-slide-06.jpg",
+      "relativePath": "wellness-05-jadeinwaves-post-03/wellness-05-jadeinwaves-post-03-slide-06.jpg"
+    }
+  ]
+}

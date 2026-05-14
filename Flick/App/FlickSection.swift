@@ -7,7 +7,9 @@ import Foundation
 
 enum FlickSection: String, CaseIterable, Identifiable {
     case dashboard
+    case product
     case create
+    case templates
     case queue
     case trends
     case analytics
@@ -19,7 +21,9 @@ enum FlickSection: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .dashboard: "Dashboard"
+        case .product: "Product"
         case .create: "Create"
+        case .templates: "Templates"
         case .queue: "Queue"
         case .trends: "Trends"
         case .analytics: "Analytics"
@@ -31,7 +35,9 @@ enum FlickSection: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .dashboard: "house"
+        case .product: "shippingbox"
         case .create: "wand.and.sparkles"
+        case .templates: "rectangle.stack.badge.play"
         case .queue: "calendar.badge.clock"
         case .trends: "sparkles.rectangle.stack"
         case .analytics: "chart.xyaxis.line"

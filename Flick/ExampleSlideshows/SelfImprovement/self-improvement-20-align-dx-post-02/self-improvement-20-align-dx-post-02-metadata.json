@@ -1,0 +1,70 @@
+{
+  "id": "self-improvement-20-align-dx-post-02",
+  "niche": "Self Improvement",
+  "nicheSlug": "self-improvement",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/self-improvement",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/self-improvement?post=align.dx%3A1",
+  "postNumber": 20,
+  "profile": "align.dx",
+  "profileDisplayName": "Align",
+  "slideshowIndex": 1,
+  "folder": "self-improvement-20-align-dx-post-02",
+  "slideCount": 6,
+  "metrics": {
+    "views": "2.2M",
+    "likes": "376.1K",
+    "bookmarks": "180.8K",
+    "shares": null
+  },
+  "product": {
+    "medium": "App",
+    "name": "Productivity planning app/system",
+    "linkInBio": "https://linktr.ee/align.dx"
+  },
+  "creator": {
+    "followerCount": "92.2K",
+    "signature": "A new way to plan.  Build better habits ↓",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/align.dx/avatar_30f8c524.jpg",
+    "region": null,
+    "audienceRegions": []
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/align.dx/slideshow_c66dfa7a.jpg",
+      "filename": "self-improvement-20-align-dx-post-02-slide-01.jpg",
+      "relativePath": "self-improvement-20-align-dx-post-02/self-improvement-20-align-dx-post-02-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/align.dx/slideshow_ab339c39.jpg",
+      "filename": "self-improvement-20-align-dx-post-02-slide-02.jpg",
+      "relativePath": "self-improvement-20-align-dx-post-02/self-improvement-20-align-dx-post-02-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/align.dx/slideshow_e6955fc6.jpg",
+      "filename": "self-improvement-20-align-dx-post-02-slide-03.jpg",
+      "relativePath": "self-improvement-20-align-dx-post-02/self-improvement-20-align-dx-post-02-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/align.dx/slideshow_9625f1a3.jpg",
+      "filename": "self-improvement-20-align-dx-post-02-slide-04.jpg",
+      "relativePath": "self-improvement-20-align-dx-post-02/self-improvement-20-align-dx-post-02-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/align.dx/slideshow_6aa7e51b.jpg",
+      "filename": "self-improvement-20-align-dx-post-02-slide-05.jpg",
+      "relativePath": "self-improvement-20-align-dx-post-02/self-improvement-20-align-dx-post-02-slide-05.jpg"
+    },
+    {
+      "index": 6,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/align.dx/slideshow_048f9985.jpg",
+      "filename": "self-improvement-20-align-dx-post-02-slide-06.jpg",
+      "relativePath": "self-improvement-20-align-dx-post-02/self-improvement-20-align-dx-post-02-slide-06.jpg"
+    }
+  ]
+}

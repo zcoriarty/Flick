@@ -1,0 +1,89 @@
+{
+  "id": "self-improvement-12-my-collected-notes-post-02",
+  "niche": "Self Improvement",
+  "nicheSlug": "self-improvement",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/self-improvement",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/self-improvement?post=my.collected.notes%3A1",
+  "postNumber": 12,
+  "profile": "my.collected.notes",
+  "profileDisplayName": "collected.notes",
+  "slideshowIndex": 1,
+  "folder": "self-improvement-12-my-collected-notes-post-02",
+  "slideCount": 6,
+  "metrics": {
+    "views": "3.1M",
+    "likes": "474.1K",
+    "bookmarks": "236.4K",
+    "shares": null
+  },
+  "product": {
+    "medium": "B2C App",
+    "name": "Periplus.app learning platform affiliate",
+    "linkInBio": null
+  },
+  "creator": {
+    "followerCount": "14.3K",
+    "signature": "perpetually curious about everything 🌿  periplus.app partner!",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/my.collected.notes/avatar_3922e936.webp",
+    "region": "DE",
+    "audienceRegions": [
+      {
+        "count": 11,
+        "country": "United States",
+        "percentage": "10.28%",
+        "countryCode": "US"
+      },
+      {
+        "count": 11,
+        "country": "Canada",
+        "percentage": "10.28%",
+        "countryCode": "CA"
+      },
+      {
+        "count": 10,
+        "country": "Philippines",
+        "percentage": "9.35%",
+        "countryCode": "PH"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/my.collected.notes/slideshow_1928454a.jpg",
+      "filename": "self-improvement-12-my-collected-notes-post-02-slide-01.jpg",
+      "relativePath": "self-improvement-12-my-collected-notes-post-02/self-improvement-12-my-collected-notes-post-02-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/my.collected.notes/slideshow_e5d4a9ad.jpg",
+      "filename": "self-improvement-12-my-collected-notes-post-02-slide-02.jpg",
+      "relativePath": "self-improvement-12-my-collected-notes-post-02/self-improvement-12-my-collected-notes-post-02-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/my.collected.notes/slideshow_35ea35f8.jpg",
+      "filename": "self-improvement-12-my-collected-notes-post-02-slide-03.jpg",
+      "relativePath": "self-improvement-12-my-collected-notes-post-02/self-improvement-12-my-collected-notes-post-02-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/my.collected.notes/slideshow_9befa9be.jpg",
+      "filename": "self-improvement-12-my-collected-notes-post-02-slide-04.jpg",
+      "relativePath": "self-improvement-12-my-collected-notes-post-02/self-improvement-12-my-collected-notes-post-02-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/my.collected.notes/slideshow_602fc113.jpg",
+      "filename": "self-improvement-12-my-collected-notes-post-02-slide-05.jpg",
+      "relativePath": "self-improvement-12-my-collected-notes-post-02/self-improvement-12-my-collected-notes-post-02-slide-05.jpg"
+    },
+    {
+      "index": 6,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/my.collected.notes/slideshow_928d0b60.jpg",
+      "filename": "self-improvement-12-my-collected-notes-post-02-slide-06.jpg",
+      "relativePath": "self-improvement-12-my-collected-notes-post-02/self-improvement-12-my-collected-notes-post-02-slide-06.jpg"
+    }
+  ]
+}

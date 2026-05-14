@@ -1,0 +1,101 @@
+{
+  "id": "wellness-16-deskofreference-post-01",
+  "niche": "Wellness",
+  "nicheSlug": "wellness",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/wellness",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/wellness?post=deskofreference%3A0",
+  "postNumber": 16,
+  "profile": "deskofreference",
+  "profileDisplayName": "deskofreference",
+  "slideshowIndex": 0,
+  "folder": "wellness-16-deskofreference-post-01",
+  "slideCount": 8,
+  "metrics": {
+    "views": "819.2K",
+    "likes": "133.1K",
+    "bookmarks": "40.6K",
+    "shares": null
+  },
+  "product": {
+    "medium": "Slideshow Education",
+    "name": "Nervous system regulation content",
+    "linkInBio": null
+  },
+  "creator": {
+    "followerCount": "9.3K",
+    "signature": "a desk for visual reference  hot girls have hobbies & regulated nervous systems  <3",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/deskofreference/avatar_6b2d9d2e.webp",
+    "region": "AU",
+    "audienceRegions": [
+      {
+        "count": 34,
+        "country": "United States",
+        "percentage": "26.15%",
+        "countryCode": "US"
+      },
+      {
+        "count": 15,
+        "country": "Philippines",
+        "percentage": "11.54%",
+        "countryCode": "PH"
+      },
+      {
+        "count": 7,
+        "country": "United Kingdom",
+        "percentage": "5.38%",
+        "countryCode": "GB"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/deskofreference/slideshow_5a2c1b6a.jpg",
+      "filename": "wellness-16-deskofreference-post-01-slide-01.jpg",
+      "relativePath": "wellness-16-deskofreference-post-01/wellness-16-deskofreference-post-01-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/deskofreference/slideshow_fd4b3af9.jpg",
+      "filename": "wellness-16-deskofreference-post-01-slide-02.jpg",
+      "relativePath": "wellness-16-deskofreference-post-01/wellness-16-deskofreference-post-01-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/deskofreference/slideshow_2debc6c4.jpg",
+      "filename": "wellness-16-deskofreference-post-01-slide-03.jpg",
+      "relativePath": "wellness-16-deskofreference-post-01/wellness-16-deskofreference-post-01-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/deskofreference/slideshow_ece55232.jpg",
+      "filename": "wellness-16-deskofreference-post-01-slide-04.jpg",
+      "relativePath": "wellness-16-deskofreference-post-01/wellness-16-deskofreference-post-01-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/deskofreference/slideshow_b2e8b7f1.jpg",
+      "filename": "wellness-16-deskofreference-post-01-slide-05.jpg",
+      "relativePath": "wellness-16-deskofreference-post-01/wellness-16-deskofreference-post-01-slide-05.jpg"
+    },
+    {
+      "index": 6,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/deskofreference/slideshow_29ddd955.jpg",
+      "filename": "wellness-16-deskofreference-post-01-slide-06.jpg",
+      "relativePath": "wellness-16-deskofreference-post-01/wellness-16-deskofreference-post-01-slide-06.jpg"
+    },
+    {
+      "index": 7,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/deskofreference/slideshow_0dd38c49.jpg",
+      "filename": "wellness-16-deskofreference-post-01-slide-07.jpg",
+      "relativePath": "wellness-16-deskofreference-post-01/wellness-16-deskofreference-post-01-slide-07.jpg"
+    },
+    {
+      "index": 8,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/deskofreference/slideshow_5e5540ef.jpg",
+      "filename": "wellness-16-deskofreference-post-01-slide-08.jpg",
+      "relativePath": "wellness-16-deskofreference-post-01/wellness-16-deskofreference-post-01-slide-08.jpg"
+    }
+  ]
+}

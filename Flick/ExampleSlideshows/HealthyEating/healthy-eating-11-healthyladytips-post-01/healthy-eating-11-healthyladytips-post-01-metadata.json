@@ -1,0 +1,107 @@
+{
+  "id": "healthy-eating-11-healthyladytips-post-01",
+  "niche": "Healthy Eating",
+  "nicheSlug": "healthy-eating",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/healthy-eating",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/healthy-eating?post=healthyladytips%3A0",
+  "postNumber": 11,
+  "profile": "healthyladytips",
+  "profileDisplayName": "healthyladytips",
+  "slideshowIndex": 0,
+  "folder": "healthy-eating-11-healthyladytips-post-01",
+  "slideCount": 9,
+  "metrics": {
+    "views": "5.4M",
+    "likes": "223.9K",
+    "bookmarks": "141.6K",
+    "shares": null
+  },
+  "product": {
+    "medium": "Amazon Product",
+    "name": "Serene Herbs Soursop Bitters supplement",
+    "linkInBio": null
+  },
+  "creator": {
+    "followerCount": "200.5K",
+    "signature": "People who keep asking about the soursop  You can get Serene Herbs Soursop Bitters on Amazon!",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/healthyladytips/avatar_6332a566.webp",
+    "region": "US",
+    "audienceRegions": [
+      {
+        "count": 13,
+        "country": "United States",
+        "percentage": "13.13%",
+        "countryCode": "US"
+      },
+      {
+        "count": 10,
+        "country": "South Africa",
+        "percentage": "10.10%",
+        "countryCode": "ZA"
+      },
+      {
+        "count": 8,
+        "country": "United Kingdom",
+        "percentage": "8.08%",
+        "countryCode": "GB"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/healthyladytips/slideshow_816f2b11.jpg",
+      "filename": "healthy-eating-11-healthyladytips-post-01-slide-01.jpg",
+      "relativePath": "healthy-eating-11-healthyladytips-post-01/healthy-eating-11-healthyladytips-post-01-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/healthyladytips/slideshow_efe6080e.jpg",
+      "filename": "healthy-eating-11-healthyladytips-post-01-slide-02.jpg",
+      "relativePath": "healthy-eating-11-healthyladytips-post-01/healthy-eating-11-healthyladytips-post-01-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/healthyladytips/slideshow_b3fc828d.jpg",
+      "filename": "healthy-eating-11-healthyladytips-post-01-slide-03.jpg",
+      "relativePath": "healthy-eating-11-healthyladytips-post-01/healthy-eating-11-healthyladytips-post-01-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/healthyladytips/slideshow_5f820fe7.jpg",
+      "filename": "healthy-eating-11-healthyladytips-post-01-slide-04.jpg",
+      "relativePath": "healthy-eating-11-healthyladytips-post-01/healthy-eating-11-healthyladytips-post-01-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/healthyladytips/slideshow_7d49ba39.jpg",
+      "filename": "healthy-eating-11-healthyladytips-post-01-slide-05.jpg",
+      "relativePath": "healthy-eating-11-healthyladytips-post-01/healthy-eating-11-healthyladytips-post-01-slide-05.jpg"
+    },
+    {
+      "index": 6,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/healthyladytips/slideshow_7250796f.jpg",
+      "filename": "healthy-eating-11-healthyladytips-post-01-slide-06.jpg",
+      "relativePath": "healthy-eating-11-healthyladytips-post-01/healthy-eating-11-healthyladytips-post-01-slide-06.jpg"
+    },
+    {
+      "index": 7,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/healthyladytips/slideshow_0d13e81e.jpg",
+      "filename": "healthy-eating-11-healthyladytips-post-01-slide-07.jpg",
+      "relativePath": "healthy-eating-11-healthyladytips-post-01/healthy-eating-11-healthyladytips-post-01-slide-07.jpg"
+    },
+    {
+      "index": 8,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/healthyladytips/slideshow_355afb1a.jpg",
+      "filename": "healthy-eating-11-healthyladytips-post-01-slide-08.jpg",
+      "relativePath": "healthy-eating-11-healthyladytips-post-01/healthy-eating-11-healthyladytips-post-01-slide-08.jpg"
+    },
+    {
+      "index": 9,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/healthyladytips/slideshow_f1d1c83a.jpg",
+      "filename": "healthy-eating-11-healthyladytips-post-01-slide-09.jpg",
+      "relativePath": "healthy-eating-11-healthyladytips-post-01/healthy-eating-11-healthyladytips-post-01-slide-09.jpg"
+    }
+  ]
+}

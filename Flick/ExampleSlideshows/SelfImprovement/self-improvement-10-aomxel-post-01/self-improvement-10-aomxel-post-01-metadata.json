@@ -1,0 +1,89 @@
+{
+  "id": "self-improvement-10-aomxel-post-01",
+  "niche": "Self Improvement",
+  "nicheSlug": "self-improvement",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/self-improvement",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/self-improvement?post=aomxel%3A0",
+  "postNumber": 10,
+  "profile": "aomxel",
+  "profileDisplayName": "⃟",
+  "slideshowIndex": 0,
+  "folder": "self-improvement-10-aomxel-post-01",
+  "slideCount": 6,
+  "metrics": {
+    "views": "2.8M",
+    "likes": "538.8K",
+    "bookmarks": "48.8K",
+    "shares": null
+  },
+  "product": {
+    "medium": "Beacons.ai",
+    "name": "High-quality methods/strategies for money",
+    "linkInBio": "beacons.ai/aomxel"
+  },
+  "creator": {
+    "followerCount": "9.9K",
+    "signature": "⬇️ 8K QUALITY METHOD ⬇️ beacons.ai/aomxel",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/aomxel/avatar_73ca86a7.webp",
+    "region": "US",
+    "audienceRegions": [
+      {
+        "count": 17,
+        "country": "United States",
+        "percentage": "13.71%",
+        "countryCode": "US"
+      },
+      {
+        "count": 10,
+        "country": "Vietnam",
+        "percentage": "8.06%",
+        "countryCode": "VN"
+      },
+      {
+        "count": 6,
+        "country": "Indonesia",
+        "percentage": "4.84%",
+        "countryCode": "ID"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/aomxel/slideshow_620b27bd.jpg",
+      "filename": "self-improvement-10-aomxel-post-01-slide-01.jpg",
+      "relativePath": "self-improvement-10-aomxel-post-01/self-improvement-10-aomxel-post-01-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/aomxel/slideshow_9083e4ea.jpg",
+      "filename": "self-improvement-10-aomxel-post-01-slide-02.jpg",
+      "relativePath": "self-improvement-10-aomxel-post-01/self-improvement-10-aomxel-post-01-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/aomxel/slideshow_b8cf729d.jpg",
+      "filename": "self-improvement-10-aomxel-post-01-slide-03.jpg",
+      "relativePath": "self-improvement-10-aomxel-post-01/self-improvement-10-aomxel-post-01-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/aomxel/slideshow_c48a621f.jpg",
+      "filename": "self-improvement-10-aomxel-post-01-slide-04.jpg",
+      "relativePath": "self-improvement-10-aomxel-post-01/self-improvement-10-aomxel-post-01-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/aomxel/slideshow_808c6bb4.jpg",
+      "filename": "self-improvement-10-aomxel-post-01-slide-05.jpg",
+      "relativePath": "self-improvement-10-aomxel-post-01/self-improvement-10-aomxel-post-01-slide-05.jpg"
+    },
+    {
+      "index": 6,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/aomxel/slideshow_da3c9713.jpg",
+      "filename": "self-improvement-10-aomxel-post-01-slide-06.jpg",
+      "relativePath": "self-improvement-10-aomxel-post-01/self-improvement-10-aomxel-post-01-slide-06.jpg"
+    }
+  ]
+}

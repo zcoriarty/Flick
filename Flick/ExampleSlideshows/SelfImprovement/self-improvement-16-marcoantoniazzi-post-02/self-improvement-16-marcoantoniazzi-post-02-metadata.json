@@ -1,0 +1,107 @@
+{
+  "id": "self-improvement-16-marcoantoniazzi-post-02",
+  "niche": "Self Improvement",
+  "nicheSlug": "self-improvement",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/self-improvement",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/self-improvement?post=marcoantoniazzi_%3A1",
+  "postNumber": 16,
+  "profile": "marcoantoniazzi_",
+  "profileDisplayName": "Marco Antoniazzi",
+  "slideshowIndex": 1,
+  "folder": "self-improvement-16-marcoantoniazzi-post-02",
+  "slideCount": 9,
+  "metrics": {
+    "views": "2.7M",
+    "likes": "410.2K",
+    "bookmarks": "259.3K",
+    "shares": null
+  },
+  "product": {
+    "medium": "Website",
+    "name": "DeBrainrot OS digital product",
+    "linkInBio": "DeBrainrotOS.com"
+  },
+  "creator": {
+    "followerCount": "87.4K",
+    "signature": "Using Neuroscience to Fix Brainrot 🧠",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/marcoantoniazzi_/avatar_d6ab011a.webp",
+    "region": "AU",
+    "audienceRegions": [
+      {
+        "count": 19,
+        "country": "United States",
+        "percentage": "19.00%",
+        "countryCode": "US"
+      },
+      {
+        "count": 9,
+        "country": "Philippines",
+        "percentage": "9.00%",
+        "countryCode": "PH"
+      },
+      {
+        "count": 6,
+        "country": "Australia",
+        "percentage": "6.00%",
+        "countryCode": "AU"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/marcoantoniazzi_/slideshow_c31f2fca.jpg",
+      "filename": "self-improvement-16-marcoantoniazzi-post-02-slide-01.jpg",
+      "relativePath": "self-improvement-16-marcoantoniazzi-post-02/self-improvement-16-marcoantoniazzi-post-02-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/marcoantoniazzi_/slideshow_13a57494.jpg",
+      "filename": "self-improvement-16-marcoantoniazzi-post-02-slide-02.jpg",
+      "relativePath": "self-improvement-16-marcoantoniazzi-post-02/self-improvement-16-marcoantoniazzi-post-02-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/marcoantoniazzi_/slideshow_077cfcbb.jpg",
+      "filename": "self-improvement-16-marcoantoniazzi-post-02-slide-03.jpg",
+      "relativePath": "self-improvement-16-marcoantoniazzi-post-02/self-improvement-16-marcoantoniazzi-post-02-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/marcoantoniazzi_/slideshow_345c5188.jpg",
+      "filename": "self-improvement-16-marcoantoniazzi-post-02-slide-04.jpg",
+      "relativePath": "self-improvement-16-marcoantoniazzi-post-02/self-improvement-16-marcoantoniazzi-post-02-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/marcoantoniazzi_/slideshow_162fc471.jpg",
+      "filename": "self-improvement-16-marcoantoniazzi-post-02-slide-05.jpg",
+      "relativePath": "self-improvement-16-marcoantoniazzi-post-02/self-improvement-16-marcoantoniazzi-post-02-slide-05.jpg"
+    },
+    {
+      "index": 6,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/marcoantoniazzi_/slideshow_823fe92e.jpg",
+      "filename": "self-improvement-16-marcoantoniazzi-post-02-slide-06.jpg",
+      "relativePath": "self-improvement-16-marcoantoniazzi-post-02/self-improvement-16-marcoantoniazzi-post-02-slide-06.jpg"
+    },
+    {
+      "index": 7,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/marcoantoniazzi_/slideshow_54b1a914.jpg",
+      "filename": "self-improvement-16-marcoantoniazzi-post-02-slide-07.jpg",
+      "relativePath": "self-improvement-16-marcoantoniazzi-post-02/self-improvement-16-marcoantoniazzi-post-02-slide-07.jpg"
+    },
+    {
+      "index": 8,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/marcoantoniazzi_/slideshow_f4117d6c.jpg",
+      "filename": "self-improvement-16-marcoantoniazzi-post-02-slide-08.jpg",
+      "relativePath": "self-improvement-16-marcoantoniazzi-post-02/self-improvement-16-marcoantoniazzi-post-02-slide-08.jpg"
+    },
+    {
+      "index": 9,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/marcoantoniazzi_/slideshow_0ef8dc48.jpg",
+      "filename": "self-improvement-16-marcoantoniazzi-post-02-slide-09.jpg",
+      "relativePath": "self-improvement-16-marcoantoniazzi-post-02/self-improvement-16-marcoantoniazzi-post-02-slide-09.jpg"
+    }
+  ]
+}

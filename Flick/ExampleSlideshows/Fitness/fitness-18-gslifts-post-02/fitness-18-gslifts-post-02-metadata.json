@@ -1,0 +1,88 @@
+{
+  "id": "fitness-18-gslifts-post-02",
+  "niche": "fitness",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/fitness",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/fitness?post=gslifts_%3A1",
+  "postNumber": 18,
+  "profile": "gslifts_",
+  "profileDisplayName": "Gregg",
+  "slideshowIndex": 1,
+  "folder": "fitness-18-gslifts-post-02",
+  "slideCount": 6,
+  "metrics": {
+    "views": "620.4K",
+    "likes": "82.5K",
+    "bookmarks": "8.7K",
+    "shares": null
+  },
+  "product": {
+    "medium": "Affiliate Marketing",
+    "name": "Supplement promotion/fitness advice",
+    "linkInBio": null
+  },
+  "creator": {
+    "followerCount": "2.2K",
+    "signature": "08 Natural",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/gslifts_/avatar_c11ab60a.webp",
+    "region": "US",
+    "audienceRegions": [
+      {
+        "count": 33,
+        "country": "United States",
+        "percentage": "33.00%",
+        "countryCode": "US"
+      },
+      {
+        "count": 30,
+        "country": "United Kingdom",
+        "percentage": "30.00%",
+        "countryCode": "GB"
+      },
+      {
+        "count": 6,
+        "country": "Australia",
+        "percentage": "6.00%",
+        "countryCode": "AU"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/gslifts_/slideshow_0f2c07ea.jpg",
+      "filename": "fitness-18-gslifts-post-02-slide-01.jpg",
+      "relativePath": "fitness-18-gslifts-post-02/fitness-18-gslifts-post-02-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/gslifts_/slideshow_f61d4f97.jpg",
+      "filename": "fitness-18-gslifts-post-02-slide-02.jpg",
+      "relativePath": "fitness-18-gslifts-post-02/fitness-18-gslifts-post-02-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/gslifts_/slideshow_3ad4c1ca.jpg",
+      "filename": "fitness-18-gslifts-post-02-slide-03.jpg",
+      "relativePath": "fitness-18-gslifts-post-02/fitness-18-gslifts-post-02-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/gslifts_/slideshow_3a30a3ad.jpg",
+      "filename": "fitness-18-gslifts-post-02-slide-04.jpg",
+      "relativePath": "fitness-18-gslifts-post-02/fitness-18-gslifts-post-02-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/gslifts_/slideshow_fd11d22c.jpg",
+      "filename": "fitness-18-gslifts-post-02-slide-05.jpg",
+      "relativePath": "fitness-18-gslifts-post-02/fitness-18-gslifts-post-02-slide-05.jpg"
+    },
+    {
+      "index": 6,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/gslifts_/slideshow_a148f5e2.jpg",
+      "filename": "fitness-18-gslifts-post-02-slide-06.jpg",
+      "relativePath": "fitness-18-gslifts-post-02/fitness-18-gslifts-post-02-slide-06.jpg"
+    }
+  ]
+}

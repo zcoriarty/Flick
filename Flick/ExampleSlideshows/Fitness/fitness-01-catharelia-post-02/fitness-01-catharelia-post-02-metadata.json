@@ -1,0 +1,64 @@
+{
+  "id": "fitness-01-catharelia-post-02",
+  "niche": "fitness",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/fitness",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/fitness?post=catharelia%3A1",
+  "postNumber": 1,
+  "profile": "catharelia",
+  "profileDisplayName": "catharina",
+  "slideshowIndex": 1,
+  "folder": "fitness-01-catharelia-post-02",
+  "slideCount": 2,
+  "metrics": {
+    "views": "6.4M",
+    "likes": "1.4M",
+    "bookmarks": "70.1K",
+    "shares": null
+  },
+  "product": {
+    "medium": "Affiliate Partnerships",
+    "name": "Fitness apparel and supplements",
+    "linkInBio": null
+  },
+  "creator": {
+    "followerCount": "63.5K",
+    "signature": "CA insta: catharelia @DFYNE | CATH @ehplabs | CATH 💌 cathareliatt@gmail.com",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/catharelia/avatar_b3b453ca.webp",
+    "region": "US",
+    "audienceRegions": [
+      {
+        "count": 60,
+        "country": "United Kingdom",
+        "percentage": "24.39%",
+        "countryCode": "GB"
+      },
+      {
+        "count": 50,
+        "country": "United States",
+        "percentage": "20.33%",
+        "countryCode": "US"
+      },
+      {
+        "count": 17,
+        "country": "Germany",
+        "percentage": "6.91%",
+        "countryCode": "DE"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/catharelia/slideshow_b2849fb1.jpg",
+      "filename": "fitness-01-catharelia-post-02-slide-01.jpg",
+      "relativePath": "fitness-01-catharelia-post-02/fitness-01-catharelia-post-02-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/catharelia/slideshow_ad09d74e.jpg",
+      "filename": "fitness-01-catharelia-post-02-slide-02.jpg",
+      "relativePath": "fitness-01-catharelia-post-02/fitness-01-catharelia-post-02-slide-02.jpg"
+    }
+  ]
+}

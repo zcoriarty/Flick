@@ -1,0 +1,88 @@
+{
+  "id": "fitness-07-aura-fit3-post-07",
+  "niche": "fitness",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/fitness",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/fitness?post=aura.fit3%3A6",
+  "postNumber": 7,
+  "profile": "aura.fit3",
+  "profileDisplayName": "aura.fit",
+  "slideshowIndex": 6,
+  "folder": "fitness-07-aura-fit3-post-07",
+  "slideCount": 6,
+  "metrics": {
+    "views": "1.2M",
+    "likes": "201.8K",
+    "bookmarks": "71.0K",
+    "shares": null
+  },
+  "product": {
+    "medium": "Mobile App",
+    "name": "Workout tracking app",
+    "linkInBio": null
+  },
+  "creator": {
+    "followerCount": "5.8K",
+    "signature": "@Odyssey—Become Legend  Workout Tracking & Ranking App DM to join beta test now",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/aura.fit3/avatar_0a398500.jpg",
+    "region": "US",
+    "audienceRegions": [
+      {
+        "count": 41,
+        "country": "United States",
+        "percentage": "41.00%",
+        "countryCode": "US"
+      },
+      {
+        "count": 9,
+        "country": "South Africa",
+        "percentage": "9.00%",
+        "countryCode": "ZA"
+      },
+      {
+        "count": 8,
+        "country": "Australia",
+        "percentage": "8.00%",
+        "countryCode": "AU"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/aura.fit3/slideshow_f6d7ee7a.jpg",
+      "filename": "fitness-07-aura-fit3-post-07-slide-01.jpg",
+      "relativePath": "fitness-07-aura-fit3-post-07/fitness-07-aura-fit3-post-07-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/aura.fit3/slideshow_b12b9cc3.jpg",
+      "filename": "fitness-07-aura-fit3-post-07-slide-02.jpg",
+      "relativePath": "fitness-07-aura-fit3-post-07/fitness-07-aura-fit3-post-07-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/aura.fit3/slideshow_fbcde720.jpg",
+      "filename": "fitness-07-aura-fit3-post-07-slide-03.jpg",
+      "relativePath": "fitness-07-aura-fit3-post-07/fitness-07-aura-fit3-post-07-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/aura.fit3/slideshow_7acbf913.jpg",
+      "filename": "fitness-07-aura-fit3-post-07-slide-04.jpg",
+      "relativePath": "fitness-07-aura-fit3-post-07/fitness-07-aura-fit3-post-07-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/aura.fit3/slideshow_6dc3d47e.jpg",
+      "filename": "fitness-07-aura-fit3-post-07-slide-05.jpg",
+      "relativePath": "fitness-07-aura-fit3-post-07/fitness-07-aura-fit3-post-07-slide-05.jpg"
+    },
+    {
+      "index": 6,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/aura.fit3/slideshow_85dc9b92.jpg",
+      "filename": "fitness-07-aura-fit3-post-07-slide-06.jpg",
+      "relativePath": "fitness-07-aura-fit3-post-07/fitness-07-aura-fit3-post-07-slide-06.jpg"
+    }
+  ]
+}

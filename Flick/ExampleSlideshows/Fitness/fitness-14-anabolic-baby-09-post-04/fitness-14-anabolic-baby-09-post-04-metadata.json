@@ -1,0 +1,63 @@
+{
+  "id": "fitness-14-anabolic-baby-09-post-04",
+  "niche": "fitness",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/fitness",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/fitness?post=anabolic.baby_09%3A3",
+  "postNumber": 14,
+  "profile": "anabolic.baby_09",
+  "profileDisplayName": "anabolicbaby",
+  "slideshowIndex": 3,
+  "folder": "fitness-14-anabolic-baby-09-post-04",
+  "slideCount": 5,
+  "metrics": {
+    "views": "552.2K",
+    "likes": "102.3K",
+    "bookmarks": "20.0K",
+    "shares": null
+  },
+  "product": {
+    "medium": "Affiliate marketing",
+    "name": "ASPYR Athletic Wear affiliate",
+    "linkInBio": null
+  },
+  "creator": {
+    "followerCount": "1.1K",
+    "signature": "gym acc   @ASPYR Athletic Wear code sheeh",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/anabolic.baby_09/avatar_69788454.jpg",
+    "region": null,
+    "audienceRegions": []
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/anabolic.baby_09/slideshow_5626931b.jpg",
+      "filename": "fitness-14-anabolic-baby-09-post-04-slide-01.jpg",
+      "relativePath": "fitness-14-anabolic-baby-09-post-04/fitness-14-anabolic-baby-09-post-04-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/anabolic.baby_09/slideshow_055ba8b3.jpg",
+      "filename": "fitness-14-anabolic-baby-09-post-04-slide-02.jpg",
+      "relativePath": "fitness-14-anabolic-baby-09-post-04/fitness-14-anabolic-baby-09-post-04-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/anabolic.baby_09/slideshow_b04911fb.jpg",
+      "filename": "fitness-14-anabolic-baby-09-post-04-slide-03.jpg",
+      "relativePath": "fitness-14-anabolic-baby-09-post-04/fitness-14-anabolic-baby-09-post-04-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/anabolic.baby_09/slideshow_b99bd4df.jpg",
+      "filename": "fitness-14-anabolic-baby-09-post-04-slide-04.jpg",
+      "relativePath": "fitness-14-anabolic-baby-09-post-04/fitness-14-anabolic-baby-09-post-04-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/anabolic.baby_09/slideshow_f7f78682.jpg",
+      "filename": "fitness-14-anabolic-baby-09-post-04-slide-05.jpg",
+      "relativePath": "fitness-14-anabolic-baby-09-post-04/fitness-14-anabolic-baby-09-post-04-slide-05.jpg"
+    }
+  ]
+}

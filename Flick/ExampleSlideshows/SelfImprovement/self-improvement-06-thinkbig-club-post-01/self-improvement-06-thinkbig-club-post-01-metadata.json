@@ -1,0 +1,65 @@
+{
+  "id": "self-improvement-06-thinkbig-club-post-01",
+  "niche": "Self Improvement",
+  "nicheSlug": "self-improvement",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/self-improvement",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/self-improvement?post=thinkbig.club%3A0",
+  "postNumber": 6,
+  "profile": "thinkbig.club",
+  "profileDisplayName": "THINKBIG CLUB",
+  "slideshowIndex": 0,
+  "folder": "self-improvement-06-thinkbig-club-post-01",
+  "slideCount": 2,
+  "metrics": {
+    "views": "6.0M",
+    "likes": "750.5K",
+    "bookmarks": "79.4K",
+    "shares": null
+  },
+  "product": {
+    "medium": null,
+    "name": null,
+    "linkInBio": null
+  },
+  "creator": {
+    "followerCount": "40.3K",
+    "signature": "Born to think big.  Dm to learn how to grow and build a brand",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/thinkbig.club/avatar_e1d39062.jpg",
+    "region": "DE",
+    "audienceRegions": [
+      {
+        "count": 24,
+        "country": "United Kingdom",
+        "percentage": "23.76%",
+        "countryCode": "GB"
+      },
+      {
+        "count": 10,
+        "country": "Belgium",
+        "percentage": "9.90%",
+        "countryCode": "BE"
+      },
+      {
+        "count": 5,
+        "country": "Germany",
+        "percentage": "4.95%",
+        "countryCode": "DE"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/thinkbig.club/slideshow_a7fba15c.jpg",
+      "filename": "self-improvement-06-thinkbig-club-post-01-slide-01.jpg",
+      "relativePath": "self-improvement-06-thinkbig-club-post-01/self-improvement-06-thinkbig-club-post-01-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/thinkbig.club/slideshow_287f8943.jpg",
+      "filename": "self-improvement-06-thinkbig-club-post-01-slide-02.jpg",
+      "relativePath": "self-improvement-06-thinkbig-club-post-01/self-improvement-06-thinkbig-club-post-01-slide-02.jpg"
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "id": "fitness-04-never-giveup-109-post-01",
+  "niche": "fitness",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/fitness",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/fitness?post=never_giveup_109%3A0",
+  "postNumber": 4,
+  "profile": "never_giveup_109",
+  "profileDisplayName": "Never_giveup",
+  "slideshowIndex": 0,
+  "folder": "fitness-04-never-giveup-109-post-01",
+  "slideCount": 6,
+  "metrics": {
+    "views": "2.5M",
+    "likes": "395.0K",
+    "bookmarks": "67.8K",
+    "shares": null
+  },
+  "product": {
+    "medium": "Mobile App",
+    "name": "Gymeo workout tracking app",
+    "linkInBio": null
+  },
+  "creator": {
+    "followerCount": "17.2K",
+    "signature": "Stay hard",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/never_giveup_109/avatar_9df4e4a4.webp",
+    "region": "US",
+    "audienceRegions": [
+      {
+        "count": 31,
+        "country": "United States",
+        "percentage": "27.68%",
+        "countryCode": "US"
+      },
+      {
+        "count": 17,
+        "country": "Philippines",
+        "percentage": "15.18%",
+        "countryCode": "PH"
+      },
+      {
+        "count": 9,
+        "country": "United Kingdom",
+        "percentage": "8.04%",
+        "countryCode": "GB"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/never_giveup_109/slideshow_aded1503.jpg",
+      "filename": "fitness-04-never-giveup-109-post-01-slide-01.jpg",
+      "relativePath": "fitness-04-never-giveup-109-post-01/fitness-04-never-giveup-109-post-01-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/never_giveup_109/slideshow_11637f27.jpg",
+      "filename": "fitness-04-never-giveup-109-post-01-slide-02.jpg",
+      "relativePath": "fitness-04-never-giveup-109-post-01/fitness-04-never-giveup-109-post-01-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/never_giveup_109/slideshow_85e81655.jpg",
+      "filename": "fitness-04-never-giveup-109-post-01-slide-03.jpg",
+      "relativePath": "fitness-04-never-giveup-109-post-01/fitness-04-never-giveup-109-post-01-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/never_giveup_109/slideshow_e5eda335.jpg",
+      "filename": "fitness-04-never-giveup-109-post-01-slide-04.jpg",
+      "relativePath": "fitness-04-never-giveup-109-post-01/fitness-04-never-giveup-109-post-01-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/never_giveup_109/slideshow_a6188e28.jpg",
+      "filename": "fitness-04-never-giveup-109-post-01-slide-05.jpg",
+      "relativePath": "fitness-04-never-giveup-109-post-01/fitness-04-never-giveup-109-post-01-slide-05.jpg"
+    },
+    {
+      "index": 6,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/never_giveup_109/slideshow_4d3dbee5.jpg",
+      "filename": "fitness-04-never-giveup-109-post-01-slide-06.jpg",
+      "relativePath": "fitness-04-never-giveup-109-post-01/fitness-04-never-giveup-109-post-01-slide-06.jpg"
+    }
+  ]
+}

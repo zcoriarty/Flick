@@ -1,0 +1,89 @@
+{
+  "id": "healthy-eating-14-kyana04100-post-01",
+  "niche": "Healthy Eating",
+  "nicheSlug": "healthy-eating",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/healthy-eating",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/healthy-eating?post=kyana04100%3A0",
+  "postNumber": 14,
+  "profile": "kyana04100",
+  "profileDisplayName": "Kyana",
+  "slideshowIndex": 0,
+  "folder": "healthy-eating-14-kyana04100-post-01",
+  "slideCount": 6,
+  "metrics": {
+    "views": "2.1M",
+    "likes": "154.6K",
+    "bookmarks": "105.0K",
+    "shares": null
+  },
+  "product": {
+    "medium": "Affiliate Marketing",
+    "name": "Fitness supplements and activewear",
+    "linkInBio": "https://linktr.ee/kyanahh"
+  },
+  "creator": {
+    "followerCount": "47.7K",
+    "signature": "@Oildem Code: kyana  @smilodox | @NEOSUPPS Code: kyana",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/kyana04100/avatar_c2ce137a.webp",
+    "region": "DE",
+    "audienceRegions": [
+      {
+        "count": 38,
+        "country": "United States",
+        "percentage": "21.59%",
+        "countryCode": "US"
+      },
+      {
+        "count": 35,
+        "country": "Germany",
+        "percentage": "19.89%",
+        "countryCode": "DE"
+      },
+      {
+        "count": 14,
+        "country": "United Kingdom",
+        "percentage": "7.95%",
+        "countryCode": "GB"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/kyana04100/slideshow_cc3f29a2.jpg",
+      "filename": "healthy-eating-14-kyana04100-post-01-slide-01.jpg",
+      "relativePath": "healthy-eating-14-kyana04100-post-01/healthy-eating-14-kyana04100-post-01-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/kyana04100/slideshow_8cbab94d.jpg",
+      "filename": "healthy-eating-14-kyana04100-post-01-slide-02.jpg",
+      "relativePath": "healthy-eating-14-kyana04100-post-01/healthy-eating-14-kyana04100-post-01-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/kyana04100/slideshow_417e5106.jpg",
+      "filename": "healthy-eating-14-kyana04100-post-01-slide-03.jpg",
+      "relativePath": "healthy-eating-14-kyana04100-post-01/healthy-eating-14-kyana04100-post-01-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/kyana04100/slideshow_1ea02c80.jpg",
+      "filename": "healthy-eating-14-kyana04100-post-01-slide-04.jpg",
+      "relativePath": "healthy-eating-14-kyana04100-post-01/healthy-eating-14-kyana04100-post-01-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/kyana04100/slideshow_848e4642.jpg",
+      "filename": "healthy-eating-14-kyana04100-post-01-slide-05.jpg",
+      "relativePath": "healthy-eating-14-kyana04100-post-01/healthy-eating-14-kyana04100-post-01-slide-05.jpg"
+    },
+    {
+      "index": 6,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/kyana04100/slideshow_8053d26c.jpg",
+      "filename": "healthy-eating-14-kyana04100-post-01-slide-06.jpg",
+      "relativePath": "healthy-eating-14-kyana04100-post-01/healthy-eating-14-kyana04100-post-01-slide-06.jpg"
+    }
+  ]
+}

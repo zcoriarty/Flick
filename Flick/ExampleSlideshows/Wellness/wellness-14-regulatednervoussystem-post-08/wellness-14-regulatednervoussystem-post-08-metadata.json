@@ -1,0 +1,101 @@
+{
+  "id": "wellness-14-regulatednervoussystem-post-08",
+  "niche": "Wellness",
+  "nicheSlug": "wellness",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/wellness",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/wellness?post=regulatednervoussystem%3A7",
+  "postNumber": 14,
+  "profile": "regulatednervoussystem",
+  "profileDisplayName": "regulatednervoussystem",
+  "slideshowIndex": 7,
+  "folder": "wellness-14-regulatednervoussystem-post-08",
+  "slideCount": 8,
+  "metrics": {
+    "views": "653.9K",
+    "likes": "144.2K",
+    "bookmarks": "60.7K",
+    "shares": null
+  },
+  "product": {
+    "medium": "Linktree",
+    "name": "Nervous system healing resources",
+    "linkInBio": "https://linktr.ee/femmesupply"
+  },
+  "creator": {
+    "followerCount": "105.7K",
+    "signature": "📿🌀🧘‍♀️🐚🇵🇸🍉🌞🌺 regulatednervoussystem@gmail.com",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/regulatednervoussystem/avatar_ada3a487.jpg",
+    "region": "GB",
+    "audienceRegions": [
+      {
+        "count": 43,
+        "country": "United States",
+        "percentage": "35.25%",
+        "countryCode": "US"
+      },
+      {
+        "count": 24,
+        "country": "Philippines",
+        "percentage": "19.67%",
+        "countryCode": "PH"
+      },
+      {
+        "count": 9,
+        "country": "United Kingdom",
+        "percentage": "7.38%",
+        "countryCode": "GB"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/regulatednervoussystem/slideshow_77812e56.webp",
+      "filename": "wellness-14-regulatednervoussystem-post-08-slide-01.webp",
+      "relativePath": "wellness-14-regulatednervoussystem-post-08/wellness-14-regulatednervoussystem-post-08-slide-01.webp"
+    },
+    {
+      "index": 2,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/regulatednervoussystem/slideshow_b178f08f.webp",
+      "filename": "wellness-14-regulatednervoussystem-post-08-slide-02.webp",
+      "relativePath": "wellness-14-regulatednervoussystem-post-08/wellness-14-regulatednervoussystem-post-08-slide-02.webp"
+    },
+    {
+      "index": 3,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/regulatednervoussystem/slideshow_392af9db.webp",
+      "filename": "wellness-14-regulatednervoussystem-post-08-slide-03.webp",
+      "relativePath": "wellness-14-regulatednervoussystem-post-08/wellness-14-regulatednervoussystem-post-08-slide-03.webp"
+    },
+    {
+      "index": 4,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/regulatednervoussystem/slideshow_aa9b128d.webp",
+      "filename": "wellness-14-regulatednervoussystem-post-08-slide-04.webp",
+      "relativePath": "wellness-14-regulatednervoussystem-post-08/wellness-14-regulatednervoussystem-post-08-slide-04.webp"
+    },
+    {
+      "index": 5,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/regulatednervoussystem/slideshow_52e85e67.webp",
+      "filename": "wellness-14-regulatednervoussystem-post-08-slide-05.webp",
+      "relativePath": "wellness-14-regulatednervoussystem-post-08/wellness-14-regulatednervoussystem-post-08-slide-05.webp"
+    },
+    {
+      "index": 6,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/regulatednervoussystem/slideshow_932dfaf6.webp",
+      "filename": "wellness-14-regulatednervoussystem-post-08-slide-06.webp",
+      "relativePath": "wellness-14-regulatednervoussystem-post-08/wellness-14-regulatednervoussystem-post-08-slide-06.webp"
+    },
+    {
+      "index": 7,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/regulatednervoussystem/slideshow_d9c1260b.webp",
+      "filename": "wellness-14-regulatednervoussystem-post-08-slide-07.webp",
+      "relativePath": "wellness-14-regulatednervoussystem-post-08/wellness-14-regulatednervoussystem-post-08-slide-07.webp"
+    },
+    {
+      "index": 8,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/regulatednervoussystem/slideshow_dfda238b.webp",
+      "filename": "wellness-14-regulatednervoussystem-post-08-slide-08.webp",
+      "relativePath": "wellness-14-regulatednervoussystem-post-08/wellness-14-regulatednervoussystem-post-08-slide-08.webp"
+    }
+  ]
+}

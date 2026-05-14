@@ -1,0 +1,77 @@
+{
+  "id": "wellness-20-balancebytor-post-01",
+  "niche": "Wellness",
+  "nicheSlug": "wellness",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/wellness",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/wellness?post=balancebytor%3A0",
+  "postNumber": 20,
+  "profile": "balancebytor",
+  "profileDisplayName": "Tor",
+  "slideshowIndex": 0,
+  "folder": "wellness-20-balancebytor-post-01",
+  "slideCount": 4,
+  "metrics": {
+    "views": "1.8M",
+    "likes": "97.3K",
+    "bookmarks": "42.0K",
+    "shares": null
+  },
+  "product": {
+    "medium": "None",
+    "name": "Lifestyle and wellness content",
+    "linkInBio": null
+  },
+  "creator": {
+    "followerCount": "8.4K",
+    "signature": "wellness | lifestyle | fitness  balancebytor@gmail.com 💌 Boston, MA 📍",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/balancebytor/avatar_b6c20d62.jpg",
+    "region": "US",
+    "audienceRegions": [
+      {
+        "count": 85,
+        "country": "United States",
+        "percentage": "75.89%",
+        "countryCode": "US"
+      },
+      {
+        "count": 4,
+        "country": "United Kingdom",
+        "percentage": "3.57%",
+        "countryCode": "GB"
+      },
+      {
+        "count": 4,
+        "country": "Canada",
+        "percentage": "3.57%",
+        "countryCode": "CA"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/balancebytor/slideshow_83ee652a.jpg",
+      "filename": "wellness-20-balancebytor-post-01-slide-01.jpg",
+      "relativePath": "wellness-20-balancebytor-post-01/wellness-20-balancebytor-post-01-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/balancebytor/slideshow_c8e20a53.jpg",
+      "filename": "wellness-20-balancebytor-post-01-slide-02.jpg",
+      "relativePath": "wellness-20-balancebytor-post-01/wellness-20-balancebytor-post-01-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/balancebytor/slideshow_7701686a.jpg",
+      "filename": "wellness-20-balancebytor-post-01-slide-03.jpg",
+      "relativePath": "wellness-20-balancebytor-post-01/wellness-20-balancebytor-post-01-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://dh8vpkzn300g4.cloudfront.net/balancebytor/slideshow_fd5ac74d.jpg",
+      "filename": "wellness-20-balancebytor-post-01-slide-04.jpg",
+      "relativePath": "wellness-20-balancebytor-post-01/wellness-20-balancebytor-post-01-slide-04.jpg"
+    }
+  ]
+}

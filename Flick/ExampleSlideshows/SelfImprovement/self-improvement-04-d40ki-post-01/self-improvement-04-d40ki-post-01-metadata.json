@@ -1,0 +1,95 @@
+{
+  "id": "self-improvement-04-d40ki-post-01",
+  "niche": "Self Improvement",
+  "nicheSlug": "self-improvement",
+  "source": "ReelFarm",
+  "sourcePage": "https://reel.farm/dashboard/database/niche/self-improvement",
+  "sourceUrl": "https://reel.farm/dashboard/database/niche/self-improvement?post=d40ki%3A0",
+  "postNumber": 4,
+  "profile": "d40ki",
+  "profileDisplayName": "d40ki",
+  "slideshowIndex": 0,
+  "folder": "self-improvement-04-d40ki-post-01",
+  "slideCount": 7,
+  "metrics": {
+    "views": "7.0M",
+    "likes": "1.1M",
+    "bookmarks": "611.1K",
+    "shares": null
+  },
+  "product": {
+    "medium": "Telegram",
+    "name": "Telegram self-improvement community/content",
+    "linkInBio": "https://t.me/d40ki"
+  },
+  "creator": {
+    "followerCount": "25.2K",
+    "signature": "16 digital diary | help",
+    "avatarUrl": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/d40ki/avatar_922aa831.webp",
+    "region": "KZ",
+    "audienceRegions": [
+      {
+        "count": 18,
+        "country": "Philippines",
+        "percentage": "16.22%",
+        "countryCode": "PH"
+      },
+      {
+        "count": 10,
+        "country": "United States",
+        "percentage": "9.01%",
+        "countryCode": "US"
+      },
+      {
+        "count": 4,
+        "country": "South Africa",
+        "percentage": "3.60%",
+        "countryCode": "ZA"
+      }
+    ]
+  },
+  "slides": [
+    {
+      "index": 1,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/d40ki/slideshow_bb239922.jpg",
+      "filename": "self-improvement-04-d40ki-post-01-slide-01.jpg",
+      "relativePath": "self-improvement-04-d40ki-post-01/self-improvement-04-d40ki-post-01-slide-01.jpg"
+    },
+    {
+      "index": 2,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/d40ki/slideshow_0fa6f26e.jpg",
+      "filename": "self-improvement-04-d40ki-post-01-slide-02.jpg",
+      "relativePath": "self-improvement-04-d40ki-post-01/self-improvement-04-d40ki-post-01-slide-02.jpg"
+    },
+    {
+      "index": 3,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/d40ki/slideshow_230c2257.jpg",
+      "filename": "self-improvement-04-d40ki-post-01-slide-03.jpg",
+      "relativePath": "self-improvement-04-d40ki-post-01/self-improvement-04-d40ki-post-01-slide-03.jpg"
+    },
+    {
+      "index": 4,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/d40ki/slideshow_b1f330fa.jpg",
+      "filename": "self-improvement-04-d40ki-post-01-slide-04.jpg",
+      "relativePath": "self-improvement-04-d40ki-post-01/self-improvement-04-d40ki-post-01-slide-04.jpg"
+    },
+    {
+      "index": 5,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/d40ki/slideshow_cec8adfc.jpg",
+      "filename": "self-improvement-04-d40ki-post-01-slide-05.jpg",
+      "relativePath": "self-improvement-04-d40ki-post-01/self-improvement-04-d40ki-post-01-slide-05.jpg"
+    },
+    {
+      "index": 6,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/d40ki/slideshow_cb904c6f.jpg",
+      "filename": "self-improvement-04-d40ki-post-01-slide-06.jpg",
+      "relativePath": "self-improvement-04-d40ki-post-01/self-improvement-04-d40ki-post-01-slide-06.jpg"
+    },
+    {
+      "index": 7,
+      "url": "https://reelfarm-slideshow-images.s3.us-west-1.amazonaws.com/d40ki/slideshow_8f3fcbd3.jpg",
+      "filename": "self-improvement-04-d40ki-post-01-slide-07.jpg",
+      "relativePath": "self-improvement-04-d40ki-post-01/self-improvement-04-d40ki-post-01-slide-07.jpg"
+    }
+  ]
+}
