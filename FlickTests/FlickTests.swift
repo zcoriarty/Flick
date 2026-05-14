@@ -114,6 +114,60 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(accounts.first?.authorizationSource, .loginKit)
     }
 
+    func testLoginKitAccountMapperDefaultsTikTokPrivacyToEveryone() {
+        let account = LoginKitAccountMapper.connectedAccount(
+            from: LoginKitAuthorizedUser(
+                platform: .tiktok,
+                openID: "real-open-id",
+                displayName: "@realaccount",
+                avatarURL: nil,
+                scopes: ["user.info.basic", "video.publish"]
+            )
+        )
+
+        XCTAssertEqual(account.defaultPrivacyLevel, TikTokPrivacyLevel.publicToEveryone.rawValue)
+    }
+
+    func testLoginKitAccountStoreNormalizesExistingTikTokSelfOnlyPrivacy() throws {
+        let store = MemorySecretStore()
+        let accountStore = LoginKitAccountStore(store: store)
+        var account = LoginKitAccountMapper.connectedAccount(
+            from: LoginKitAuthorizedUser(
+                platform: .tiktok,
+                openID: "real-open-id",
+                displayName: "@realaccount",
+                avatarURL: nil,
+                scopes: ["user.info.basic", "video.publish"]
+            )
+        )
+        account.defaultPrivacyLevel = TikTokPrivacyLevel.selfOnly.rawValue
+
+        try accountStore.saveAccounts([account])
+
+        XCTAssertEqual(accountStore.loadAccounts().first?.defaultPrivacyLevel, TikTokPrivacyLevel.publicToEveryone.rawValue)
+    }
+
+    func testTikTokAdapterUsesCurrentPrivacyOptions() async throws {
+        let adapter = TikTokAdapter(
+            configuration: TikTokConfiguration(values: [:]),
+            tokenStore: MemorySecretStore()
+        )
+        let account = LoginKitAccountMapper.connectedAccount(
+            from: LoginKitAuthorizedUser(
+                platform: .tiktok,
+                openID: "real-open-id",
+                displayName: "@realaccount",
+                avatarURL: nil,
+                scopes: ["user.info.basic", "video.publish"]
+            )
+        )
+
+        let status = try await adapter.validateAccount(account)
+
+        XCTAssertEqual(status.privacyOptions, TikTokPrivacyLevel.directPostOptions)
+        XCTAssertTrue(status.privacyOptions.contains(TikTokPrivacyLevel.publicToEveryone.rawValue))
+    }
+
     func testAccountManagementPolicyIsIOSOnly() {
         #if os(iOS) && !targetEnvironment(macCatalyst)
         XCTAssertTrue(AccountManagementPolicy.canAuthorizeAccountsOnThisDevice)

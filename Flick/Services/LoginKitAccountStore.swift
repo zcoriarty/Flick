@@ -20,6 +20,7 @@ struct LoginKitAccountStore {
 
         return accounts
             .filter { $0.authorizationSource == .loginKit }
+            .map(\.normalizedForCurrentLoginKitDefaults)
             .sortedForPersistence
     }
 
@@ -95,7 +96,7 @@ enum LoginKitAccountMapper {
             authorizationSource: .loginKit,
             tokenStatus: .valid,
             isPublishingEnabled: user.scopes.contains("video.publish") || user.scopes.contains("video.upload"),
-            defaultPrivacyLevel: user.platform == .tiktok ? "SELF_ONLY" : "Platform default",
+            defaultPrivacyLevel: user.platform == .tiktok ? TikTokPrivacyLevel.preferredDefault.rawValue : "Platform default",
             lastValidatedAt: now,
             createdAt: now,
             updatedAt: now
@@ -141,5 +142,17 @@ private extension Array where Element == ConnectedAccount {
             }
             return $0.platform.displayName < $1.platform.displayName
         }
+    }
+}
+
+private extension ConnectedAccount {
+    var normalizedForCurrentLoginKitDefaults: ConnectedAccount {
+        guard platform == .tiktok, defaultPrivacyLevel != TikTokPrivacyLevel.preferredDefault.rawValue else {
+            return self
+        }
+
+        var account = self
+        account.defaultPrivacyLevel = TikTokPrivacyLevel.preferredDefault.rawValue
+        return account
     }
 }

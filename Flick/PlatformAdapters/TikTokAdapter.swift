@@ -32,7 +32,7 @@ struct TikTokAdapter: SocialPlatformAdapter {
             status: account.status,
             scopes: account.scopes,
             canDirectPublish: account.scopes.contains("video.publish"),
-            privacyOptions: ["PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "SELF_ONLY"],
+            privacyOptions: TikTokPrivacyLevel.directPostOptions,
             lastCheckedAt: Date()
         )
     }
