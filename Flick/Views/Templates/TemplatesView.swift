@@ -14,10 +14,8 @@ struct TemplatesView: View {
 
     var body: some View {
         content
+            .flickNavigationTitle("Templates")
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Templates")
-                }
                 ToolbarItem(placement: .primaryAction) {
                     Button("Reload", systemImage: "arrow.clockwise") {
                         loadTemplates()
@@ -25,7 +23,9 @@ struct TemplatesView: View {
                 }
             }
             .sheet(item: $selectedTemplate) { template in
-                TemplatePreviewSheet(template: template)
+                NavigationStack {
+                    TemplatePreviewSheet(template: template)
+                }
             }
         .task {
             if case .loading = loadState {

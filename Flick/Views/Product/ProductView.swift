@@ -22,10 +22,8 @@ struct ProductView: View {
             )
         }
         .flickScrollablePage()
+        .flickNavigationTitle("Product")
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("Product")
-            }
             ToolbarItem(placement: .primaryAction) {
                 PhotosPicker(
                     selection: $selectedMediaItems,

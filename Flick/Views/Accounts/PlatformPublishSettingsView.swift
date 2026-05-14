@@ -69,11 +69,7 @@ struct PlatformPublishSettingsView: View {
             }
         }
         .listStyle(.plain)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("\(platform.displayName) Publish Settings")
-            }
-        }
+        .flickNavigationTitle("\(platform.displayName) Publish Settings")
     }
 
     private var adapterStatus: String {

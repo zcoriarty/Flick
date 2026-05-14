@@ -16,10 +16,8 @@ struct TemplateDetailView: View {
             sourceDetails
         }
         .flickScrollablePage()
+        .flickNavigationTitle(template.title)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(template.title)
-            }
             ToolbarItem(placement: .primaryAction) {
                 Button("Use Template", systemImage: "wand.and.sparkles") {
                     appModel.createDraft(from: template)

@@ -23,15 +23,13 @@ struct AccountsView: View {
             PlatformAdaptersSection()
         }
         .flickScrollablePage()
+        .flickNavigationTitle("Accounts")
         .sheet(item: $selectedPlatform) { platform in
-            PlatformPublishSettingsView(platform: platform, accounts: accounts(for: platform))
+            NavigationStack {
+                PlatformPublishSettingsView(platform: platform, accounts: accounts(for: platform))
+            }
         }
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("Accounts")
-                    .font(.system(.body, weight: .semibold))
-            }
-            
             if appModel.canManageAccounts {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {

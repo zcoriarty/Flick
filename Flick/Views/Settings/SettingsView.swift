@@ -18,11 +18,7 @@ struct SettingsView: View {
             diagnostics
         }
         .flickScrollablePage()
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("Settings")
-            }
-        }
+        .flickNavigationTitle("Settings")
         .onAppear(perform: reloadCredentialDrafts)
         
     }

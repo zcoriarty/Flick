@@ -55,8 +55,9 @@ struct FlickRootView: View {
             }
 
             Tab(FlickSection.accounts.title, systemImage: FlickSection.accounts.systemImage, value: FlickSection.accounts) {
-                AccountsView()
-                
+                NavigationStack {
+                    AccountsView()
+                }
             }
 
             Tab(FlickSection.settings.title, systemImage: FlickSection.settings.systemImage, value: FlickSection.settings) {
