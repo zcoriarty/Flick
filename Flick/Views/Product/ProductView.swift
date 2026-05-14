@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
 struct ProductView: View {
     @Environment(FlickAppModel.self) private var appModel
     @State private var selectedMediaItems: [PhotosPickerItem] = []
+    @State private var selectedMediaAsset: MediaAsset?
     @State private var isImportingMedia = false
 
     var body: some View {
@@ -18,7 +19,9 @@ struct ProductView: View {
             ProductMediaSection(
                 assets: appModel.productMediaAssets,
                 isImporting: isImportingMedia,
-                removeAction: appModel.removeProductMedia
+                selectAction: { asset in
+                    selectedMediaAsset = asset
+                }
             )
         }
         .flickScrollablePage()
@@ -47,7 +50,9 @@ struct ProductView: View {
                 await importMediaItems(newItems)
             }
         }
-        
+        .sheet(item: $selectedMediaAsset) { asset in
+            ProductMediaDetailSheet(asset: asset)
+        }
     }
 
     @MainActor
@@ -112,7 +117,7 @@ private struct ProductMovieTransfer: Transferable {
 private struct ProductMediaSection: View {
     var assets: [MediaAsset]
     var isImporting: Bool
-    var removeAction: (MediaAsset) -> Void
+    var selectAction: (MediaAsset) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -142,7 +147,7 @@ private struct ProductMediaSection: View {
                 ResponsiveGrid(minimum: 154, spacing: 12) {
                     ForEach(assets) { asset in
                         ProductMediaCard(asset: asset) {
-                            removeAction(asset)
+                            selectAction(asset)
                         }
                     }
                 }
@@ -153,62 +158,224 @@ private struct ProductMediaSection: View {
 
 private struct ProductMediaCard: View {
     var asset: MediaAsset
-    var removeAction: () -> Void
+    var action: () -> Void
 
     var body: some View {
-        VerticalMediaFrame(fileURL: asset.localFileURL, cornerRadius: 0)
-            .overlay {
-                LinearGradient(
-                    colors: [.black.opacity(0.52), .clear, .black.opacity(0.76)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+        Button(action: action) {
+            VerticalMediaFrame(fileURL: asset.localFileURL, cornerRadius: 0)
+                .overlay {
+                    if asset.mediaType == .video {
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 38, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.4), radius: 8, x: 0, y: 3)
+                    }
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(.white.opacity(0.12), lineWidth: 1)
+                }
+                .clipShape(.rect(cornerRadius: 8))
+                .frame(maxWidth: .infinity)
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(asset.mediaType.productDisplayName) product media")
+        .accessibilityHint("Opens media details")
+    }
+}
+
+private struct ProductMediaDetailSheet: View {
+    @Environment(FlickAppModel.self) private var appModel
+    @Environment(\.dismiss) private var dismiss
+
+    var asset: MediaAsset
+
+    var body: some View {
+        NavigationStack {
+            List {
+                mediaSection
+                overviewSection
+                storageSection
+                tagsSection
+                timestampsSection
             }
-            .overlay {
-                if asset.mediaType == .video {
-                    Image(systemName: "play.circle.fill")
-                        .font(.system(size: 38, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .shadow(color: .black.opacity(0.4), radius: 8, x: 0, y: 3)
+            .flickSettingsListStyle()
+            .toolbarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Delete", systemImage: "trash", role: .destructive) {
+                        deleteAsset()
+                    }
+                }
+                ToolbarItem(placement: .principal) {
+                    Text("Media Details")
+                        .font(.system(.body, weight: .semibold))
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Confirm", systemImage: "checkmark") {
+                        dismiss()
+                    }
                 }
             }
-            .overlay(alignment: .topLeading) {
-                StatusBadge(
-                    title: asset.mediaType.productDisplayName,
-                    tint: .white,
-                    systemImage: asset.mediaType.productSystemImage
-                )
-                .background(asset.mediaType.productTint.opacity(0.64), in: .capsule)
-                .padding(8)
-            }
-            .overlay(alignment: .topTrailing) {
-                Button(role: .destructive, action: removeAction) {
-                    Image(systemName: "trash")
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 32, height: 32)
-                        .background(.black.opacity(0.46), in: .circle)
+        }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private var mediaSection: some View {
+        Section {
+            ProductMediaDetailPreview(asset: asset)
+                .listRowInsets(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
+                .listRowBackground(Color.clear)
+        }
+    }
+
+    private var overviewSection: some View {
+        Section("Overview") {
+            FlickSettingsValueRow(
+                title: "Type",
+                systemImage: asset.mediaType.productSystemImage,
+                iconColor: asset.mediaType.productTint,
+                value: asset.mediaType.productDisplayName
+            )
+            FlickSettingsValueRow(
+                title: "Source",
+                systemImage: "tray.and.arrow.down",
+                iconColor: .blue,
+                value: asset.source.productDisplayName
+            )
+            FlickSettingsValueRow(
+                title: "Dimensions",
+                systemImage: "rectangle.expand.vertical",
+                iconColor: .teal,
+                value: asset.productDimensions
+            )
+            FlickSettingsValueRow(
+                title: "Duration",
+                systemImage: "timer",
+                iconColor: .orange,
+                value: asset.productDuration
+            )
+            FlickSettingsValueRow(
+                title: "File Size",
+                systemImage: "doc",
+                iconColor: .indigo,
+                value: asset.productFileSize
+            )
+        }
+    }
+
+    private var storageSection: some View {
+        Section("Storage") {
+            FlickSettingsValueRow(
+                title: "Local Path",
+                systemImage: "folder",
+                iconColor: .blue,
+                value: asset.localFilePath ?? "Not set",
+                valueLineLimit: nil
+            )
+            FlickSettingsValueRow(
+                title: "Storage Bucket",
+                systemImage: "externaldrive",
+                iconColor: .purple,
+                value: asset.storageBucket ?? "Not set",
+                valueLineLimit: nil
+            )
+            FlickSettingsValueRow(
+                title: "Storage Path",
+                systemImage: "point.3.connected.trianglepath.dotted",
+                iconColor: .purple,
+                value: asset.storagePath ?? "Not set",
+                valueLineLimit: nil
+            )
+            FlickSettingsValueRow(
+                title: "Public URL",
+                systemImage: "link",
+                iconColor: .green,
+                value: asset.publicURL?.absoluteString ?? "Not set",
+                valueLineLimit: nil
+            )
+            FlickSettingsValueRow(
+                title: "Signed URL Expiration",
+                systemImage: "calendar.badge.clock",
+                iconColor: .orange,
+                value: asset.productSignedURLExpiration
+            )
+            FlickSettingsValueRow(
+                title: "Checksum",
+                systemImage: "number",
+                iconColor: .secondary,
+                value: asset.checksum ?? "Not set",
+                valueLineLimit: nil
+            )
+        }
+    }
+
+    private var tagsSection: some View {
+        Section("Tags") {
+            FlickSettingsValueRow(
+                title: "Trend Tags",
+                systemImage: "tag",
+                iconColor: .pink,
+                value: asset.productTrendTags,
+                valueLineLimit: nil
+            )
+        }
+    }
+
+    private var timestampsSection: some View {
+        Section("Timestamps") {
+            FlickSettingsValueRow(
+                title: "Created",
+                systemImage: "calendar",
+                iconColor: .green,
+                value: asset.productCreatedAt
+            )
+            FlickSettingsValueRow(
+                title: "Updated",
+                systemImage: "clock.arrow.circlepath",
+                iconColor: .teal,
+                value: asset.productUpdatedAt
+            )
+            FlickSettingsValueRow(
+                title: "ID",
+                systemImage: "number.square",
+                iconColor: .secondary,
+                value: asset.id.uuidString,
+                valueLineLimit: nil
+            )
+        }
+    }
+
+    private func deleteAsset() {
+        appModel.removeProductMedia(asset)
+        dismiss()
+    }
+}
+
+private struct ProductMediaDetailPreview: View {
+    var asset: MediaAsset
+
+    var body: some View {
+        VStack(spacing: 12) {
+            VerticalMediaFrame(fileURL: asset.localFileURL, cornerRadius: 18, maxPixelSize: 1_920)
+                .frame(maxWidth: 360)
+                .overlay {
+                    if asset.mediaType == .video {
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 48, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 4)
+                    }
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Remove product media")
-                .padding(8)
-            }
-            .overlay(alignment: .bottomLeading) {
-                Text(asset.productMetadata)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.82))
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                .padding(9)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(.white.opacity(0.12), lineWidth: 1)
-            }
-            .clipShape(.rect(cornerRadius: 8))
-            .frame(maxWidth: .infinity)
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(.white.opacity(0.2), lineWidth: 1)
+                }
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -238,10 +405,55 @@ private extension MediaAsset {
         localFilePath.map { URL(fileURLWithPath: $0) }
     }
 
-    var productMetadata: String {
-        let created = createdAt.formatted(date: .abbreviated, time: .omitted)
-        guard let fileSize else { return "Added \(created)" }
-        return "\(ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)) - added \(created)"
+    var productDimensions: String {
+        guard width > 0, height > 0 else { return "Not set" }
+        return "\(width.formatted()) x \(height.formatted())"
+    }
+
+    var productDuration: String {
+        guard let duration else { return "Not set" }
+
+        let totalSeconds = max(0, Int(duration.rounded()))
+        let hours = totalSeconds / 3_600
+        let minutes = (totalSeconds % 3_600) / 60
+        let seconds = totalSeconds % 60
+
+        if hours > 0 {
+            return "\(hours)h \(minutes)m \(seconds)s"
+        }
+        if minutes > 0 {
+            return "\(minutes)m \(seconds)s"
+        }
+        return "\(seconds)s"
+    }
+
+    var productFileSize: String {
+        guard let fileSize else { return "Not set" }
+        return ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)
+    }
+
+    var productSignedURLExpiration: String {
+        guard let signedURLExpiration else { return "Not set" }
+        return signedURLExpiration.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    var productTrendTags: String {
+        guard !trendTags.isEmpty else { return "None" }
+        return trendTags.map(\.name).joined(separator: ", ")
+    }
+
+    var productCreatedAt: String {
+        createdAt.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    var productUpdatedAt: String {
+        updatedAt.formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
+private extension AssetSource {
+    var productDisplayName: String {
+        rawValue.capitalized
     }
 }
 
