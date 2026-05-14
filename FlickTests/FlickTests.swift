@@ -50,7 +50,7 @@ final class FlickTests: XCTestCase {
     func testTikTokAuthorizationParametersRequireUniversalLinkRedirect() throws {
         let configuration = TikTokConfiguration(values: [
             "TIKTOK_CLIENT_ID": "client-id",
-            "TIKTOK_REDIRECT_URI": "https://example.com/oauth/tiktok",
+            "TIKTOK_REDIRECT_URI": TikTokRedirectPolicy.recommendedRedirectURIString,
             "TIKTOK_SCOPES": "user.info.basic,video.publish"
         ])
 
@@ -59,7 +59,7 @@ final class FlickTests: XCTestCase {
             state: "state-token"
         )
 
-        XCTAssertEqual(parameters.redirectURI, "https://example.com/oauth/tiktok")
+        XCTAssertEqual(parameters.redirectURI, TikTokRedirectPolicy.recommendedRedirectURIString)
         XCTAssertEqual(parameters.scopes, ["user.info.basic", "video.publish"])
         XCTAssertEqual(parameters.state, "state-token")
     }
@@ -68,6 +68,18 @@ final class FlickTests: XCTestCase {
         let configuration = TikTokConfiguration(values: [
             "TIKTOK_CLIENT_ID": "client-id",
             "TIKTOK_REDIRECT_URI": "flick://oauth/tiktok",
+            "TIKTOK_SCOPES": "user.info.basic,video.publish"
+        ])
+
+        XCTAssertThrowsError(
+            try TikTokLoginKitAuthorizationParameters(configuration: configuration)
+        )
+    }
+
+    func testTikTokAuthorizationParametersRejectAppStoreRedirect() throws {
+        let configuration = TikTokConfiguration(values: [
+            "TIKTOK_CLIENT_ID": "client-id",
+            "TIKTOK_REDIRECT_URI": "https://apps.apple.com/us/app/flick-go-viral/id6768433016",
             "TIKTOK_SCOPES": "user.info.basic,video.publish"
         ])
 

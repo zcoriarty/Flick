@@ -12,6 +12,9 @@ import CoreData
 struct FlickApp: App {
     let persistenceController = PersistenceController.shared
     @State private var appModel = FlickAppModel.live()
+    #if os(iOS) && !targetEnvironment(macCatalyst)
+    @UIApplicationDelegateAdaptor(FlickAppDelegate.self) private var appDelegate
+    #endif
 
     var body: some Scene {
         WindowGroup {

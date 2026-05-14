@@ -19,6 +19,8 @@ final class TikTokLoginKitClient {
 
     #if os(iOS) && !targetEnvironment(macCatalyst) && canImport(TikTokOpenAuthSDK)
     private var activeAuthorizationRequest: TikTokAuthRequest?
+    private var activeAuthorizationContinuation: CheckedContinuation<TikTokAuthorizationCode, Error>?
+    private var activeAuthorizationTimeoutTask: Task<Void, Never>?
     #endif
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.orion.Flick", category: "LoginKit")
 
@@ -44,7 +46,7 @@ final class TikTokLoginKitClient {
 
     func cancelPendingAuthorization() {
         #if os(iOS) && !targetEnvironment(macCatalyst) && canImport(TikTokOpenAuthSDK)
-        activeAuthorizationRequest = nil
+        completeActiveAuthorization(.failure(LoginKitError.authorizationCanceled))
         #endif
     }
 
@@ -105,19 +107,27 @@ final class TikTokLoginKitClient {
 
         return try await withCheckedThrowingContinuation { continuation in
             activeAuthorizationRequest = request
+            activeAuthorizationContinuation = continuation
+            activeAuthorizationTimeoutTask?.cancel()
+            activeAuthorizationTimeoutTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 90_000_000_000)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    self?.completeActiveAuthorization(.failure(LoginKitError.authorizationTimedOut))
+                }
+            }
+
             let didSend = request.send { [weak self, weak request] response in
                 Task { @MainActor in
                     self?.finishAuthorization(
                         response: response,
                         request: request,
-                        parameters: parameters,
-                        continuation: continuation
+                        parameters: parameters
                     )
                 }
             }
             if !didSend {
-                activeAuthorizationRequest = nil
-                continuation.resume(throwing: LoginKitError.authorizationFailedMessage("Could not start TikTok Login Kit. Check the OpenSDK Info.plist configuration and associated domain setup."))
+                completeActiveAuthorization(.failure(LoginKitError.authorizationFailedMessage("Could not start TikTok Login Kit. Check the OpenSDK Info.plist configuration and associated domain setup.")))
             }
         }
         #else
@@ -140,41 +150,52 @@ final class TikTokLoginKitClient {
     private func finishAuthorization(
         response: TikTokBaseResponse,
         request: TikTokAuthRequest?,
-        parameters: TikTokLoginKitAuthorizationParameters,
-        continuation: CheckedContinuation<TikTokAuthorizationCode, Error>
+        parameters: TikTokLoginKitAuthorizationParameters
     ) {
-        defer {
-            activeAuthorizationRequest = nil
-        }
-
         guard let authResponse = response as? TikTokAuthResponse else {
-            continuation.resume(throwing: LoginKitError.authorizationFailedMessage("TikTok Login Kit returned an unexpected authorization response."))
+            completeActiveAuthorization(.failure(LoginKitError.authorizationFailedMessage("TikTok Login Kit returned an unexpected authorization response.")))
             return
         }
 
         guard authResponse.errorCode == .noError else {
-            continuation.resume(throwing: LoginKitError.authorizationFailed(authResponse))
+            completeActiveAuthorization(.failure(LoginKitError.authorizationFailed(authResponse)))
             return
         }
         guard authResponse.state == parameters.state else {
-            continuation.resume(throwing: LoginKitError.stateMismatch)
+            completeActiveAuthorization(.failure(LoginKitError.stateMismatch))
             return
         }
         guard let code = authResponse.authCode, !code.isEmpty else {
-            continuation.resume(throwing: LoginKitError.missingAuthorizationCode)
+            completeActiveAuthorization(.failure(LoginKitError.missingAuthorizationCode))
             return
         }
         guard let codeVerifier = request?.pkce.codeVerifier, !codeVerifier.isEmpty else {
-            continuation.resume(throwing: LoginKitError.authorizationFailedMessage("TikTok Login Kit did not retain a PKCE verifier for token exchange."))
+            completeActiveAuthorization(.failure(LoginKitError.authorizationFailedMessage("TikTok Login Kit did not retain a PKCE verifier for token exchange.")))
             return
         }
 
         let scopes = Array(authResponse.grantedPermissions ?? parameters.scopes).sorted()
-        continuation.resume(returning: TikTokAuthorizationCode(
+        completeActiveAuthorization(.success(TikTokAuthorizationCode(
             code: code,
             codeVerifier: codeVerifier,
             scopes: scopes
-        ))
+        )))
+    }
+
+    private func completeActiveAuthorization(_ result: Result<TikTokAuthorizationCode, Error>) {
+        guard let continuation = activeAuthorizationContinuation else { return }
+
+        activeAuthorizationContinuation = nil
+        activeAuthorizationTimeoutTask?.cancel()
+        activeAuthorizationTimeoutTask = nil
+        activeAuthorizationRequest = nil
+
+        switch result {
+        case let .success(authorizationCode):
+            continuation.resume(returning: authorizationCode)
+        case let .failure(error):
+            continuation.resume(throwing: error)
+        }
     }
     #endif
 
@@ -217,6 +238,7 @@ enum LoginKitError: LocalizedError {
     case notConfigured(String)
     case authorizationUnavailableOnThisPlatform
     case authorizationCanceled
+    case authorizationTimedOut
     case authorizationFailedMessage(String)
     case stateMismatch
     case missingAuthorizationCode
@@ -232,6 +254,8 @@ enum LoginKitError: LocalizedError {
             AccountManagementPolicy.unavailableMessage
         case .authorizationCanceled:
             "TikTok authorization was canceled."
+        case .authorizationTimedOut:
+            "TikTok authorization timed out. TikTok redirected to the configured Universal Link, but Flick did not receive the callback. Verify the thready.it.com apple-app-site-association file, Apple CDN cache, and reinstall the app after the Associated Domain is live."
         case let .authorizationFailedMessage(message):
             message
         case .stateMismatch:
@@ -279,9 +303,7 @@ struct TikTokLoginKitAuthorizationParameters: Hashable {
         guard let redirectURI = configuration.redirectURI else {
             throw LoginKitError.notConfigured("TikTok redirect URI is missing.")
         }
-        guard redirectURI.scheme == "https", redirectURI.host?.isEmpty == false else {
-            throw LoginKitError.notConfigured("TikTok Login Kit for iOS requires an HTTPS universal-link redirect URI.")
-        }
+        try TikTokRedirectPolicy.validateLoginKitRedirectURI(redirectURI)
         guard !configuration.requestedScopes.isEmpty else {
             throw LoginKitError.notConfigured("TikTok Login Kit needs at least one requested scope.")
         }
