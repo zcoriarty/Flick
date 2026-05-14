@@ -11,13 +11,13 @@ struct SettingsView: View {
     @State private var isClearCredentialsConfirmationPresented = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
-            credentials
-            storage
-            workerRole
-            diagnostics
+        List {
+            credentialsSection
+            storageSection
+            workerRoleSection
+            diagnosticsSection
         }
-        .flickScrollablePage()
+        .flickSettingsListStyle()
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -26,46 +26,41 @@ struct SettingsView: View {
             }
         }
         .onAppear(perform: reloadCredentialDrafts)
-        
     }
 
-    private var credentials: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Credentials", subtitle: "Edit and store credentials directly in Keychain", systemImage: "key")
-
-            FlickGlassCard {
-                HStack(alignment: .top, spacing: 12) {
-                    HStack(alignment: .top) {
-                        Label("Keychain credentials", systemImage: "lock.shield")
-                            .font(.headline)
-                        StatusBadge(title: "\(appModel.configuration.secureStoredCredentialKeys.count) stored", tint: .blue, systemImage: "key.fill")
-                    }
-                    Spacer(minLength: 12)
-                    Button("Clear stored", systemImage: "trash", role: .destructive) {
-                        isClearCredentialsConfirmationPresented = true
-                    }
-                    .confirmationDialog("Clear stored credentials?", isPresented: $isClearCredentialsConfirmationPresented) {
-                        Button("Clear stored", role: .destructive) {
-                            clearStoredCredentials()
-                        }
-                        Button("Cancel", role: .cancel) { }
-                    } message: {
-                        Text("This removes every credential Flick has stored in Keychain.")
-                    }
-                }
+    private var credentialsSection: some View {
+        Section("Credentials") {
+            FlickSettingsRow(title: "Keychain credentials", systemImage: "lock.shield", iconColor: .blue) {
+                StatusBadge(title: "\(appModel.configuration.secureStoredCredentialKeys.count) stored", tint: .blue, systemImage: "key.fill")
             }
 
             if let credentialMessage = appModel.credentialMessage {
-                Text(credentialMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                SettingsMessageRow(title: "Credential status", message: credentialMessage)
             }
 
-            CredentialEditorView(
-                drafts: $credentialDrafts,
-                saveAction: saveCredential,
-                deleteAction: deleteCredential
-            )
+            ForEach($credentialDrafts) { $draft in
+                CredentialEditorRow(
+                    draft: $draft,
+                    saveAction: {
+                        saveCredential(draft)
+                    },
+                    deleteAction: {
+                        deleteCredential(draft)
+                    }
+                )
+            }
+
+            Button("Clear stored credentials", systemImage: "trash", role: .destructive) {
+                isClearCredentialsConfirmationPresented = true
+            }
+            .confirmationDialog("Clear stored credentials?", isPresented: $isClearCredentialsConfirmationPresented) {
+                Button("Clear stored", role: .destructive) {
+                    clearStoredCredentials()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This removes every credential Flick has stored in Keychain.")
+            }
         }
     }
 
@@ -104,100 +99,121 @@ struct SettingsView: View {
         }
     }
 
-    private var storage: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Supabase storage", subtitle: "Workspace-scoped media buckets and URL strategy", systemImage: "externaldrive.badge.icloud")
-            FlickGlassCard {
-                ResponsiveGrid(minimum: 230) {
-                    BucketRow(name: appModel.configuration.storageBuckets.generatedImages, purpose: "Generated slideshow images")
-                    BucketRow(name: appModel.configuration.storageBuckets.renderedVideos, purpose: "Rendered MP4 exports")
-                    BucketRow(name: appModel.configuration.storageBuckets.referenceImages, purpose: "Trend and reference uploads")
-                    BucketRow(name: appModel.configuration.storageBuckets.thumbnails, purpose: "Queue and analytics previews")
-                }
-            }
+    private var storageSection: some View {
+        Section("Supabase storage") {
+            FlickSettingsValueRow(
+                title: "Generated images",
+                systemImage: "photo",
+                iconColor: .blue,
+                value: appModel.configuration.storageBuckets.generatedImages,
+                valueLineLimit: nil
+            )
+            FlickSettingsValueRow(
+                title: "Rendered videos",
+                systemImage: "film",
+                iconColor: .purple,
+                value: appModel.configuration.storageBuckets.renderedVideos,
+                valueLineLimit: nil
+            )
+            FlickSettingsValueRow(
+                title: "Reference images",
+                systemImage: "sparkles.rectangle.stack",
+                iconColor: .orange,
+                value: appModel.configuration.storageBuckets.referenceImages,
+                valueLineLimit: nil
+            )
+            FlickSettingsValueRow(
+                title: "Thumbnails",
+                systemImage: "rectangle.stack",
+                iconColor: .green,
+                value: appModel.configuration.storageBuckets.thumbnails,
+                valueLineLimit: nil
+            )
         }
     }
 
-    private var workerRole: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Worker role", subtitle: "Mac executes autonomous scheduled work; iPhone monitors and approves", systemImage: "desktopcomputer.and.macbook")
+    private var workerRoleSection: some View {
+        Section("Worker role") {
             if appModel.overview.devices.isEmpty {
-                FlickEmptyStateCard(
+                SettingsMessageRow(
                     title: "No devices registered",
-                    message: "Device registration will appear here after the app persists real device identity and worker capability state.",
-                    systemImage: "desktopcomputer.and.macbook"
+                    message: "Device registration will appear here after the app persists real device identity and worker capability state."
                 )
             } else {
-                ResponsiveGrid(minimum: 280) {
-                    ForEach(appModel.overview.devices) { device in
-                        FlickGlassCard {
-                            VStack(alignment: .leading, spacing: 10) {
-                                HStack {
-                                    Text(device.name)
-                                        .font(.headline)
-                                    Spacer()
-                                    StatusBadge(title: device.platform.rawValue, tint: device.isPrimaryWorker ? .green : .blue, systemImage: "circle.fill")
-                                }
-                                Text(device.capabilities.joined(separator: ", "))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(3)
-                            }
-                        }
-                    }
+                ForEach(appModel.overview.devices) { device in
+                    DeviceRow(device: device)
                 }
             }
         }
     }
 
-    private var diagnostics: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Diagnostics", subtitle: "CloudKit, worker, publishing, Supabase, and cleanup logs", systemImage: "stethoscope")
-            FlickGlassCard {
-                ResponsiveGrid(minimum: 230) {
-                    DiagnosticRow(title: "CloudKit sync", value: "\(appModel.overview.dashboard.syncHealth.pendingChanges) pending changes", systemImage: "icloud")
-                    DiagnosticRow(title: "Render directory", value: appModel.configuration.renderDirectory.path(percentEncoded: false), systemImage: "folder")
-                    DiagnosticRow(title: "Primary worker", value: appModel.overview.dashboard.workerStatus.isOnline ? "Online" : "Offline", systemImage: "desktopcomputer")
-                    DiagnosticRow(title: "Notifications", value: "Approval, failure, token, analytics, and worker alerts", systemImage: "bell")
-                }
-            }
+    private var diagnosticsSection: some View {
+        Section("Diagnostics") {
+            FlickSettingsValueRow(
+                title: "CloudKit sync",
+                systemImage: "icloud",
+                iconColor: .blue,
+                value: "\(appModel.overview.dashboard.syncHealth.pendingChanges) pending changes"
+            )
+            FlickSettingsValueRow(
+                title: "Render directory",
+                systemImage: "folder",
+                iconColor: .orange,
+                value: appModel.configuration.renderDirectory.path(percentEncoded: false),
+                valueLineLimit: nil
+            )
+            FlickSettingsValueRow(
+                title: "Primary worker",
+                systemImage: "desktopcomputer",
+                iconColor: appModel.overview.dashboard.workerStatus.isOnline ? .green : .secondary,
+                value: appModel.overview.dashboard.workerStatus.isOnline ? "Online" : "Offline"
+            )
+            FlickSettingsValueRow(
+                title: "Notifications",
+                systemImage: "bell",
+                iconColor: .purple,
+                value: "Approval, failure, token, analytics, and worker alerts",
+                valueLineLimit: 2
+            )
         }
     }
 }
 
-private struct BucketRow: View {
-    var name: String
-    var purpose: String
+private struct DeviceRow: View {
+    var device: FlickDevice
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(name)
-                .font(.callout.weight(.semibold))
-            Text(purpose)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(device.name)
+                    .font(.body.weight(.semibold))
+                Spacer(minLength: 12)
+                StatusBadge(title: device.platform.rawValue, tint: device.isPrimaryWorker ? .green : .blue, systemImage: "circle.fill")
+            }
+
+            Text(device.capabilities.joined(separator: ", "))
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .lineLimit(3)
         }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
     }
 }
 
-private struct DiagnosticRow: View {
+private struct SettingsMessageRow: View {
     var title: String
-    var value: String
-    var systemImage: String
+    var message: String
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: systemImage)
-                .foregroundStyle(.purple)
-                .frame(width: 24)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(value)
-                    .font(.callout.weight(.semibold))
-                    .lineLimit(3)
-            }
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .foregroundStyle(.primary)
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .accessibilityElement(children: .combine)
     }
 }

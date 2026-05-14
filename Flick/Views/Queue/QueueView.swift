@@ -9,11 +9,11 @@ struct QueueView: View {
     @Environment(FlickAppModel.self) private var appModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
-            publishingJobs
-            cadenceRules
+        List {
+            publishingJobsSection
+            cadenceRulesSection
         }
-        .flickScrollablePage()
+        .flickSettingsListStyle()
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -28,58 +28,31 @@ struct QueueView: View {
         }
     }
 
-    private var cadenceRules: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Cadence rules", subtitle: "Per-account timing, approval, retry, and pause behavior", systemImage: "clock.badge.checkmark")
+    private var cadenceRulesSection: some View {
+        Section("Cadence rules") {
             if appModel.overview.cadenceRules.isEmpty {
-                FlickEmptyStateCard(
+                QueueMessageRow(
                     title: "No cadence rules",
-                    message: "Cadence rules are created per authorized account before autonomous scheduling starts.",
-                    systemImage: "clock.badge.questionmark"
+                    message: "Cadence rules are created per authorized account before autonomous scheduling starts."
                 )
             } else {
-                ResponsiveGrid(minimum: 280) {
-                    ForEach(appModel.overview.cadenceRules) { rule in
-                        FlickGlassCard {
-                            VStack(alignment: .leading, spacing: 12) {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(accountName(for: rule.accountID))
-                                            .font(.headline)
-                                        Text("\(rule.postsPerDay) posts/day")
-                                            .font(.title3.weight(.bold))
-                                    }
-                                    Spacer()
-                                    StatusBadge(title: rule.requireApproval ? "Manual approval" : "Auto", tint: rule.requireApproval ? .orange : .green, systemImage: "checkmark.seal")
-                                }
-                                Label(rule.allowedTimeWindows.joined(separator: "  "), systemImage: "calendar")
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                                HStack(spacing: 14) {
-                                    Label("\(rule.minimumGapMinutes)m gap", systemImage: "arrow.left.arrow.right")
-                                    Label("\(rule.maxRetries) retries", systemImage: "arrow.clockwise")
-                                    Label("Pause after \(rule.pauseOnErrorCount)", systemImage: "pause.circle")
-                                }
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
+                ForEach(appModel.overview.cadenceRules) { rule in
+                    CadenceRuleRow(rule: rule, accountName: accountName(for: rule.accountID))
                 }
             }
         }
     }
 
-    private var publishingJobs: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Publishing jobs", subtitle: "Draft content, account, approval, media, retries, and diagnostics", systemImage: "tray.full")
+    private var publishingJobsSection: some View {
+        Section("Publishing jobs") {
             if appModel.overview.publishingJobs.isEmpty {
-                QueueEmptyState()
+                QueueMessageRow(
+                    title: "No queued content",
+                    message: "Send an approved slideshow draft to the queue to see its slides, caption, account, and publish status here."
+                )
             } else {
-                LazyVStack(spacing: 12) {
-                    ForEach(appModel.overview.publishingJobs.sorted { $0.scheduledAt < $1.scheduledAt }) { job in
-                        PublishingJobRow(job: job)
-                    }
+                ForEach(appModel.overview.publishingJobs.sorted { $0.scheduledAt < $1.scheduledAt }) { job in
+                    PublishingJobRow(job: job)
                 }
             }
         }
@@ -91,93 +64,138 @@ struct QueueView: View {
     }
 }
 
+private struct CadenceRuleRow: View {
+    var rule: CadenceRule
+    var accountName: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(accountName)
+                        .font(.body.weight(.semibold))
+                    Text("\(rule.postsPerDay) posts/day")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                StatusBadge(
+                    title: rule.requireApproval ? "Manual approval" : "Auto",
+                    tint: rule.requireApproval ? .orange : .green,
+                    systemImage: "checkmark.seal"
+                )
+            }
+
+            Text(rule.allowedTimeWindows.displayValue)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            Text("\(rule.minimumGapMinutes)m gap · \(rule.maxRetries) retries · Pause after \(rule.pauseOnErrorCount)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 private struct PublishingJobRow: View {
     @Environment(FlickAppModel.self) private var appModel
     var job: PublishingJob
 
     var body: some View {
-        FlickGlassCard(interactive: true) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Label(draftTitle, systemImage: job.platform.systemImage)
-                            .font(.headline)
-                        Text("Scheduled \(job.scheduledAt, style: .date) at \(job.scheduledAt, style: .time)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    StatusBadge(title: job.status.displayName, tint: job.status.tint, systemImage: "circle.fill")
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(draftTitle, systemImage: job.platform.systemImage)
+                        .font(.body.weight(.semibold))
+                    Text("Scheduled \(job.scheduledAt, style: .date) at \(job.scheduledAt, style: .time)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
+                Spacer(minLength: 12)
+                StatusBadge(title: job.status.displayName, tint: job.status.tint, systemImage: "circle.fill")
+            }
 
-                HStack(spacing: 16) {
-                    Label(accountTitle, systemImage: "person.crop.circle")
-                    Label(job.publishMode.displayName, systemImage: "rectangle.stack")
-                    Label("\(job.attemptCount) attempts", systemImage: "arrow.clockwise")
-                    if let worker = job.workerDeviceID {
-                        Label(worker.uuidString.prefix(8).description, systemImage: "desktopcomputer")
-                    }
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-                if let draft {
-                    QueueDraftContentPreview(draft: draft)
-                } else {
-                    StatusBadge(title: "Draft content missing", tint: .red, systemImage: "exclamationmark.triangle")
-                }
-
-                if account == nil {
-                    MissingAuthorizedAccountWarning(platform: job.platform)
-                }
-
-                if let lastError = job.lastError {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(lastError.message)
-                            .font(.callout.weight(.semibold))
-                        Text(lastError.suggestedFix)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    }
-                    .padding(10)
-                    .background(
-                        .red.opacity(0.08),
-                        in: RoundedRectangle(cornerRadius: FlickStyle.controlCornerRadius, style: .continuous)
-                    )
-                }
-
-                HStack {
-                    if job.status == .awaitingApproval {
-                        Button("Approve", systemImage: "checkmark") {
-                            appModel.approve(job: job)
-                        }
-                        .buttonStyle(.glassProminent)
-                    }
-                    if job.status == .failed {
-                        Button("Retry", systemImage: "arrow.clockwise") {
-                            appModel.retry(job: job)
-                        }
-                        .buttonStyle(.glassProminent)
-                    }
-                    if job.status == .queued {
-                        Button("Pause", systemImage: "pause") {
-                            appModel.pause(job: job)
-                        }
-                    }
-                    if job.status == .paused {
-                        Button("Resume", systemImage: "play") {
-                            appModel.resume(job: job)
-                        }
-                        .buttonStyle(.glassProminent)
-                    }
-                    Spacer()
-                    Button("Duplicate", systemImage: "plus.square.on.square") {
-                        if let draft = appModel.overview.drafts.first(where: { $0.id == job.draftID }) {
-                            appModel.duplicateDraft(draft)
-                        }
-                    }
+            HStack(spacing: 16) {
+                Label(accountTitle, systemImage: "person.crop.circle")
+                Label(job.publishMode.displayName, systemImage: "rectangle.stack")
+                Label("\(job.attemptCount) attempts", systemImage: "arrow.clockwise")
+                if let worker = job.workerDeviceID {
+                    Label(worker.uuidString.prefix(8).description, systemImage: "desktopcomputer")
                 }
             }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            if let draft {
+                QueueDraftContentPreview(draft: draft)
+            } else {
+                StatusBadge(title: "Draft content missing", tint: .red, systemImage: "exclamationmark.triangle")
+            }
+
+            if account == nil {
+                MissingAuthorizedAccountWarning(platform: job.platform)
+            }
+
+            if let lastError = job.lastError {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(lastError.message)
+                        .font(.callout.weight(.semibold))
+                    Text(lastError.suggestedFix)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                .padding(10)
+                .background(
+                    .red.opacity(0.08),
+                    in: RoundedRectangle(cornerRadius: FlickStyle.controlCornerRadius, style: .continuous)
+                )
+            }
+
+            ViewThatFits(in: .horizontal) {
+                actionButtons
+                VStack(alignment: .leading, spacing: 8) {
+                    actionButtons
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var actionButtons: some View {
+        HStack {
+            if job.status == .awaitingApproval {
+                Button("Approve", systemImage: "checkmark") {
+                    appModel.approve(job: job)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            if job.status == .failed {
+                Button("Retry", systemImage: "arrow.clockwise") {
+                    appModel.retry(job: job)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            if job.status == .queued {
+                Button("Pause", systemImage: "pause") {
+                    appModel.pause(job: job)
+                }
+                .buttonStyle(.bordered)
+            }
+            if job.status == .paused {
+                Button("Resume", systemImage: "play") {
+                    appModel.resume(job: job)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            Spacer(minLength: 8)
+            Button("Duplicate", systemImage: "plus.square.on.square") {
+                if let draft = appModel.overview.drafts.first(where: { $0.id == job.draftID }) {
+                    appModel.duplicateDraft(draft)
+                }
+            }
+            .buttonStyle(.bordered)
         }
     }
 
@@ -281,22 +299,20 @@ private struct MissingAuthorizedAccountWarning: View {
     }
 }
 
-private struct QueueEmptyState: View {
+private struct QueueMessageRow: View {
+    var title: String
+    var message: String
+
     var body: some View {
-        FlickGlassCard {
-            Label {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("No queued content")
-                        .font(.headline)
-                    Text("Send an approved slideshow draft to the queue to see its slides, caption, account, and publish status here.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-            } icon: {
-                Image(systemName: "tray")
-                    .foregroundStyle(.secondary)
-            }
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .foregroundStyle(.primary)
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -310,6 +326,12 @@ private extension SlideRole {
         case .benefit: .green
         case .cta: .purple
         }
+    }
+}
+
+private extension Array where Element == String {
+    var displayValue: String {
+        isEmpty ? "No allowed windows" : joined(separator: "  ")
     }
 }
 

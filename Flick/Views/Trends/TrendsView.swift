@@ -10,12 +10,12 @@ struct TrendsView: View {
     @State private var selectedStatus: TrendStatus?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
-            statusFilter
-            trendLibrary
-            tagLibrary
+        List {
+            filtersSection
+            trendLibrarySection
+            tagTaxonomySection
         }
-        .flickScrollablePage()
+        .flickSettingsListStyle()
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -24,13 +24,12 @@ struct TrendsView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Button("Add trend", systemImage: "plus") { }
-                    .buttonStyle(.glassProminent)
             }
         }
     }
 
-    private var statusFilter: some View {
-        GlassEffectContainer(spacing: 10) {
+    private var filtersSection: some View {
+        Section("Filter") {
             ScrollView(.horizontal) {
                 HStack(spacing: 10) {
                     TrendFilterButton(title: "All", isSelected: selectedStatus == nil) {
@@ -49,49 +48,31 @@ struct TrendsView: View {
         }
     }
 
-    private var trendLibrary: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Trend library", subtitle: "Manual references, Creative Center notes, and winning Flick patterns", systemImage: "sparkles.rectangle.stack")
+    private var trendLibrarySection: some View {
+        Section("Trend library") {
             if filteredTrends.isEmpty {
-                FlickEmptyStateCard(
+                TrendsMessageRow(
                     title: selectedStatus == nil ? "No trends yet" : "No \(selectedStatus?.displayName.lowercased() ?? "") trends",
-                    message: "Add trends from Creative Center, manual notes, uploaded references, or winning posts once real content exists.",
-                    systemImage: "sparkles.rectangle.stack"
+                    message: "Add trends from Creative Center, manual notes, uploaded references, or winning posts once real content exists."
                 )
             } else {
-                ResponsiveGrid(minimum: 300) {
-                    ForEach(filteredTrends) { trend in
-                        TrendCard(trend: trend)
-                    }
+                ForEach(filteredTrends) { trend in
+                    TrendRow(trend: trend)
                 }
             }
         }
     }
 
-    private var tagLibrary: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Tag taxonomy", subtitle: "Hook, template, visual style, niche, CTA, pacing, and platform tags", systemImage: "tag")
-            FlickGlassCard {
-                if appModel.overview.trendTags.isEmpty {
-                    Label {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("No tags yet")
-                                .font(.headline)
-                            Text("Tags will appear after you create trend patterns or classify imported references.")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "tag")
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8)], alignment: .leading, spacing: 8) {
-                        ForEach(appModel.overview.trendTags) { tag in
-                            TagChip(tag: tag)
-                                .accessibilityLabel("\(tag.name), \(tag.category.displayName)")
-                        }
-                    }
+    private var tagTaxonomySection: some View {
+        Section("Tag taxonomy") {
+            if appModel.overview.trendTags.isEmpty {
+                TrendsMessageRow(
+                    title: "No tags yet",
+                    message: "Tags will appear after you create trend patterns or classify imported references."
+                )
+            } else {
+                ForEach(appModel.overview.trendTags) { tag in
+                    TrendTagRow(tag: tag)
                 }
             }
         }
@@ -111,57 +92,93 @@ private struct TrendFilterButton: View {
     var action: () -> Void
 
     var body: some View {
-        Button(title, action: action)
-            .modifier(GlassSelectionButtonStyle(isSelected: isSelected))
+        Button(action: action) {
+            Text(title)
+                .font(.callout.weight(.semibold))
+        }
+        .modifier(BorderedSelectionButtonStyle(isSelected: isSelected))
     }
 }
 
-private struct GlassSelectionButtonStyle: ViewModifier {
+private struct BorderedSelectionButtonStyle: ViewModifier {
     var isSelected: Bool
 
     func body(content: Content) -> some View {
         if isSelected {
-            content.buttonStyle(.glassProminent)
+            content.buttonStyle(.borderedProminent)
         } else {
-            content
+            content.buttonStyle(.bordered)
         }
     }
 }
 
-private struct TrendCard: View {
+private struct TrendRow: View {
     var trend: Trend
 
     var body: some View {
-        FlickGlassCard(interactive: true) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(trend.name)
-                            .font(.headline)
-                        Text(trend.source)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    StatusBadge(title: trend.status.displayName, tint: trend.status.tint, systemImage: "circle.fill")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(trend.name)
+                        .font(.body.weight(.semibold))
+                    Text(trend.source)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
+                Spacer(minLength: 12)
+                StatusBadge(title: trend.status.displayName, tint: trend.status.tint, systemImage: "circle.fill")
+            }
 
-                Text(trend.notes)
-                    .font(.callout)
+            Text(trend.notes)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+
+            if !trend.tags.isEmpty {
+                Text(trend.tags.map(\.name).joined(separator: ", "))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(3)
+                    .lineLimit(2)
+            }
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8)], alignment: .leading, spacing: 8) {
-                    ForEach(trend.tags) { tag in
-                        TagChip(tag: tag)
-                    }
-                }
-
+            if !trend.performanceSummary.isEmpty {
                 Text(trend.performanceSummary)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(.top, 4)
             }
         }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct TrendTagRow: View {
+    var tag: TrendTag
+
+    var body: some View {
+        FlickSettingsRow(title: tag.name) {
+            Text(tag.category.displayName)
+                .font(.callout)
+                .foregroundStyle(Color(hex: tag.colorHex))
+                .multilineTextAlignment(.trailing)
+        }
+        .accessibilityLabel("\(tag.name), \(tag.category.displayName)")
+    }
+}
+
+private struct TrendsMessageRow: View {
+    var title: String
+    var message: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .foregroundStyle(.primary)
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
     }
 }

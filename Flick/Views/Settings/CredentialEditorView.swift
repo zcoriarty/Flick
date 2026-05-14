@@ -32,38 +32,23 @@ struct CredentialEditorView: View {
     var deleteAction: (CredentialEditorDraft) -> Void
 
     var body: some View {
-        FlickGlassCard {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .top) {
-                    Label("Stored credential editor", systemImage: "key.fill")
-                        .font(.headline)
-                    Spacer()
-                    StatusBadge(title: "\(storedCount) stored", tint: .blue, systemImage: "lock.fill")
-                }
-
-                VStack(alignment: .leading, spacing: 18) {
-                    ForEach($drafts) { $draft in
-                        CredentialEditorRow(
-                            draft: $draft,
-                            saveAction: {
-                                saveAction(draft)
-                            },
-                            deleteAction: {
-                                deleteAction(draft)
-                            }
-                        )
+        VStack(alignment: .leading, spacing: 18) {
+            ForEach($drafts) { $draft in
+                CredentialEditorRow(
+                    draft: $draft,
+                    saveAction: {
+                        saveAction(draft)
+                    },
+                    deleteAction: {
+                        deleteAction(draft)
                     }
-                }
+                )
             }
         }
     }
-
-    private var storedCount: Int {
-        drafts.filter(\.isStoredSecurely).count
-    }
 }
 
-private struct CredentialEditorRow: View {
+struct CredentialEditorRow: View {
     @Binding var draft: CredentialEditorDraft
     @State private var isValueVisible = false
     @State private var isDeleteConfirmationPresented = false
@@ -133,7 +118,7 @@ private struct CredentialEditorRow: View {
                 }
 
             Button("Save", systemImage: "checkmark", action: saveAction)
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.borderedProminent)
                 .disabled(!draft.canSave)
         }
     }
