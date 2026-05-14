@@ -14,8 +14,12 @@ struct TemplatesView: View {
 
     var body: some View {
         content
-            .flickNavigationTitle("Templates")
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Templates")
+                        .font(.system(.body, weight: .semibold))
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button("Reload", systemImage: "arrow.clockwise") {
                         loadTemplates()
@@ -23,9 +27,7 @@ struct TemplatesView: View {
                 }
             }
             .sheet(item: $selectedTemplate) { template in
-                NavigationStack {
-                    TemplatePreviewSheet(template: template)
-                }
+                TemplatePreviewSheet(template: template)
             }
         .task {
             if case .loading = loadState {

@@ -14,8 +14,12 @@ struct QueueView: View {
             cadenceRules
         }
         .flickScrollablePage()
-        .flickNavigationTitle("Queue")
+        .toolbarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Queue")
+                    .font(.system(.body, weight: .semibold))
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button(appModel.overview.workspace.automationPaused ? "Resume" : "Pause", systemImage: appModel.overview.workspace.automationPaused ? "play.fill" : "pause.fill") {
                     appModel.toggleAutomationPaused()

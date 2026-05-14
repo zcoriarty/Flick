@@ -69,7 +69,13 @@ struct PlatformPublishSettingsView: View {
             }
         }
         .listStyle(.plain)
-        .flickNavigationTitle("\(platform.displayName) Publish Settings")
+        .toolbarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("\(platform.displayName) Publish Settings")
+                    .font(.system(.body, weight: .semibold))
+            }
+        }
     }
 
     private var adapterStatus: String {

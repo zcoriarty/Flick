@@ -29,13 +29,17 @@ struct TemplatePreviewSheet: View {
             .padding(FlickStyle.pagePadding)
         }
         .background(FlickStyle.pageBackground.ignoresSafeArea())
-        .flickNavigationTitle("Template")
+        .toolbarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Close", systemImage: "xmark") {
                     dismiss()
                 }
                 .keyboardShortcut(.cancelAction)
+            }
+            ToolbarItem(placement: .principal) {
+                Text("Template")
+                    .font(.system(.body, weight: .semibold))
             }
             ToolbarItem(placement: .primaryAction) {
                 Button("Use Template", systemImage: "wand.and.sparkles") {

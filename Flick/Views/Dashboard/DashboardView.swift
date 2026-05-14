@@ -11,8 +11,12 @@ struct DashboardView: View {
     var body: some View {
         dashboardContent
             .flickScrollablePage()
-            .flickNavigationTitle("Dashboard")
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Flick")
+                        .font(.system(.body, weight: .semibold))
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button("Generate batch", systemImage: "wand.and.sparkles") {
                         appModel.selectedSection = .create

@@ -16,7 +16,13 @@ struct AnalyticsView: View {
             learningLoop
         }
         .flickScrollablePage()
-        .flickNavigationTitle("Analytics")
+        .toolbarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Analytics")
+                    .font(.system(.body, weight: .semibold))
+            }
+        }
         
     }
 

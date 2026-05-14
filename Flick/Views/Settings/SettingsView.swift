@@ -18,7 +18,13 @@ struct SettingsView: View {
             diagnostics
         }
         .flickScrollablePage()
-        .flickNavigationTitle("Settings")
+        .toolbarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Settings")
+                    .font(.system(.body, weight: .semibold))
+            }
+        }
         .onAppear(perform: reloadCredentialDrafts)
         
     }

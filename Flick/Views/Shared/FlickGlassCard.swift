@@ -196,9 +196,4 @@ extension View {
         .background(FlickStyle.pageBackground.ignoresSafeArea())
         .scrollEdgeEffectStyle(.soft, for: .top)
     }
-
-    func flickNavigationTitle(_ title: String) -> some View {
-        navigationTitle(title)
-            .toolbarTitleDisplayMode(.inline)
-    }
 }

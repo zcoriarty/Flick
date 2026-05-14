@@ -16,8 +16,12 @@ struct TemplateDetailView: View {
             sourceDetails
         }
         .flickScrollablePage()
-        .flickNavigationTitle(template.title)
+        .toolbarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(template.title)
+                    .font(.system(.body, weight: .semibold))
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button("Use Template", systemImage: "wand.and.sparkles") {
                     appModel.createDraft(from: template)

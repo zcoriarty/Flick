@@ -17,8 +17,12 @@ struct CreateView: View {
             qualityChecks
         }
         .flickScrollablePage()
-        .flickNavigationTitle("Create")
+        .toolbarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Create")
+                    .font(.system(.body, weight: .semibold))
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button("Send to queue", systemImage: "tray.and.arrow.down") {
                     appModel.selectedSection = .queue
