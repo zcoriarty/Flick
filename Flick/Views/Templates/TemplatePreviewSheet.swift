@@ -87,10 +87,8 @@ struct TemplatePreviewSheet: View {
     private var focusedSlide: some View {
         if let selectedSlide {
             ZStack {
-                LocalAssetImage(fileURL: selectedSlide.localURL, contentMode: .fill)
+                VerticalMediaFrame(fileURL: selectedSlide.localURL, cornerRadius: 18, maxPixelSize: 1_920)
                     .frame(maxWidth: 360, maxHeight: 520)
-                    .aspectRatio(9.0 / 16.0, contentMode: .fit)
-                    .clipShape(.rect(cornerRadius: 18))
                     .overlay {
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .stroke(.white.opacity(0.32), lineWidth: 1)
@@ -142,9 +140,8 @@ struct TemplatePreviewSheet: View {
                         Button {
                             selectedSlideID = slide.id
                         } label: {
-                            LocalAssetImage(fileURL: slide.localURL, contentMode: .fill)
-                                .frame(width: 58, height: 82)
-                                .clipShape(.rect(cornerRadius: 8))
+                            VerticalMediaFrame(fileURL: slide.localURL, cornerRadius: 8, maxPixelSize: 360)
+                                .frame(width: 58)
                                 .overlay {
                                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                                         .stroke(slide.id == selectedSlideID ? Color.indigo : Color.clear, lineWidth: 3)

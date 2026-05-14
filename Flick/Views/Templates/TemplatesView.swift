@@ -130,8 +130,8 @@ struct TemplatesView: View {
     private var templateColumns: [GridItem] {
         [
             GridItem(
-                .adaptive(minimum: 108, maximum: 190),
-                spacing: 10,
+                .adaptive(minimum: 132, maximum: 190),
+                spacing: 12,
                 alignment: .top
             )
         ]

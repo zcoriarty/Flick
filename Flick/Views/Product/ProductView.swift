@@ -135,7 +135,7 @@ private struct ProductMediaSection: View {
                     systemImage: "photo.badge.plus"
                 )
             } else {
-                ResponsiveGrid(minimum: 170) {
+                ResponsiveGrid(minimum: 154, spacing: 12) {
                     ForEach(assets) { asset in
                         ProductMediaCard(asset: asset) {
                             removeAction(asset)
@@ -152,44 +152,59 @@ private struct ProductMediaCard: View {
     var removeAction: () -> Void
 
     var body: some View {
-        FlickGlassCard(interactive: true) {
-            VStack(alignment: .leading, spacing: 12) {
-                ZStack {
-                    LocalAssetImage(fileURL: asset.localFileURL)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .clipped()
-
-                    if asset.mediaType == .video {
-                        Image(systemName: "play.circle.fill")
-                            .font(.largeTitle)
-                            .foregroundStyle(.white)
-                            .shadow(radius: 8)
-                    }
+        VerticalMediaFrame(fileURL: asset.localFileURL, cornerRadius: 0)
+            .overlay {
+                LinearGradient(
+                    colors: [.black.opacity(0.52), .clear, .black.opacity(0.76)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+            .overlay {
+                if asset.mediaType == .video {
+                    Image(systemName: "play.circle.fill")
+                        .font(.system(size: 38, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.4), radius: 8, x: 0, y: 3)
                 }
-                .aspectRatio(1, contentMode: .fit)
-                .clipShape(.rect(cornerRadius: FlickStyle.cardCornerRadius))
-
-                HStack(alignment: .firstTextBaseline) {
-                    StatusBadge(
-                        title: asset.mediaType.productDisplayName,
-                        tint: asset.mediaType.productTint,
-                        systemImage: asset.mediaType.productSystemImage
-                    )
-
-                    Spacer(minLength: 8)
-
-                    Button(role: .destructive, action: removeAction) {
-                        Image(systemName: "trash")
-                    }
-                    .accessibilityLabel("Remove product media")
+            }
+            .overlay(alignment: .topLeading) {
+                StatusBadge(
+                    title: asset.mediaType.productDisplayName,
+                    tint: .white,
+                    systemImage: asset.mediaType.productSystemImage
+                )
+                .background(asset.mediaType.productTint.opacity(0.64), in: .capsule)
+                .padding(8)
+            }
+            .overlay(alignment: .topTrailing) {
+                Button(role: .destructive, action: removeAction) {
+                    Image(systemName: "trash")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(.black.opacity(0.46), in: .circle)
                 }
-
+                .buttonStyle(.plain)
+                .accessibilityLabel("Remove product media")
+                .padding(8)
+            }
+            .overlay(alignment: .bottomLeading) {
                 Text(asset.productMetadata)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.82))
                     .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                .padding(9)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-        }
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(.white.opacity(0.12), lineWidth: 1)
+            }
+            .clipShape(.rect(cornerRadius: 8))
+            .frame(maxWidth: .infinity)
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 

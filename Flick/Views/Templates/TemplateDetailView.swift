@@ -30,11 +30,8 @@ struct TemplateDetailView: View {
     private var header: some View {
         FlickGlassCard {
             HStack(alignment: .top, spacing: 16) {
-                LocalAssetImage(fileURL: template.displayablePreviewSlide?.localURL)
+                VerticalMediaFrame(fileURL: template.displayablePreviewSlide?.localURL)
                     .frame(width: 120)
-                    .aspectRatio(9.0 / 16.0, contentMode: .fit)
-                    .clipShape(.rect(cornerRadius: FlickStyle.controlCornerRadius))
-                    .compositingGroup()
 
                 VStack(alignment: .leading, spacing: 10) {
                     StatusBadge(title: template.niche, tint: .indigo, systemImage: "tag")
@@ -93,17 +90,16 @@ private struct TemplateSlideTile: View {
     var slide: ExampleSlideshowSlide
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            LocalAssetImage(fileURL: slide.localURL, contentMode: .fill)
-                .frame(maxWidth: .infinity)
-                .aspectRatio(3.0 / 4.0, contentMode: .fit)
-                .clipShape(.rect(cornerRadius: 8))
-                .compositingGroup()
-
-            Text("Slide \(slide.index)")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-        }
+        VerticalMediaFrame(fileURL: slide.localURL, cornerRadius: 8)
+            .overlay(alignment: .bottomLeading) {
+                Text("Slide \(slide.index)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 5)
+                    .background(.black.opacity(0.48), in: .capsule)
+                    .padding(7)
+            }
     }
 }
 
