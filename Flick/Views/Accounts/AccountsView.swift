@@ -7,28 +7,26 @@ import SwiftUI
 
 struct AccountsView: View {
     @Environment(FlickAppModel.self) private var appModel
+    @State private var selectedPlatform: SocialPlatform?
 
     private var authorizedAccounts: [ConnectedAccount] {
         appModel.overview.accounts.filter { $0.authorizationSource == .loginKit }
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
-                PlatformAccountTilesSection(authorizedAccounts: authorizedAccounts)
-                connectionStatus
-                AuthorizedAccountsSection(accounts: authorizedAccounts)
-                PlatformAdaptersSection()
+        VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
+            PlatformAccountTilesSection(authorizedAccounts: authorizedAccounts) { platform in
+                selectedPlatform = platform
             }
-            .flickScrollablePage()
-            .navigationDestination(for: SocialPlatform.self) { platform in
-                PlatformPublishSettingsView(platform: platform, accounts: accounts(for: platform))
-            }
+            connectionStatus
+            AuthorizedAccountsSection(accounts: authorizedAccounts)
+            PlatformAdaptersSection()
+        }
+        .flickScrollablePage()
+        .sheet(item: $selectedPlatform) { platform in
+            PlatformPublishSettingsView(platform: platform, accounts: accounts(for: platform))
         }
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("Accounts")
-            }
             if appModel.canManageAccounts {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
@@ -97,11 +95,14 @@ struct AccountsView: View {
 
 private struct PlatformAccountTilesSection: View {
     var authorizedAccounts: [ConnectedAccount]
+    var onSelectPlatform: (SocialPlatform) -> Void
 
     var body: some View {
         ResponsiveGrid(minimum: 180) {
             ForEach(SocialPlatform.allCases) { platform in
-                NavigationLink(value: platform) {
+                Button {
+                    onSelectPlatform(platform)
+                } label: {
                     PlatformAccountTile(
                         platform: platform,
                         accounts: accounts(for: platform)

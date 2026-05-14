@@ -14,39 +14,38 @@ struct ProductView: View {
     @State private var isImportingMedia = false
 
     var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
-                ProductMediaSection(
-                    assets: appModel.productMediaAssets,
-                    isImporting: isImportingMedia,
-                    removeAction: appModel.removeProductMedia
-                )
+        VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
+            ProductMediaSection(
+                assets: appModel.productMediaAssets,
+                isImporting: isImportingMedia,
+                removeAction: appModel.removeProductMedia
+            )
+        }
+        .flickScrollablePage()
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Product")
             }
-            .flickScrollablePage()
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Product")
+            ToolbarItem(placement: .primaryAction) {
+                PhotosPicker(
+                    selection: $selectedMediaItems,
+                    maxSelectionCount: 12,
+                    matching: .any(of: [.images, .videos]),
+                    preferredItemEncoding: .current
+                ) {
+                    Label("Add media", systemImage: "plus")
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    PhotosPicker(
-                        selection: $selectedMediaItems,
-                        maxSelectionCount: 12,
-                        matching: .any(of: [.images, .videos]),
-                        preferredItemEncoding: .current
-                    ) {
-                        Label("Add media", systemImage: "plus")
-                    }
-                    .disabled(isImportingMedia)
-                }
-            }
-            .onChange(of: selectedMediaItems) { _, newItems in
-                guard !newItems.isEmpty else { return }
-                selectedMediaItems = []
-                Task {
-                    await importMediaItems(newItems)
-                }
+                .disabled(isImportingMedia)
             }
         }
+        .onChange(of: selectedMediaItems) { _, newItems in
+            guard !newItems.isEmpty else { return }
+            selectedMediaItems = []
+            Task {
+                await importMediaItems(newItems)
+            }
+        }
+        
     }
 
     @MainActor

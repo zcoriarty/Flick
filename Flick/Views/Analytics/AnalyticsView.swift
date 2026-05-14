@@ -10,19 +10,18 @@ struct AnalyticsView: View {
     @Environment(FlickAppModel.self) private var appModel
 
     var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
-                performanceSummary
-                topPostsChart
-                learningLoop
-            }
-            .flickScrollablePage()
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Analytics")
-                }
+        VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
+            performanceSummary
+            topPostsChart
+            learningLoop
+        }
+        .flickScrollablePage()
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Analytics")
             }
         }
+        
     }
 
     private var performanceSummary: some View {

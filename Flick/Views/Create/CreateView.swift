@@ -11,26 +11,25 @@ struct CreateView: View {
     @State private var selectedMode: CreateMode = .prompt
 
     var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
-                strategyBuilder
-                draftPreview
-                qualityChecks
+        VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
+            strategyBuilder
+            draftPreview
+            qualityChecks
+        }
+        .flickScrollablePage()
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Create")
             }
-            .flickScrollablePage()
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Create")
+            ToolbarItem(placement: .primaryAction) {
+                Button("Send to queue", systemImage: "tray.and.arrow.down") {
+                    appModel.selectedSection = .queue
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Send to queue", systemImage: "tray.and.arrow.down") {
-                        appModel.selectedSection = .queue
-                    }
-                    .buttonStyle(.glassProminent)
-                    .disabled(appModel.overview.drafts.isEmpty)
-                }
+                .buttonStyle(.glassProminent)
+                .disabled(appModel.overview.drafts.isEmpty)
             }
         }
+        
     }
 
     private var strategyBuilder: some View {

@@ -13,39 +13,56 @@ struct FlickRootView: View {
 
         TabView(selection: $appModel.selectedSection) {
             Tab(FlickSection.dashboard.title, systemImage: FlickSection.dashboard.systemImage, value: FlickSection.dashboard) {
-                DashboardView()
+                NavigationStack {
+                    DashboardView()
+                }
             }
 
             Tab(FlickSection.product.title, systemImage: FlickSection.product.systemImage, value: FlickSection.product) {
-                ProductView()
+                NavigationStack {
+                    ProductView()
+                }
             }
 
             Tab(FlickSection.create.title, systemImage: FlickSection.create.systemImage, value: FlickSection.create) {
-                CreateView()
+                NavigationStack {
+                    CreateView()
+                }
             }
 
             Tab(FlickSection.templates.title, systemImage: FlickSection.templates.systemImage, value: FlickSection.templates) {
-                TemplatesView()
+                NavigationStack {
+                    TemplatesView()
+                }
             }
 
             Tab(FlickSection.queue.title, systemImage: FlickSection.queue.systemImage, value: FlickSection.queue) {
-                QueueView()
+                NavigationStack {
+                    QueueView()
+                }
             }
 
             Tab(FlickSection.trends.title, systemImage: FlickSection.trends.systemImage, value: FlickSection.trends) {
-                TrendsView()
+                NavigationStack {
+                    TrendsView()
+                }
             }
 
             Tab(FlickSection.analytics.title, systemImage: FlickSection.analytics.systemImage, value: FlickSection.analytics) {
-                AnalyticsView()
+                NavigationStack {
+                    AnalyticsView()
+                }
             }
 
             Tab(FlickSection.accounts.title, systemImage: FlickSection.accounts.systemImage, value: FlickSection.accounts) {
                 AccountsView()
+                
             }
 
             Tab(FlickSection.settings.title, systemImage: FlickSection.settings.systemImage, value: FlickSection.settings) {
-                SettingsView()
+                NavigationStack {
+                    SettingsView()
+                }
             }
         }
         .tint(FlickStyle.appTint)

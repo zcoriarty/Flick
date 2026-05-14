@@ -13,22 +13,20 @@ struct TemplatesView: View {
     @State private var searchText = ""
 
     var body: some View {
-        NavigationStack {
-            content
-                .toolbar {
-                    ToolbarItem(placement: .principal) {
-                        Text("Templates")
-                    }
-                    ToolbarItem(placement: .primaryAction) {
-                        Button("Reload", systemImage: "arrow.clockwise") {
-                            loadTemplates()
-                        }
+        content
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Templates")
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Reload", systemImage: "arrow.clockwise") {
+                        loadTemplates()
                     }
                 }
-                .sheet(item: $selectedTemplate) { template in
-                    TemplatePreviewSheet(template: template)
-                }
-        }
+            }
+            .sheet(item: $selectedTemplate) { template in
+                TemplatePreviewSheet(template: template)
+            }
         .task {
             if case .loading = loadState {
                 loadTemplates()

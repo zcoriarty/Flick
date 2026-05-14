@@ -11,21 +11,20 @@ struct SettingsView: View {
     @State private var isClearCredentialsConfirmationPresented = false
 
     var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
-                credentials
-                storage
-                workerRole
-                diagnostics
-            }
-            .flickScrollablePage()
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Settings")
-                }
-            }
-            .onAppear(perform: reloadCredentialDrafts)
+        VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
+            credentials
+            storage
+            workerRole
+            diagnostics
         }
+        .flickScrollablePage()
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Settings")
+            }
+        }
+        .onAppear(perform: reloadCredentialDrafts)
+        
     }
 
     private var credentials: some View {

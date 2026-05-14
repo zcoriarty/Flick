@@ -9,26 +9,25 @@ struct DashboardView: View {
     @Environment(FlickAppModel.self) private var appModel
 
     var body: some View {
-        NavigationStack {
-            dashboardContent
-                .flickScrollablePage()
-                .toolbar {
-                    ToolbarItem(placement: .principal) {
-                        Text("Dashboard")
+        dashboardContent
+            .flickScrollablePage()
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Dashboard")
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Generate batch", systemImage: "wand.and.sparkles") {
+                        appModel.selectedSection = .create
                     }
-                    ToolbarItem(placement: .primaryAction) {
-                        Button("Generate batch", systemImage: "wand.and.sparkles") {
-                            appModel.selectedSection = .create
-                        }
-                        .buttonStyle(.glassProminent)
-                    }
-                    ToolbarItem(placement: .primaryAction) {
-                        Button("Refresh", systemImage: "arrow.clockwise") {
-                            Task { await appModel.refresh() }
-                        }
+                    .buttonStyle(.glassProminent)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Refresh", systemImage: "arrow.clockwise") {
+                        Task { await appModel.refresh() }
                     }
                 }
-        }
+            }
+        
     }
 
     private var dashboardContent: some View {

@@ -10,21 +10,19 @@ struct TrendsView: View {
     @State private var selectedStatus: TrendStatus?
 
     var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
-                statusFilter
-                trendLibrary
-                tagLibrary
+        VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
+            statusFilter
+            trendLibrary
+            tagLibrary
+        }
+        .flickScrollablePage()
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Trends")
             }
-            .flickScrollablePage()
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Trends")
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Add trend", systemImage: "plus") { }
-                        .buttonStyle(.glassProminent)
-                }
+            ToolbarItem(placement: .primaryAction) {
+                Button("Add trend", systemImage: "plus") { }
+                    .buttonStyle(.glassProminent)
             }
         }
     }

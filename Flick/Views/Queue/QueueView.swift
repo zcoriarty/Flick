@@ -9,20 +9,18 @@ struct QueueView: View {
     @Environment(FlickAppModel.self) private var appModel
 
     var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
-                publishingJobs
-                cadenceRules
+        VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
+            publishingJobs
+            cadenceRules
+        }
+        .flickScrollablePage()
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Queue")
             }
-            .flickScrollablePage()
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Queue")
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Button(appModel.overview.workspace.automationPaused ? "Resume" : "Pause", systemImage: appModel.overview.workspace.automationPaused ? "play.fill" : "pause.fill") {
-                        appModel.toggleAutomationPaused()
-                    }
+            ToolbarItem(placement: .primaryAction) {
+                Button(appModel.overview.workspace.automationPaused ? "Resume" : "Pause", systemImage: appModel.overview.workspace.automationPaused ? "play.fill" : "pause.fill") {
+                    appModel.toggleAutomationPaused()
                 }
             }
         }

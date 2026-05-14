@@ -187,7 +187,7 @@ struct ResponsiveGrid<Content: View>: View {
 extension View {
     @ViewBuilder
     func flickScrollablePage() -> some View {
-        ScrollView {
+        ScrollView(showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
                 self
             }

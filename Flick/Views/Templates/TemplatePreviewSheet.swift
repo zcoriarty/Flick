@@ -19,34 +19,32 @@ struct TemplatePreviewSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    header
-                    focusedSlide
-                    slideStrip
-                    metadata
-                }
-                .padding(FlickStyle.pagePadding)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                header
+                focusedSlide
+                slideStrip
+                metadata
             }
-            .background(FlickStyle.pageBackground.ignoresSafeArea())
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close", systemImage: "xmark") {
-                        dismiss()
-                    }
-                    .keyboardShortcut(.cancelAction)
+            .padding(FlickStyle.pagePadding)
+        }
+        .background(FlickStyle.pageBackground.ignoresSafeArea())
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Close", systemImage: "xmark") {
+                    dismiss()
                 }
-                ToolbarItem(placement: .principal) {
-                    Text("Template")
+                .keyboardShortcut(.cancelAction)
+            }
+            ToolbarItem(placement: .principal) {
+                Text("Template")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button("Use Template", systemImage: "wand.and.sparkles") {
+                    appModel.createDraft(from: template)
+                    dismiss()
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Use Template", systemImage: "wand.and.sparkles") {
-                        appModel.createDraft(from: template)
-                        dismiss()
-                    }
-                    .buttonStyle(.glassProminent)
-                }
+                .buttonStyle(.glassProminent)
             }
         }
         .templatePreviewSheetSizing()
