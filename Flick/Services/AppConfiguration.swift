@@ -42,7 +42,6 @@ struct AppConfiguration: Hashable {
             key: definition.key,
             name: definition.name,
             isPresent: isPresent,
-            storagePolicy: definition.storagePolicy,
             source: isPresent ? .secureStore : .missing
         )
     }
@@ -115,28 +114,27 @@ struct CredentialDefinition: Identifiable, Hashable {
     var id: String { key }
     var key: String
     var name: String
-    var storagePolicy: CredentialStatus.StoragePolicy
 
     static let supported: [CredentialDefinition] = [
-        CredentialDefinition(key: "META_CLIENT_ID", name: "Meta client ID", storagePolicy: .clientSafe),
-        CredentialDefinition(key: "META_CLIENT_SECRET", name: "Meta client secret", storagePolicy: .keychainOrBackend),
-        CredentialDefinition(key: "OPENAI_API_KEY", name: "OpenAI API key", storagePolicy: .keychainOrBackend),
-        CredentialDefinition(key: "POSTGRES_DATABASE", name: "Postgres database", storagePolicy: .neverShip),
-        CredentialDefinition(key: "POSTGRES_HOST", name: "Postgres host", storagePolicy: .neverShip),
-        CredentialDefinition(key: "POSTGRES_PASSWORD", name: "Postgres password", storagePolicy: .neverShip),
-        CredentialDefinition(key: "POSTGRES_PRISMA_URL", name: "Postgres Prisma URL", storagePolicy: .neverShip),
-        CredentialDefinition(key: "POSTGRES_URL", name: "Postgres URL", storagePolicy: .neverShip),
-        CredentialDefinition(key: "POSTGRES_URL_NON_POOLING", name: "Postgres non-pooling URL", storagePolicy: .neverShip),
-        CredentialDefinition(key: "POSTGRES_USER", name: "Postgres user", storagePolicy: .neverShip),
-        CredentialDefinition(key: "SUPABASE_ANON_KEY", name: "Supabase anon key", storagePolicy: .clientSafe),
-        CredentialDefinition(key: "SUPABASE_JWT_SECRET", name: "Supabase JWT secret", storagePolicy: .neverShip),
-        CredentialDefinition(key: "SUPABASE_SERVICE_ROLE_KEY", name: "Supabase service role key", storagePolicy: .neverShip),
-        CredentialDefinition(key: "SUPABASE_URL", name: "Supabase URL", storagePolicy: .clientSafe),
-        CredentialDefinition(key: "TIKTOK_CLIENT_ID", name: "TikTok client ID", storagePolicy: .clientSafe),
-        CredentialDefinition(key: "TIKTOK_CLIENT_SECRET", name: "TikTok client secret", storagePolicy: .keychainOrBackend),
-        CredentialDefinition(key: "TIKTOK_REDIRECT_URI", name: "TikTok redirect URI", storagePolicy: .clientSafe),
-        CredentialDefinition(key: "TIKTOK_SCOPES", name: "TikTok scopes", storagePolicy: .clientSafe),
-        CredentialDefinition(key: "TIKTOK_VERIFIED_BASE_URL", name: "TikTok verified URL prefix", storagePolicy: .clientSafe)
+        CredentialDefinition(key: "META_CLIENT_ID", name: "Meta client ID"),
+        CredentialDefinition(key: "META_CLIENT_SECRET", name: "Meta client secret"),
+        CredentialDefinition(key: "OPENAI_API_KEY", name: "OpenAI API key"),
+        CredentialDefinition(key: "POSTGRES_DATABASE", name: "Postgres database"),
+        CredentialDefinition(key: "POSTGRES_HOST", name: "Postgres host"),
+        CredentialDefinition(key: "POSTGRES_PASSWORD", name: "Postgres password"),
+        CredentialDefinition(key: "POSTGRES_PRISMA_URL", name: "Postgres Prisma URL"),
+        CredentialDefinition(key: "POSTGRES_URL", name: "Postgres URL"),
+        CredentialDefinition(key: "POSTGRES_URL_NON_POOLING", name: "Postgres non-pooling URL"),
+        CredentialDefinition(key: "POSTGRES_USER", name: "Postgres user"),
+        CredentialDefinition(key: "SUPABASE_ANON_KEY", name: "Supabase anon key"),
+        CredentialDefinition(key: "SUPABASE_JWT_SECRET", name: "Supabase JWT secret"),
+        CredentialDefinition(key: "SUPABASE_SERVICE_ROLE_KEY", name: "Supabase service role key"),
+        CredentialDefinition(key: "SUPABASE_URL", name: "Supabase URL"),
+        CredentialDefinition(key: "TIKTOK_CLIENT_ID", name: "TikTok client ID"),
+        CredentialDefinition(key: "TIKTOK_CLIENT_SECRET", name: "TikTok client secret"),
+        CredentialDefinition(key: "TIKTOK_REDIRECT_URI", name: "TikTok redirect URI"),
+        CredentialDefinition(key: "TIKTOK_SCOPES", name: "TikTok scopes"),
+        CredentialDefinition(key: "TIKTOK_VERIFIED_BASE_URL", name: "TikTok verified URL prefix")
     ]
 
     static var supportedKeys: [String] {
@@ -149,14 +147,8 @@ struct CredentialDefinition: Identifiable, Hashable {
 }
 
 struct CredentialStatus: Identifiable, Hashable {
-    enum StoragePolicy: String, Hashable {
-        case clientSafe = "Client-safe config"
-        case keychainOrBackend = "Keychain or backend only"
-        case neverShip = "Never ship in client"
-    }
-
     enum Source: String, Hashable {
-        case secureStore = "Secure store"
+        case secureStore = "Keychain"
         case missing = "Missing"
     }
 
@@ -164,7 +156,6 @@ struct CredentialStatus: Identifiable, Hashable {
     var key: String
     var name: String
     var isPresent: Bool
-    var storagePolicy: StoragePolicy
     var source: Source
 }
 

@@ -12,14 +12,6 @@
 				<string>flick</string>
 			</array>
 		</dict>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>com.orion.Flick.tiktok</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>aw6izfb1kcgr88bp</string>
-			</array>
-		</dict>
 	</array>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>

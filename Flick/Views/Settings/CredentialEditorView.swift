@@ -52,6 +52,7 @@ struct CredentialEditorRow: View {
     @Binding var draft: CredentialEditorDraft
     @State private var isValueVisible = false
     @State private var isDeleteConfirmationPresented = false
+    @State private var isEditing = false
 
     var saveAction: () -> Void
     var deleteAction: () -> Void
@@ -78,49 +79,50 @@ struct CredentialEditorRow: View {
             CredentialValueField(
                 title: draft.definition.name,
                 value: $draft.value,
-                isValueVisible: $isValueVisible
+                isValueVisible: $isValueVisible,
+                isEditing: isEditing,
+                editAction: toggleEditing
             )
 
-            ViewThatFits(in: .horizontal) {
-                horizontalFooter
-                verticalFooter
+            if isEditing {
+                actionButtons
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
+        }
+        .animation(.snappy(duration: 0.2), value: isEditing)
+        .onChange(of: draft.originalValue) { _, _ in
+            isEditing = false
         }
         .accessibilityElement(children: .contain)
     }
 
-    private var horizontalFooter: some View {
-        HStack(spacing: 8) {
-            StatusBadge(title: draft.definition.storagePolicy.rawValue, tint: draft.definition.storagePolicy.tint, systemImage: "lock.shield")
-            Spacer(minLength: 8)
-            actionButtons
-        }
-    }
-
-    private var verticalFooter: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            StatusBadge(title: draft.definition.storagePolicy.rawValue, tint: draft.definition.storagePolicy.tint, systemImage: "lock.shield")
-            actionButtons
-        }
-    }
-
     private var actionButtons: some View {
         HStack(spacing: 8) {
-            Button("Delete", systemImage: "trash", role: .destructive) {
+            Button {
                 isDeleteConfirmationPresented = true
+            } label: {
+                Label("Delete", systemImage: "trash")
             }
-                .disabled(!draft.isStoredSecurely)
-                .confirmationDialog("Delete \(draft.definition.name)?", isPresented: $isDeleteConfirmationPresented) {
-                    Button("Delete", role: .destructive, action: deleteAction)
-                    Button("Cancel", role: .cancel) { }
-                } message: {
-                    Text("This removes the Keychain value for \(draft.definition.key).")
-                }
+            .buttonStyle(CredentialCapsuleButtonStyle(tint: .red))
+            .disabled(!draft.isStoredSecurely)
+            .confirmationDialog("Delete \(draft.definition.name)?", isPresented: $isDeleteConfirmationPresented) {
+                Button("Delete", role: .destructive, action: deleteAction)
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This removes the Keychain value for \(draft.definition.key).")
+            }
 
-            Button("Save", systemImage: "checkmark", action: saveAction)
-                .buttonStyle(.borderedProminent)
+            Button(action: saveAction) {
+                Label("Save", systemImage: "checkmark")
+            }
+                .buttonStyle(CredentialCapsuleButtonStyle(tint: .blue))
                 .disabled(!draft.canSave)
         }
+    }
+
+    private func toggleEditing() {
+        isEditing.toggle()
     }
 }
 
@@ -128,8 +130,26 @@ private struct CredentialValueField: View {
     var title: String
     @Binding var value: String
     @Binding var isValueVisible: Bool
+    var isEditing: Bool
+    var editAction: () -> Void
 
     var body: some View {
+        HStack(spacing: 8) {
+            valueField
+
+            Button(action: editAction) {
+                Image(systemName: "pencil")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(isEditing ? .blue : .secondary)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isEditing ? "Stop editing \(title)" : "Edit \(title)")
+        }
+    }
+
+    private var valueField: some View {
         HStack(spacing: 8) {
             Group {
                 if isValueVisible {
@@ -140,7 +160,9 @@ private struct CredentialValueField: View {
             }
             .font(.system(.callout, design: .monospaced))
             .credentialEditorInputBehavior()
+            .disabled(!isEditing)
             .accessibilityLabel("\(title) value")
+            .accessibilityHint(isEditing ? "Editing enabled" : "Tap Edit to change this value")
 
             Button {
                 isValueVisible.toggle()
@@ -151,11 +173,31 @@ private struct CredentialValueField: View {
             .buttonStyle(.plain)
             .accessibilityLabel(isValueVisible ? "Hide \(title)" : "Show \(title)")
         }
+        .frame(maxWidth: .infinity)
         .padding(10)
         .background(
             .background.opacity(0.35),
             in: RoundedRectangle(cornerRadius: FlickStyle.controlCornerRadius, style: .continuous)
         )
+    }
+}
+
+private struct CredentialCapsuleButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    var tint: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.callout.weight(.semibold))
+            .labelStyle(.titleAndIcon)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+            .frame(height: 36)
+            .background(
+                tint.opacity(isEnabled ? (configuration.isPressed ? 0.82 : 1) : 0.55),
+                in: Capsule()
+            )
     }
 }
 

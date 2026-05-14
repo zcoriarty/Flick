@@ -91,16 +91,6 @@ extension TrendStatus {
     }
 }
 
-extension CredentialStatus.StoragePolicy {
-    var tint: Color {
-        switch self {
-        case .clientSafe: .green
-        case .keychainOrBackend: .orange
-        case .neverShip: .red
-        }
-    }
-}
-
 extension CredentialStatus.Source {
     var tint: Color {
         switch self {

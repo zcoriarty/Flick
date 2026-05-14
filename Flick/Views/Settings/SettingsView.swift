@@ -50,7 +50,7 @@ struct SettingsView: View {
                 )
             }
 
-            Button("Clear stored credentials", systemImage: "trash", role: .destructive) {
+            Button("Clear stored credentials", role: .destructive) {
                 isClearCredentialsConfirmationPresented = true
             }
             .confirmationDialog("Clear stored credentials?", isPresented: $isClearCredentialsConfirmationPresented) {
@@ -83,18 +83,16 @@ struct SettingsView: View {
     }
 
     private func reloadCredentialDrafts() {
-        let secureValues = appModel.secureCredentialValues()
-        let statusesByKey = Dictionary(uniqueKeysWithValues: appModel.configuration.credentialStatuses.map { ($0.key, $0) })
+        let keychainValues = appModel.secureCredentialValues()
 
         credentialDrafts = CredentialDefinition.supported.map { definition in
-            let storedValue = secureValues[definition.key] ?? ""
-            let source = statusesByKey[definition.key]?.source ?? (storedValue.isEmpty ? .missing : .secureStore)
+            let storedValue = keychainValues[definition.key] ?? ""
             return CredentialEditorDraft(
                 definition: definition,
                 value: storedValue,
                 originalValue: storedValue,
-                source: source,
-                isStoredSecurely: secureValues[definition.key] != nil
+                source: storedValue.isEmpty ? .missing : .secureStore,
+                isStoredSecurely: keychainValues[definition.key] != nil
             )
         }
     }
