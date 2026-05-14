@@ -8,6 +8,8 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(FlickAppModel.self) private var appModel
     @State private var credentialPasteText = ""
+    @State private var credentialDrafts: [CredentialEditorDraft] = []
+    @State private var isClearCredentialsConfirmationPresented = false
 
     var body: some View {
         NavigationStack {
@@ -19,12 +21,13 @@ struct SettingsView: View {
             }
             .flickScrollablePage()
             .navigationTitle("Settings")
+            .onAppear(perform: reloadCredentialDrafts)
         }
     }
 
     private var credentials: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Credentials", subtitle: "Paste env vars once and store them in Keychain", systemImage: "key")
+            SectionTitle(title: "Credentials", subtitle: "Import, edit, and store env vars in Keychain", systemImage: "key")
 
             FlickGlassCard {
                 VStack(alignment: .leading, spacing: 14) {
@@ -49,16 +52,23 @@ struct SettingsView: View {
 
                     HStack {
                         Button("Store securely", systemImage: "lock") {
-                            appModel.storeCredentialEnvironment(credentialPasteText)
-                            credentialPasteText = ""
+                            importCredentialEnvironment()
                         }
                         .buttonStyle(.glassProminent)
                         .disabled(credentialPasteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                         Button("Clear stored", systemImage: "trash", role: .destructive) {
-                            appModel.clearStoredCredentials()
+                            isClearCredentialsConfirmationPresented = true
                         }
                         .buttonStyle(.glass)
+                        .confirmationDialog("Clear stored credentials?", isPresented: $isClearCredentialsConfirmationPresented) {
+                            Button("Clear stored", role: .destructive) {
+                                clearStoredCredentials()
+                            }
+                            Button("Cancel", role: .cancel) { }
+                        } message: {
+                            Text("This removes every credential Flick has stored in Keychain.")
+                        }
 
                         Spacer()
 
@@ -71,22 +81,53 @@ struct SettingsView: View {
                 }
             }
 
-            ResponsiveGrid(minimum: 270) {
-                ForEach(appModel.configuration.credentialStatuses) { status in
-                    FlickGlassCard {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                Text(status.name)
-                                    .font(.headline)
-                                Spacer()
-                                StatusBadge(title: status.isPresent ? "Found" : "Missing", tint: status.isPresent ? .green : .orange, systemImage: status.isPresent ? "checkmark.circle" : "exclamationmark.circle")
-                            }
-                            StatusBadge(title: status.source.rawValue, tint: status.source.tint, systemImage: status.source.systemImage)
-                            StatusBadge(title: status.storagePolicy.rawValue, tint: status.storagePolicy.tint, systemImage: "lock.shield")
-                        }
-                    }
-                }
-            }
+            CredentialEditorView(
+                drafts: $credentialDrafts,
+                saveAction: saveCredential,
+                deleteAction: deleteCredential
+            )
+        }
+    }
+
+    private func importCredentialEnvironment() {
+        if appModel.storeCredentialEnvironment(credentialPasteText) {
+            credentialPasteText = ""
+            reloadCredentialDrafts()
+        }
+    }
+
+    private func clearStoredCredentials() {
+        if appModel.clearStoredCredentials() {
+            reloadCredentialDrafts()
+        }
+    }
+
+    private func saveCredential(_ draft: CredentialEditorDraft) {
+        if appModel.storeCredentialValue(draft.trimmedValue, for: draft.definition.key) {
+            reloadCredentialDrafts()
+        }
+    }
+
+    private func deleteCredential(_ draft: CredentialEditorDraft) {
+        if appModel.deleteStoredCredential(for: draft.definition.key) {
+            reloadCredentialDrafts()
+        }
+    }
+
+    private func reloadCredentialDrafts() {
+        let secureValues = appModel.secureCredentialValues()
+        let statusesByKey = Dictionary(uniqueKeysWithValues: appModel.configuration.credentialStatuses.map { ($0.key, $0) })
+
+        credentialDrafts = CredentialDefinition.supported.map { definition in
+            let storedValue = secureValues[definition.key] ?? ""
+            let source = statusesByKey[definition.key]?.source ?? (storedValue.isEmpty ? .missing : .secureStore)
+            return CredentialEditorDraft(
+                definition: definition,
+                value: storedValue,
+                originalValue: storedValue,
+                source: source,
+                isStoredSecurely: secureValues[definition.key] != nil
+            )
         }
     }
 
@@ -148,38 +189,6 @@ struct SettingsView: View {
                 }
             }
         }
-    }
-}
-
-private extension CredentialStatus.Source {
-    var tint: Color {
-        switch self {
-        case .secureStore: .blue
-        case .localEnvironment: .orange
-        case .missing: .secondary
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .secureStore: "lock.fill"
-        case .localEnvironment: "doc.text"
-        case .missing: "minus.circle"
-        }
-    }
-}
-
-private extension View {
-    @ViewBuilder
-    func credentialEditorInputBehavior() -> some View {
-        #if os(iOS)
-        self
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-        #else
-        self
-            .autocorrectionDisabled()
-        #endif
     }
 }
 

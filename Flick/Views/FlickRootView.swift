@@ -48,7 +48,8 @@ struct FlickRootView: View {
                 SettingsView()
             }
         }
-        .tint(.indigo)
+        .tint(FlickStyle.appTint)
+        .preferredColorScheme(.dark)
         .task {
             await appModel.refresh()
         }

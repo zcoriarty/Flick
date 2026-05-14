@@ -31,28 +31,40 @@ struct AppConfiguration: Hashable {
     }
 
     var credentialStatuses: [CredentialStatus] {
-        [
-            credentialStatus(key: "SUPABASE_URL", name: "Supabase URL", isPresent: supabase.url != nil, storagePolicy: .clientSafe),
-            credentialStatus(key: "SUPABASE_ANON_KEY", name: "Supabase anon key", isPresent: supabase.anonKeyPresent, storagePolicy: .clientSafe),
-            credentialStatus(key: "SUPABASE_SERVICE_ROLE_KEY", name: "Supabase service role key", isPresent: supabase.serviceRoleKeyPresent, storagePolicy: .neverShip),
-            credentialStatus(key: "TIKTOK_CLIENT_ID", name: "TikTok client ID", isPresent: tiktok.clientIDPresent, storagePolicy: .clientSafe),
-            credentialStatus(key: "TIKTOK_CLIENT_SECRET", name: "TikTok client secret", isPresent: tiktok.clientSecretPresent, storagePolicy: .keychainOrBackend),
-            credentialStatus(key: "TIKTOK_REDIRECT_URI", name: "TikTok redirect URI", isPresent: tiktok.redirectURI != nil, storagePolicy: .clientSafe),
-            credentialStatus(key: "TIKTOK_SCOPES", name: "TikTok scopes", isPresent: !tiktok.requestedScopes.isEmpty, storagePolicy: .clientSafe),
-            credentialStatus(key: "TIKTOK_VERIFIED_BASE_URL", name: "TikTok verified URL prefix", isPresent: tiktok.verifiedBaseURL != nil, storagePolicy: .clientSafe),
-            credentialStatus(key: "OPENAI_API_KEY", name: "OpenAI API key", isPresent: openAI.apiKeyPresent, storagePolicy: .keychainOrBackend),
-            credentialStatus(key: "META_CLIENT_ID", name: "Meta client ID", isPresent: meta.clientIDPresent, storagePolicy: .clientSafe),
-            credentialStatus(key: "META_CLIENT_SECRET", name: "Meta client secret", isPresent: meta.clientSecretPresent, storagePolicy: .keychainOrBackend)
-        ]
+        CredentialDefinition.supported.map(credentialStatus(for:))
     }
 
-    private func credentialStatus(key: String, name: String, isPresent: Bool, storagePolicy: CredentialStatus.StoragePolicy) -> CredentialStatus {
-        CredentialStatus(
-            key: key,
-            name: name,
+    private func credentialStatus(for definition: CredentialDefinition) -> CredentialStatus {
+        let isConfigured = switch definition.key {
+        case "META_CLIENT_ID": meta.clientIDPresent
+        case "META_CLIENT_SECRET": meta.clientSecretPresent
+        case "OPENAI_API_KEY": openAI.apiKeyPresent
+        case "POSTGRES_DATABASE": false
+        case "POSTGRES_HOST": false
+        case "POSTGRES_PASSWORD": false
+        case "POSTGRES_PRISMA_URL": false
+        case "POSTGRES_URL": supabase.postgresURLPresent
+        case "POSTGRES_URL_NON_POOLING": false
+        case "POSTGRES_USER": false
+        case "SUPABASE_ANON_KEY": supabase.anonKeyPresent
+        case "SUPABASE_JWT_SECRET": false
+        case "SUPABASE_SERVICE_ROLE_KEY": supabase.serviceRoleKeyPresent
+        case "SUPABASE_URL": supabase.url != nil
+        case "TIKTOK_CLIENT_ID": tiktok.clientIDPresent
+        case "TIKTOK_CLIENT_SECRET": tiktok.clientSecretPresent
+        case "TIKTOK_REDIRECT_URI": tiktok.redirectURI != nil
+        case "TIKTOK_SCOPES": !tiktok.requestedScopes.isEmpty
+        case "TIKTOK_VERIFIED_BASE_URL": tiktok.verifiedBaseURL != nil
+        default: false
+        }
+        let isPresent = secureStoredCredentialKeys.contains(definition.key) || isConfigured
+
+        return CredentialStatus(
+            key: definition.key,
+            name: definition.name,
             isPresent: isPresent,
-            storagePolicy: storagePolicy,
-            source: secureStoredCredentialKeys.contains(key) ? .secureStore : (isPresent ? .localEnvironment : .missing)
+            storagePolicy: definition.storagePolicy,
+            source: secureStoredCredentialKeys.contains(definition.key) ? .secureStore : (isPresent ? .localEnvironment : .missing)
         )
     }
 }
@@ -118,6 +130,43 @@ struct StorageBuckets: Hashable {
     var renderedVideos = "flick-rendered-videos"
     var referenceImages = "flick-reference-images"
     var thumbnails = "flick-thumbnails"
+}
+
+struct CredentialDefinition: Identifiable, Hashable {
+    var id: String { key }
+    var key: String
+    var name: String
+    var storagePolicy: CredentialStatus.StoragePolicy
+
+    static let supported: [CredentialDefinition] = [
+        CredentialDefinition(key: "META_CLIENT_ID", name: "Meta client ID", storagePolicy: .clientSafe),
+        CredentialDefinition(key: "META_CLIENT_SECRET", name: "Meta client secret", storagePolicy: .keychainOrBackend),
+        CredentialDefinition(key: "OPENAI_API_KEY", name: "OpenAI API key", storagePolicy: .keychainOrBackend),
+        CredentialDefinition(key: "POSTGRES_DATABASE", name: "Postgres database", storagePolicy: .neverShip),
+        CredentialDefinition(key: "POSTGRES_HOST", name: "Postgres host", storagePolicy: .neverShip),
+        CredentialDefinition(key: "POSTGRES_PASSWORD", name: "Postgres password", storagePolicy: .neverShip),
+        CredentialDefinition(key: "POSTGRES_PRISMA_URL", name: "Postgres Prisma URL", storagePolicy: .neverShip),
+        CredentialDefinition(key: "POSTGRES_URL", name: "Postgres URL", storagePolicy: .neverShip),
+        CredentialDefinition(key: "POSTGRES_URL_NON_POOLING", name: "Postgres non-pooling URL", storagePolicy: .neverShip),
+        CredentialDefinition(key: "POSTGRES_USER", name: "Postgres user", storagePolicy: .neverShip),
+        CredentialDefinition(key: "SUPABASE_ANON_KEY", name: "Supabase anon key", storagePolicy: .clientSafe),
+        CredentialDefinition(key: "SUPABASE_JWT_SECRET", name: "Supabase JWT secret", storagePolicy: .neverShip),
+        CredentialDefinition(key: "SUPABASE_SERVICE_ROLE_KEY", name: "Supabase service role key", storagePolicy: .neverShip),
+        CredentialDefinition(key: "SUPABASE_URL", name: "Supabase URL", storagePolicy: .clientSafe),
+        CredentialDefinition(key: "TIKTOK_CLIENT_ID", name: "TikTok client ID", storagePolicy: .clientSafe),
+        CredentialDefinition(key: "TIKTOK_CLIENT_SECRET", name: "TikTok client secret", storagePolicy: .keychainOrBackend),
+        CredentialDefinition(key: "TIKTOK_REDIRECT_URI", name: "TikTok redirect URI", storagePolicy: .clientSafe),
+        CredentialDefinition(key: "TIKTOK_SCOPES", name: "TikTok scopes", storagePolicy: .clientSafe),
+        CredentialDefinition(key: "TIKTOK_VERIFIED_BASE_URL", name: "TikTok verified URL prefix", storagePolicy: .clientSafe)
+    ]
+
+    static var supportedKeys: [String] {
+        supported.map(\.key)
+    }
+
+    static func definition(for key: String) -> CredentialDefinition? {
+        supported.first { $0.key == key }
+    }
 }
 
 struct CredentialStatus: Identifiable, Hashable {

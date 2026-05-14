@@ -194,6 +194,7 @@ extension View {
             }
             .padding(FlickStyle.pagePadding)
         }
+        .background(FlickStyle.pageBackground.ignoresSafeArea())
         .scrollEdgeEffectStyle(.soft, for: .top)
     }
 }

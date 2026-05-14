@@ -250,29 +250,67 @@ final class FlickAppModel {
         overview.assets.removeAll { $0.id == asset.id }
     }
 
-    func storeCredentialEnvironment(_ contents: String) {
+    @discardableResult
+    func storeCredentialEnvironment(_ contents: String) -> Bool {
         do {
             let result = try credentialVault.storeEnvironment(contents)
-            configuration = .current
-            applyCredentialHealth()
+            reloadCredentialConfiguration()
             credentialMessage = "Stored \(result.storedKeys.count) values securely" + (result.ignoredKeys.isEmpty ? "." : "; ignored \(result.ignoredKeys.count).")
             lastErrorMessage = nil
+            return true
         } catch {
             credentialMessage = nil
             lastErrorMessage = error.localizedDescription
+            return false
         }
     }
 
-    func clearStoredCredentials() {
+    func secureCredentialValues() -> [String: String] {
+        credentialVault.loadValues()
+    }
+
+    @discardableResult
+    func storeCredentialValue(_ value: String, for key: String) -> Bool {
         do {
-            try credentialVault.clearStoredCredentials()
-            configuration = .current
-            applyCredentialHealth()
-            credentialMessage = "Cleared stored credentials."
+            try credentialVault.storeValue(value, for: key)
+            reloadCredentialConfiguration()
+            credentialMessage = "Updated \(CredentialDefinition.definition(for: key)?.name ?? key)."
             lastErrorMessage = nil
+            return true
         } catch {
             credentialMessage = nil
             lastErrorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    @discardableResult
+    func deleteStoredCredential(for key: String) -> Bool {
+        do {
+            try credentialVault.deleteValue(for: key)
+            reloadCredentialConfiguration()
+            credentialMessage = "Deleted \(CredentialDefinition.definition(for: key)?.name ?? key)."
+            lastErrorMessage = nil
+            return true
+        } catch {
+            credentialMessage = nil
+            lastErrorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    @discardableResult
+    func clearStoredCredentials() -> Bool {
+        do {
+            try credentialVault.clearStoredCredentials()
+            reloadCredentialConfiguration()
+            credentialMessage = "Cleared stored credentials."
+            lastErrorMessage = nil
+            return true
+        } catch {
+            credentialMessage = nil
+            lastErrorMessage = error.localizedDescription
+            return false
         }
     }
 
@@ -326,6 +364,11 @@ final class FlickAppModel {
                 lastCheckedAt: Date()
             )
         ]
+    }
+
+    private func reloadCredentialConfiguration() {
+        configuration = .current
+        applyCredentialHealth()
     }
 }
 

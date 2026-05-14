@@ -6,11 +6,20 @@
 import SwiftUI
 
 enum FlickStyle {
+    static let appTint: Color = .indigo
     static let cardCornerRadius: CGFloat = 18
     static let controlCornerRadius: CGFloat = 12
     static let sectionSpacing: CGFloat = 20
     static let contentSpacing: CGFloat = 14
     static let pagePadding: CGFloat = 20
+
+    static var pageBackground: Color {
+        #if os(macOS)
+        Color(nsColor: .windowBackgroundColor)
+        #else
+        Color(uiColor: .systemGroupedBackground)
+        #endif
+    }
 }
 
 extension SocialPlatform {
@@ -88,6 +97,24 @@ extension CredentialStatus.StoragePolicy {
         case .clientSafe: .green
         case .keychainOrBackend: .orange
         case .neverShip: .red
+        }
+    }
+}
+
+extension CredentialStatus.Source {
+    var tint: Color {
+        switch self {
+        case .secureStore: .blue
+        case .localEnvironment: .orange
+        case .missing: .secondary
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .secureStore: "lock.fill"
+        case .localEnvironment: "doc.text"
+        case .missing: "minus.circle"
         }
     }
 }

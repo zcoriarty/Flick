@@ -29,7 +29,7 @@ struct TemplatePreviewSheet: View {
                 }
                 .padding(FlickStyle.pagePadding)
             }
-            .background(sheetBackground)
+            .background(FlickStyle.pageBackground.ignoresSafeArea())
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close", systemImage: "xmark") {
@@ -53,14 +53,6 @@ struct TemplatePreviewSheet: View {
         .templatePreviewSheetSizing()
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-    }
-
-    private var sheetBackground: Color {
-        #if os(macOS)
-        Color(nsColor: .windowBackgroundColor)
-        #else
-        Color(.systemGroupedBackground)
-        #endif
     }
 
     private var header: some View {

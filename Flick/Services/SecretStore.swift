@@ -23,6 +23,20 @@ enum SecretStoreError: LocalizedError {
     }
 }
 
+enum CredentialVaultError: LocalizedError {
+    case emptyValue(String)
+    case unsupportedKey(String)
+
+    var errorDescription: String? {
+        switch self {
+        case let .emptyValue(key):
+            "\(key) cannot be stored with an empty value."
+        case let .unsupportedKey(key):
+            "\(key) is not a supported credential."
+        }
+    }
+}
+
 struct KeychainSecretStore: SecretStoring {
     var service = Bundle.main.bundleIdentifier ?? "com.orion.Flick"
 
@@ -86,27 +100,9 @@ struct CredentialImportResult: Hashable {
 }
 
 struct CredentialVault {
-    static let supportedKeys: [String] = [
-        "META_CLIENT_ID",
-        "META_CLIENT_SECRET",
-        "OPENAI_API_KEY",
-        "POSTGRES_DATABASE",
-        "POSTGRES_HOST",
-        "POSTGRES_PASSWORD",
-        "POSTGRES_PRISMA_URL",
-        "POSTGRES_URL",
-        "POSTGRES_URL_NON_POOLING",
-        "POSTGRES_USER",
-        "SUPABASE_ANON_KEY",
-        "SUPABASE_JWT_SECRET",
-        "SUPABASE_SERVICE_ROLE_KEY",
-        "SUPABASE_URL",
-        "TIKTOK_CLIENT_ID",
-        "TIKTOK_CLIENT_SECRET",
-        "TIKTOK_REDIRECT_URI",
-        "TIKTOK_SCOPES",
-        "TIKTOK_VERIFIED_BASE_URL"
-    ]
+    static var supportedKeys: [String] {
+        CredentialDefinition.supportedKeys
+    }
 
     var store: SecretStoring = KeychainSecretStore()
 
@@ -147,6 +143,27 @@ struct CredentialVault {
         }
 
         return CredentialImportResult(storedKeys: storedKeys, ignoredKeys: ignoredKeys)
+    }
+
+    func storeValue(_ value: String, for key: String) throws {
+        guard Self.supportedKeys.contains(key) else {
+            throw CredentialVaultError.unsupportedKey(key)
+        }
+
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedValue.isEmpty else {
+            throw CredentialVaultError.emptyValue(key)
+        }
+
+        try store.save(Data(trimmedValue.utf8), for: key)
+    }
+
+    func deleteValue(for key: String) throws {
+        guard Self.supportedKeys.contains(key) else {
+            throw CredentialVaultError.unsupportedKey(key)
+        }
+
+        try store.delete(key)
     }
 
     func clearStoredCredentials() throws {
