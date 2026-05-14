@@ -37,6 +37,18 @@ final class FlickAppModel {
         FlickAppModel(repository: EmptyFlickRepository(), configuration: .current)
     }
 
+    var canManageAccounts: Bool {
+        AccountManagementPolicy.canAuthorizeAccountsOnThisDevice
+    }
+
+    var accountManagementUnavailableTitle: String {
+        AccountManagementPolicy.unavailableTitle
+    }
+
+    var accountManagementUnavailableMessage: String {
+        AccountManagementPolicy.unavailableMessage
+    }
+
     var productMediaAssets: [MediaAsset] {
         overview.assets.filter { asset in
             asset.source == .uploaded && (asset.mediaType == .image || asset.mediaType == .video)
@@ -78,6 +90,12 @@ final class FlickAppModel {
 
     func connectAccount(platform: SocialPlatform) async {
         guard connectingPlatform == nil else { return }
+        guard canManageAccounts else {
+            accountConnectionMessage = accountManagementUnavailableMessage
+            lastErrorMessage = nil
+            return
+        }
+
         connectingPlatform = platform
         accountConnectionMessage = nil
         lastErrorMessage = nil
@@ -89,30 +107,13 @@ final class FlickAppModel {
         do {
             switch platform {
             case .tiktok:
-                let result = try await tiktokLoginKitClient.authorize(configuration: configuration.tiktok)
-                switch result {
-                case let .completed(account):
-                    applyAuthorizedAccounts()
-                    accountConnectionMessage = "Connected \(account.displayName)."
-                case .openedExternalBrowser:
-                    accountConnectionMessage = "Opened TikTok authorization in the browser. Finish Login Kit there, then return to Flick."
-                }
+                let account = try await tiktokLoginKitClient.authorize(configuration: configuration.tiktok)
+                applyAuthorizedAccounts()
+                accountConnectionMessage = "Connected \(account.displayName)."
             case .instagram, .threads, .x:
                 throw PlatformAdapterError.futurePlatform(platform)
             }
         } catch {
-            lastErrorMessage = error.localizedDescription
-        }
-    }
-
-    func handleOAuthCallback(_ url: URL) async {
-        do {
-            guard let account = try await tiktokLoginKitClient.handleCallback(url) else { return }
-            applyAuthorizedAccounts()
-            accountConnectionMessage = "Connected \(account.displayName)."
-            lastErrorMessage = nil
-        } catch {
-            accountConnectionMessage = nil
             lastErrorMessage = error.localizedDescription
         }
     }
@@ -248,21 +249,6 @@ final class FlickAppModel {
 
     func removeProductMedia(_ asset: MediaAsset) {
         overview.assets.removeAll { $0.id == asset.id }
-    }
-
-    @discardableResult
-    func storeCredentialEnvironment(_ contents: String) -> Bool {
-        do {
-            let result = try credentialVault.storeEnvironment(contents)
-            reloadCredentialConfiguration()
-            credentialMessage = "Stored \(result.storedKeys.count) values securely" + (result.ignoredKeys.isEmpty ? "." : "; ignored \(result.ignoredKeys.count).")
-            lastErrorMessage = nil
-            return true
-        } catch {
-            credentialMessage = nil
-            lastErrorMessage = error.localizedDescription
-            return false
-        }
     }
 
     func secureCredentialValues() -> [String: String] {

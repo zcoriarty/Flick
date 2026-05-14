@@ -105,7 +105,6 @@ extension CredentialStatus.Source {
     var tint: Color {
         switch self {
         case .secureStore: .blue
-        case .localEnvironment: .orange
         case .missing: .secondary
         }
     }
@@ -113,7 +112,6 @@ extension CredentialStatus.Source {
     var systemImage: String {
         switch self {
         case .secureStore: "lock.fill"
-        case .localEnvironment: "doc.text"
         case .missing: "minus.circle"
         }
     }

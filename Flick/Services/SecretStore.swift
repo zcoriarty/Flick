@@ -39,9 +39,11 @@ enum CredentialVaultError: LocalizedError {
 
 struct KeychainSecretStore: SecretStoring {
     var service = Bundle.main.bundleIdentifier ?? "com.orion.Flick"
+    var synchronizesAcrossDevices = false
 
     func data(for key: String) throws -> Data? {
         var query = baseQuery(for: key)
+        applySynchronizableReadPolicy(to: &query)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
 
@@ -58,6 +60,7 @@ struct KeychainSecretStore: SecretStoring {
 
     func save(_ data: Data, for key: String) throws {
         var query = baseQuery(for: key)
+        applySynchronizableWritePolicy(to: &query)
         query[kSecValueData as String] = data
 
         let status = SecItemAdd(query as CFDictionary, nil)
@@ -71,7 +74,10 @@ struct KeychainSecretStore: SecretStoring {
     }
 
     func delete(_ key: String) throws {
-        let status = SecItemDelete(baseQuery(for: key) as CFDictionary)
+        var query = baseQuery(for: key)
+        applySynchronizableReadPolicy(to: &query)
+
+        let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw SecretStoreError.unhandledStatus(status)
         }
@@ -79,7 +85,10 @@ struct KeychainSecretStore: SecretStoring {
 
     private func update(_ data: Data, for key: String) throws {
         let attributes = [kSecValueData as String: data]
-        let status = SecItemUpdate(baseQuery(for: key) as CFDictionary, attributes as CFDictionary)
+        var query = baseQuery(for: key)
+        applySynchronizableWritePolicy(to: &query)
+
+        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         guard status == errSecSuccess else {
             throw SecretStoreError.unhandledStatus(status)
         }
@@ -92,11 +101,16 @@ struct KeychainSecretStore: SecretStoring {
             kSecAttrAccount as String: key
         ]
     }
-}
 
-struct CredentialImportResult: Hashable {
-    var storedKeys: [String]
-    var ignoredKeys: [String]
+    private func applySynchronizableReadPolicy(to query: inout [String: Any]) {
+        guard synchronizesAcrossDevices else { return }
+        query[kSecAttrSynchronizable as String] = kSecAttrSynchronizableAny
+    }
+
+    private func applySynchronizableWritePolicy(to query: inout [String: Any]) {
+        guard synchronizesAcrossDevices else { return }
+        query[kSecAttrSynchronizable as String] = kCFBooleanTrue
+    }
 }
 
 struct CredentialVault {
@@ -121,28 +135,6 @@ struct CredentialVault {
 
     func storedKeys() -> Set<String> {
         Set(loadValues().keys)
-    }
-
-    func storeEnvironment(_ contents: String) throws -> CredentialImportResult {
-        let parsed = LocalEnvironment.parseDotEnvContents(contents)
-        var storedKeys: [String] = []
-        var ignoredKeys: [String] = []
-
-        for (key, value) in parsed.sorted(by: { $0.key < $1.key }) {
-            guard Self.supportedKeys.contains(key) else {
-                ignoredKeys.append(key)
-                continue
-            }
-            let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedValue.isEmpty else {
-                ignoredKeys.append(key)
-                continue
-            }
-            try store.save(Data(trimmedValue.utf8), for: key)
-            storedKeys.append(key)
-        }
-
-        return CredentialImportResult(storedKeys: storedKeys, ignoredKeys: ignoredKeys)
     }
 
     func storeValue(_ value: String, for key: String) throws {

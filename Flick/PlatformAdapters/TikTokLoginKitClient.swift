@@ -4,12 +4,11 @@
 //
 
 import AuthenticationServices
-import CryptoKit
 import Foundation
 import OSLog
-import Security
-#if canImport(UIKit)
-import UIKit
+#if os(iOS) && !targetEnvironment(macCatalyst) && canImport(TikTokOpenAuthSDK)
+import TikTokOpenAuthSDK
+import TikTokOpenSDKCore
 #endif
 
 @MainActor
@@ -18,9 +17,9 @@ final class TikTokLoginKitClient {
     var accountStore: LoginKitAccountStore
     var tokenStore: LoginKitTokenStore
 
-    private var webAuthenticationSession: ASWebAuthenticationSession?
-    private var pendingAuthorization: PendingTikTokAuthorization?
-    private let presentationContextProvider = WebAuthenticationPresentationContextProvider()
+    #if os(iOS) && !targetEnvironment(macCatalyst) && canImport(TikTokOpenAuthSDK)
+    private var activeAuthorizationRequest: TikTokAuthRequest?
+    #endif
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.orion.Flick", category: "LoginKit")
 
     init(
@@ -33,53 +32,32 @@ final class TikTokLoginKitClient {
         self.tokenStore = tokenStore ?? LoginKitTokenStore()
     }
 
-    func authorize(configuration: TikTokConfiguration) async throws -> LoginKitAuthorizationResult {
-        let authorizationRequest = try TikTokAuthorizationRequest(configuration: configuration)
-        if authorizationRequest.usesHTTPSCallback {
-            logger.info("Opening TikTok Login Kit authorization in external browser for HTTPS callback.")
-            pendingAuthorization = PendingTikTokAuthorization(request: authorizationRequest, configuration: configuration)
-            try await openExternalAuthorization(authorizationRequest.authorizationURL)
-            return .openedExternalBrowser
+    func authorize(configuration: TikTokConfiguration) async throws -> ConnectedAccount {
+        guard AccountManagementPolicy.canAuthorizeAccountsOnThisDevice else {
+            throw LoginKitError.authorizationUnavailableOnThisPlatform
         }
 
-        logger.info("Opening TikTok Login Kit authorization with web authentication session.")
-        let callbackURL = try await performAuthorization(request: authorizationRequest)
-        let account = try await completeAuthorization(callbackURL: callbackURL, request: authorizationRequest, configuration: configuration)
-        return .completed(account)
-    }
-
-    func handleCallback(_ url: URL) async throws -> ConnectedAccount? {
-        guard let pendingAuthorization, pendingAuthorization.request.matchesCallback(url) else {
-            return nil
-        }
-
-        logger.info("Handling TikTok Login Kit callback.")
-        self.pendingAuthorization = nil
-        return try await completeAuthorization(
-            callbackURL: url,
-            request: pendingAuthorization.request,
-            configuration: pendingAuthorization.configuration
-        )
+        logger.info("Opening TikTok Login Kit authorization with TikTok OpenSDK.")
+        let authorizationCode = try await requestAuthorizationCode(configuration: configuration)
+        return try await completeAuthorization(authorizationCode, configuration: configuration)
     }
 
     func cancelPendingAuthorization() {
-        pendingAuthorization = nil
-        webAuthenticationSession?.cancel()
-        webAuthenticationSession = nil
+        #if os(iOS) && !targetEnvironment(macCatalyst) && canImport(TikTokOpenAuthSDK)
+        activeAuthorizationRequest = nil
+        #endif
     }
 
     private func completeAuthorization(
-        callbackURL: URL,
-        request: TikTokAuthorizationRequest,
+        _ authorizationCode: TikTokAuthorizationCode,
         configuration: TikTokConfiguration
     ) async throws -> ConnectedAccount {
-        let callback = try TikTokAuthorizationCallback(url: callbackURL, expectedState: request.state)
         let tokenResponse = try await exchangeCode(
-            callback.code,
-            codeVerifier: request.codeVerifier,
+            authorizationCode.code,
+            codeVerifier: authorizationCode.codeVerifier,
             configuration: configuration
         )
-        let scopes = callback.scopes.isEmpty ? tokenResponse.scopes : callback.scopes
+        let scopes = authorizationCode.scopes.isEmpty ? tokenResponse.scopes : authorizationCode.scopes
         let account = try await refreshAuthorizedAccount(accessToken: tokenResponse.accessToken, scopes: scopes)
         try tokenStore.save(tokenResponse.tokenBundle(for: account, scopes: scopes), for: account)
         logger.info("Stored TikTok Login Kit account metadata and token bundle.")
@@ -118,41 +96,87 @@ final class TikTokLoginKitClient {
         return account
     }
 
-    private func performAuthorization(request: TikTokAuthorizationRequest) async throws -> URL {
-        try await withCheckedThrowingContinuation { continuation in
-            let session = ASWebAuthenticationSession(url: request.authorizationURL, callback: request.callback) { [weak self] callbackURL, error in
+    private func requestAuthorizationCode(configuration: TikTokConfiguration) async throws -> TikTokAuthorizationCode {
+        #if os(iOS) && !targetEnvironment(macCatalyst) && canImport(TikTokOpenAuthSDK)
+        let parameters = try TikTokLoginKitAuthorizationParameters(configuration: configuration)
+        try configureOpenSDKClientKey(from: configuration)
+        let request = TikTokAuthRequest(scopes: parameters.scopes, redirectURI: parameters.redirectURI)
+        request.state = parameters.state
+
+        return try await withCheckedThrowingContinuation { continuation in
+            activeAuthorizationRequest = request
+            let didSend = request.send { [weak self, weak request] response in
                 Task { @MainActor in
-                    self?.webAuthenticationSession = nil
-                    if let error {
-                        continuation.resume(throwing: LoginKitError.authorizationFailed(error))
-                    } else if let callbackURL {
-                        continuation.resume(returning: callbackURL)
-                    } else {
-                        continuation.resume(throwing: LoginKitError.authorizationFailedMessage("TikTok did not return an authorization callback."))
-                    }
+                    self?.finishAuthorization(
+                        response: response,
+                        request: request,
+                        parameters: parameters,
+                        continuation: continuation
+                    )
                 }
             }
-            session.presentationContextProvider = presentationContextProvider
-            webAuthenticationSession = session
-
-            guard session.start() else {
-                webAuthenticationSession = nil
-                continuation.resume(throwing: LoginKitError.authorizationFailedMessage("Could not start TikTok Login Kit. Check the redirect URI and associated domain configuration."))
-                return
+            if !didSend {
+                activeAuthorizationRequest = nil
+                continuation.resume(throwing: LoginKitError.authorizationFailedMessage("Could not start TikTok Login Kit. Check the OpenSDK Info.plist configuration and associated domain setup."))
             }
         }
-    }
-
-    private func openExternalAuthorization(_ url: URL) async throws {
-        #if canImport(UIKit)
-        let opened = await UIApplication.shared.open(url)
-        guard opened else {
-            throw LoginKitError.authorizationFailedMessage("Could not open TikTok authorization in the browser.")
-        }
         #else
-        throw LoginKitError.authorizationFailedMessage("TikTok browser authorization is only available in the iOS app.")
+        throw LoginKitError.notConfigured("TikTok OpenSDK is not linked for the iOS app.")
         #endif
     }
+
+    #if os(iOS) && !targetEnvironment(macCatalyst) && canImport(TikTokOpenAuthSDK)
+    private func configureOpenSDKClientKey(from configuration: TikTokConfiguration) throws {
+        guard let configuredClientID = configuration.clientID else {
+            throw LoginKitError.notConfigured("TikTok client ID is missing.")
+        }
+        guard let infoDictionary = Bundle.main.infoDictionary as NSDictionary? else {
+            throw LoginKitError.notConfigured("Could not configure TikTok OpenSDK client key.")
+        }
+
+        infoDictionary.setValue(configuredClientID, forKey: "TikTokClientKey")
+    }
+
+    private func finishAuthorization(
+        response: TikTokBaseResponse,
+        request: TikTokAuthRequest?,
+        parameters: TikTokLoginKitAuthorizationParameters,
+        continuation: CheckedContinuation<TikTokAuthorizationCode, Error>
+    ) {
+        defer {
+            activeAuthorizationRequest = nil
+        }
+
+        guard let authResponse = response as? TikTokAuthResponse else {
+            continuation.resume(throwing: LoginKitError.authorizationFailedMessage("TikTok Login Kit returned an unexpected authorization response."))
+            return
+        }
+
+        guard authResponse.errorCode == .noError else {
+            continuation.resume(throwing: LoginKitError.authorizationFailed(authResponse))
+            return
+        }
+        guard authResponse.state == parameters.state else {
+            continuation.resume(throwing: LoginKitError.stateMismatch)
+            return
+        }
+        guard let code = authResponse.authCode, !code.isEmpty else {
+            continuation.resume(throwing: LoginKitError.missingAuthorizationCode)
+            return
+        }
+        guard let codeVerifier = request?.pkce.codeVerifier, !codeVerifier.isEmpty else {
+            continuation.resume(throwing: LoginKitError.authorizationFailedMessage("TikTok Login Kit did not retain a PKCE verifier for token exchange."))
+            return
+        }
+
+        let scopes = Array(authResponse.grantedPermissions ?? parameters.scopes).sorted()
+        continuation.resume(returning: TikTokAuthorizationCode(
+            code: code,
+            codeVerifier: codeVerifier,
+            scopes: scopes
+        ))
+    }
+    #endif
 
     private func exchangeCode(_ code: String, codeVerifier: String, configuration: TikTokConfiguration) async throws -> TikTokAccessTokenResponse {
         guard
@@ -191,6 +215,7 @@ final class TikTokLoginKitClient {
 
 enum LoginKitError: LocalizedError {
     case notConfigured(String)
+    case authorizationUnavailableOnThisPlatform
     case authorizationCanceled
     case authorizationFailedMessage(String)
     case stateMismatch
@@ -203,6 +228,8 @@ enum LoginKitError: LocalizedError {
         switch self {
         case let .notConfigured(message):
             message
+        case .authorizationUnavailableOnThisPlatform:
+            AccountManagementPolicy.unavailableMessage
         case .authorizationCanceled:
             "TikTok authorization was canceled."
         case let .authorizationFailedMessage(message):
@@ -227,136 +254,48 @@ enum LoginKitError: LocalizedError {
         }
         return .authorizationFailedMessage(error.localizedDescription)
     }
-}
 
-enum LoginKitAuthorizationResult: Hashable {
-    case completed(ConnectedAccount)
-    case openedExternalBrowser
-}
+    #if os(iOS) && !targetEnvironment(macCatalyst) && canImport(TikTokOpenAuthSDK)
+    static func authorizationFailed(_ response: TikTokAuthResponse) -> LoginKitError {
+        if response.errorCode == .cancelled {
+            return .authorizationCanceled
+        }
 
-private struct PendingTikTokAuthorization {
-    var request: TikTokAuthorizationRequest
-    var configuration: TikTokConfiguration
-}
-
-struct TikTokAuthorizationRequest {
-    var authorizationURL: URL
-    var callback: ASWebAuthenticationSession.Callback
-    var redirectURI: URL
-    var state: String
-    var codeVerifier: String
-    var usesHTTPSCallback: Bool {
-        redirectURI.scheme == "https"
+        let message = response.errorDescription ?? response.error ?? "TikTok authorization failed with code \(response.errorCode.rawValue)."
+        return .authorizationFailedMessage(message)
     }
+    #endif
+}
 
-    init(
-        configuration: TikTokConfiguration,
-        state: String = OAuthPKCE.randomString(length: 32),
-        codeVerifier: String = OAuthPKCE.randomString(length: 64)
-    ) throws {
-        guard let clientID = configuration.clientID else {
+struct TikTokLoginKitAuthorizationParameters: Hashable {
+    var scopes: Set<String>
+    var redirectURI: String
+    var state: String
+
+    init(configuration: TikTokConfiguration, state: String = UUID().uuidString) throws {
+        guard configuration.clientIDPresent else {
             throw LoginKitError.notConfigured("TikTok client ID is missing.")
         }
         guard let redirectURI = configuration.redirectURI else {
             throw LoginKitError.notConfigured("TikTok redirect URI is missing.")
         }
+        guard redirectURI.scheme == "https", redirectURI.host?.isEmpty == false else {
+            throw LoginKitError.notConfigured("TikTok Login Kit for iOS requires an HTTPS universal-link redirect URI.")
+        }
+        guard !configuration.requestedScopes.isEmpty else {
+            throw LoginKitError.notConfigured("TikTok Login Kit needs at least one requested scope.")
+        }
 
+        self.scopes = Set(configuration.requestedScopes)
+        self.redirectURI = redirectURI.absoluteString
         self.state = state
-        self.codeVerifier = codeVerifier
-        self.redirectURI = redirectURI
-        self.callback = try Self.callback(for: redirectURI)
-
-        var components = URLComponents(string: "https://www.tiktok.com/v2/auth/authorize/")!
-        components.queryItems = [
-            URLQueryItem(name: "client_key", value: clientID),
-            URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "scope", value: configuration.requestedScopes.joined(separator: ",")),
-            URLQueryItem(name: "redirect_uri", value: redirectURI.absoluteString),
-            URLQueryItem(name: "state", value: state),
-            URLQueryItem(name: "code_challenge", value: OAuthPKCE.codeChallenge(for: codeVerifier)),
-            URLQueryItem(name: "code_challenge_method", value: "S256")
-        ]
-        authorizationURL = components.url!
-    }
-
-    func matchesCallback(_ url: URL) -> Bool {
-        guard url.scheme == redirectURI.scheme else { return false }
-        if usesHTTPSCallback {
-            return url.host == redirectURI.host && normalizedPath(url.path) == normalizedPath(redirectURI.path)
-        }
-        return true
-    }
-
-    private static func callback(for redirectURI: URL) throws -> ASWebAuthenticationSession.Callback {
-        guard let scheme = redirectURI.scheme, !scheme.isEmpty else {
-            throw LoginKitError.notConfigured("TikTok redirect URI needs a URL scheme.")
-        }
-
-        if scheme == "https" {
-            guard let host = redirectURI.host, !host.isEmpty else {
-                throw LoginKitError.notConfigured("TikTok HTTPS redirect URI needs a host.")
-            }
-            return .https(host: host, path: redirectURI.path.isEmpty ? "/" : redirectURI.path)
-        }
-
-        return .customScheme(scheme)
-    }
-
-    private func normalizedPath(_ path: String) -> String {
-        path.isEmpty ? "/" : path
     }
 }
 
-struct TikTokAuthorizationCallback: Hashable {
+private struct TikTokAuthorizationCode: Hashable {
     var code: String
+    var codeVerifier: String
     var scopes: [String]
-
-    init(url: URL, expectedState: String) throws {
-        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        let queryItems = components?.queryItems ?? []
-
-        if let error = queryItems.value(named: "error") {
-            let description = queryItems.value(named: "error_description")
-            throw LoginKitError.platformError(description ?? error)
-        }
-
-        guard queryItems.value(named: "state") == expectedState else {
-            throw LoginKitError.stateMismatch
-        }
-        guard let code = queryItems.value(named: "code"), !code.isEmpty else {
-            throw LoginKitError.missingAuthorizationCode
-        }
-
-        self.code = code
-        self.scopes = Self.splitScopes(queryItems.value(named: "scopes") ?? queryItems.value(named: "scope"))
-    }
-
-    private static func splitScopes(_ value: String?) -> [String] {
-        value?
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            ?? []
-    }
-}
-
-private enum OAuthPKCE {
-    private static let allowedCharacters = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
-
-    static func randomString(length: Int) -> String {
-        var bytes = [UInt8](repeating: 0, count: length)
-        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        if status != errSecSuccess {
-            return UUID().uuidString.replacingOccurrences(of: "-", with: "")
-        }
-        return String(bytes.map { allowedCharacters[Int($0) % allowedCharacters.count] })
-    }
-
-    static func codeChallenge(for codeVerifier: String) -> String {
-        SHA256.hash(data: Data(codeVerifier.utf8))
-            .map { String(format: "%02x", $0) }
-            .joined()
-    }
 }
 
 private struct TikTokAccessTokenResponse: Decodable, Hashable {
@@ -417,26 +356,6 @@ private struct TikTokOAuthErrorResponse: Decodable {
         case error
         case errorDescription = "error_description"
         case logID = "log_id"
-    }
-}
-
-private final class WebAuthenticationPresentationContextProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        #if canImport(UIKit)
-        let windowScenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        if let keyWindow = windowScenes.flatMap(\.windows).first(where: \.isKeyWindow) {
-            return keyWindow
-        }
-        if let window = windowScenes.flatMap(\.windows).first {
-            return window
-        }
-        if let windowScene = windowScenes.first {
-            return UIWindow(windowScene: windowScene)
-        }
-        preconditionFailure("TikTok Login Kit requires an active window scene.")
-        #else
-        return ASPresentationAnchor()
-        #endif
     }
 }
 

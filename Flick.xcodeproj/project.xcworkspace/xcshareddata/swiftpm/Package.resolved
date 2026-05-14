@@ -1,5 +1,5 @@
 {
-  "originHash" : "ccc727310637079b7355ccf59e7d153c26677020c1a43e177b78cc9df7963c0f",
+  "originHash" : "279ac8fc26785d2f286e49b49a1a5fa8f1ba678b9bfcc80bba8025c44f912062",
   "pins" : [
     {
       "identity" : "supabase-swift",
@@ -53,6 +53,15 @@
       "state" : {
         "revision" : "45eb0224913ea070ec4fba17291b9e7ecf4749ca",
         "version" : "1.5.1"
+      }
+    },
+    {
+      "identity" : "tiktok-opensdk-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tiktok/tiktok-opensdk-ios.git",
+      "state" : {
+        "revision" : "cb0cdc785b653c3be116fd1302ec280fbcfac695",
+        "version" : "2.5.0"
       }
     },
     {

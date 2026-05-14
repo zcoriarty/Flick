@@ -8,7 +8,7 @@ import Foundation
 
 struct LoginKitAccountStore {
     private let key = "authorized_accounts.login_kit.v1"
-    var store: SecretStoring = KeychainSecretStore()
+    var store: SecretStoring = KeychainSecretStore(synchronizesAcrossDevices: true)
 
     func loadAccounts() -> [ConnectedAccount] {
         guard
@@ -57,7 +57,7 @@ struct LoginKitTokenBundle: Codable, Hashable {
 
 struct LoginKitTokenStore {
     private let prefix = "login_kit_tokens.v1"
-    var store: SecretStoring = KeychainSecretStore()
+    var store: SecretStoring = KeychainSecretStore(synchronizesAcrossDevices: true)
 
     func save(_ bundle: LoginKitTokenBundle, for account: ConnectedAccount) throws {
         let data = try JSONEncoder.flick.encode(bundle)

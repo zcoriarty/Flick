@@ -10,6 +10,8 @@
 		9B038BBF2FB232D3007B4287 /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = 9B038BBE2FB232D3007B4287 /* Auth */; };
 		9B038BC12FB232D3007B4287 /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = 9B038BC02FB232D3007B4287 /* Storage */; };
 		9B038BC32FB232D3007B4287 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 9B038BC22FB232D3007B4287 /* Supabase */; };
+		9B7D10012FBF000100000001 /* TikTokOpenAuthSDK in Frameworks */ = {isa = PBXBuildFile; platformFilter = ios; productRef = 9B7D10042FBF000100000004 /* TikTokOpenAuthSDK */; };
+		9B7D10022FBF000100000002 /* TikTokOpenSDKCore in Frameworks */ = {isa = PBXBuildFile; platformFilter = ios; productRef = 9B7D10052FBF000100000005 /* TikTokOpenSDKCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -74,6 +76,8 @@
 				9B038BC12FB232D3007B4287 /* Storage in Frameworks */,
 				9B038BBF2FB232D3007B4287 /* Auth in Frameworks */,
 				9B038BC32FB232D3007B4287 /* Supabase in Frameworks */,
+				9B7D10012FBF000100000001 /* TikTokOpenAuthSDK in Frameworks */,
+				9B7D10022FBF000100000002 /* TikTokOpenSDKCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -137,6 +141,8 @@
 				9B038BBE2FB232D3007B4287 /* Auth */,
 				9B038BC02FB232D3007B4287 /* Storage */,
 				9B038BC22FB232D3007B4287 /* Supabase */,
+				9B7D10042FBF000100000004 /* TikTokOpenAuthSDK */,
+				9B7D10052FBF000100000005 /* TikTokOpenSDKCore */,
 			);
 			productName = Flick;
 			productReference = 9B038B892FB2289B007B4287 /* Flick.app */;
@@ -222,6 +228,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				9B038BBD2FB232D3007B4287 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				9B7D10032FBF000100000003 /* XCRemoteSwiftPackageReference "tiktok-opensdk-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 9B038B8A2FB2289B007B4287 /* Products */;
@@ -661,6 +668,14 @@
 				minimumVersion = 2.5.1;
 			};
 		};
+		9B7D10032FBF000100000003 /* XCRemoteSwiftPackageReference "tiktok-opensdk-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/tiktok/tiktok-opensdk-ios.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.5.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -678,6 +693,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 9B038BBD2FB232D3007B4287 /* XCRemoteSwiftPackageReference "supabase-swift" */;
 			productName = Supabase;
+		};
+		9B7D10042FBF000100000004 /* TikTokOpenAuthSDK */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9B7D10032FBF000100000003 /* XCRemoteSwiftPackageReference "tiktok-opensdk-ios" */;
+			productName = TikTokOpenAuthSDK;
+		};
+		9B7D10052FBF000100000005 /* TikTokOpenSDKCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9B7D10032FBF000100000003 /* XCRemoteSwiftPackageReference "tiktok-opensdk-ios" */;
+			productName = TikTokOpenSDKCore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

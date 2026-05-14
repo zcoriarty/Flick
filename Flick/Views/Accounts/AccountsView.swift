@@ -20,18 +20,20 @@ struct AccountsView: View {
             .flickScrollablePage()
             .navigationTitle("Accounts")
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Menu("Add account", systemImage: "plus") {
-                        ForEach(SocialPlatform.allCases) { platform in
-                            Button(platform.displayName, systemImage: platform.systemImage) {
-                                Task {
-                                    await appModel.connectAccount(platform: platform)
+                if appModel.canManageAccounts {
+                    ToolbarItem(placement: .primaryAction) {
+                        Menu("Add account", systemImage: "plus") {
+                            ForEach(SocialPlatform.allCases) { platform in
+                                Button(platform.displayName, systemImage: platform.systemImage) {
+                                    Task {
+                                        await appModel.connectAccount(platform: platform)
+                                    }
                                 }
                             }
                         }
+                        .buttonStyle(.glassProminent)
+                        .disabled(appModel.connectingPlatform != nil)
                     }
-                    .buttonStyle(.glassProminent)
-                    .disabled(appModel.connectingPlatform != nil)
                 }
             }
         }
@@ -39,7 +41,15 @@ struct AccountsView: View {
 
     @ViewBuilder
     private var connectionStatus: some View {
-        if let platform = appModel.connectingPlatform {
+        if !appModel.canManageAccounts {
+            AccountConnectionStatusView(
+                title: appModel.accountManagementUnavailableTitle,
+                message: appModel.accountManagementUnavailableMessage,
+                systemImage: "iphone",
+                tint: .blue,
+                showsProgress: false
+            )
+        } else if let platform = appModel.connectingPlatform {
             AccountConnectionStatusView(
                 title: "Connecting \(platform.displayName)",
                 message: "Complete the Login Kit authorization window to add this account.",

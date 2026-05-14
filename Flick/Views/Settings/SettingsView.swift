@@ -7,7 +7,6 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(FlickAppModel.self) private var appModel
-    @State private var credentialPasteText = ""
     @State private var credentialDrafts: [CredentialEditorDraft] = []
     @State private var isClearCredentialsConfirmationPresented = false
 
@@ -27,58 +26,35 @@ struct SettingsView: View {
 
     private var credentials: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Credentials", subtitle: "Import, edit, and store env vars in Keychain", systemImage: "key")
+            SectionTitle(title: "Credentials", subtitle: "Edit and store credentials directly in Keychain", systemImage: "key")
 
             FlickGlassCard {
-                VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 12) {
                     HStack(alignment: .top) {
-                        Label("Secure credential import", systemImage: "lock.shield")
+                        Label("Keychain credentials", systemImage: "lock.shield")
                             .font(.headline)
-                        Spacer()
                         StatusBadge(title: "\(appModel.configuration.secureStoredCredentialKeys.count) stored", tint: .blue, systemImage: "key.fill")
                     }
-
-                    TextEditor(text: $credentialPasteText)
-                        .font(.system(.callout, design: .monospaced))
-                        .frame(minHeight: 150)
-                        .padding(10)
-                        .scrollContentBackground(.hidden)
-                        .credentialEditorInputBehavior()
-                        .background(
-                            .background.opacity(0.35),
-                            in: RoundedRectangle(cornerRadius: FlickStyle.controlCornerRadius, style: .continuous)
-                        )
-                        .accessibilityLabel("Paste environment variables")
-
-                    HStack {
-                        Button("Store securely", systemImage: "lock") {
-                            importCredentialEnvironment()
+                    Spacer(minLength: 12)
+                    Button("Clear stored", systemImage: "trash", role: .destructive) {
+                        isClearCredentialsConfirmationPresented = true
+                    }
+                    .buttonStyle(.glass)
+                    .confirmationDialog("Clear stored credentials?", isPresented: $isClearCredentialsConfirmationPresented) {
+                        Button("Clear stored", role: .destructive) {
+                            clearStoredCredentials()
                         }
-                        .buttonStyle(.glassProminent)
-                        .disabled(credentialPasteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                        Button("Clear stored", systemImage: "trash", role: .destructive) {
-                            isClearCredentialsConfirmationPresented = true
-                        }
-                        .buttonStyle(.glass)
-                        .confirmationDialog("Clear stored credentials?", isPresented: $isClearCredentialsConfirmationPresented) {
-                            Button("Clear stored", role: .destructive) {
-                                clearStoredCredentials()
-                            }
-                            Button("Cancel", role: .cancel) { }
-                        } message: {
-                            Text("This removes every credential Flick has stored in Keychain.")
-                        }
-
-                        Spacer()
-
-                        if let credentialMessage = appModel.credentialMessage {
-                            Text(credentialMessage)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                        Button("Cancel", role: .cancel) { }
+                    } message: {
+                        Text("This removes every credential Flick has stored in Keychain.")
                     }
                 }
+            }
+
+            if let credentialMessage = appModel.credentialMessage {
+                Text(credentialMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             CredentialEditorView(
@@ -86,13 +62,6 @@ struct SettingsView: View {
                 saveAction: saveCredential,
                 deleteAction: deleteCredential
             )
-        }
-    }
-
-    private func importCredentialEnvironment() {
-        if appModel.storeCredentialEnvironment(credentialPasteText) {
-            credentialPasteText = ""
-            reloadCredentialDrafts()
         }
     }
 

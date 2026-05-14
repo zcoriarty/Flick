@@ -12,6 +12,21 @@
 				<string>flick</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.orion.Flick.tiktok</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>aw6izfb1kcgr88bp</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tiktokopensdk</string>
+		<string>tiktoksharesdk</string>
+		<string>snssdk1180</string>
+		<string>snssdk1233</string>
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>

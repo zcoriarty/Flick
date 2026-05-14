@@ -47,9 +47,9 @@ struct SupabaseStorageService: MediaStorageProviding {
     let anonKey: String?
     let urlSession: URLSession
 
-    init(environment: [String: String] = LocalEnvironment.load(), urlSession: URLSession = .shared) {
-        projectURL = environment.nonEmptyURL("SUPABASE_URL")
-        anonKey = environment.nonEmptyValue("SUPABASE_ANON_KEY")
+    init(credentials: [String: String] = CredentialVault().loadValues(), urlSession: URLSession = .shared) {
+        projectURL = credentials.nonEmptyURL("SUPABASE_URL")
+        anonKey = credentials.nonEmptyValue("SUPABASE_ANON_KEY")
         self.urlSession = urlSession
     }
 

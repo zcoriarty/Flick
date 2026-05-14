@@ -37,75 +37,42 @@ final class FlickTests: XCTestCase {
         XCTAssertTrue(model.overview.analyticsPerformance.isEmpty)
     }
 
-    func testDotEnvParserHandlesQuotesAndComments() {
-        let values = LocalEnvironment.parseDotEnvContents(
-            """
-            # comment
-            export SUPABASE_URL="https://example.supabase.co"
-            EMPTY=
-            TIKTOK_REDIRECT_URI='flick://oauth/tiktok'
-            """
-        )
-
-        XCTAssertEqual(values["SUPABASE_URL"], "https://example.supabase.co")
-        XCTAssertEqual(values["TIKTOK_REDIRECT_URI"], "flick://oauth/tiktok")
-        XCTAssertEqual(values["EMPTY"], "")
-    }
-
     func testCredentialVaultStoresOnlySupportedNonEmptyValues() throws {
         let store = MemorySecretStore()
         let vault = CredentialVault(store: store)
 
-        let result = try vault.storeEnvironment(
-            """
-            TIKTOK_CLIENT_ID=client-id
-            UNKNOWN_KEY=ignored
-            OPENAI_API_KEY=
-            """
-        )
-
-        XCTAssertEqual(result.storedKeys, ["TIKTOK_CLIENT_ID"])
-        XCTAssertEqual(Set(result.ignoredKeys), ["OPENAI_API_KEY", "UNKNOWN_KEY"])
+        try vault.storeValue("client-id", for: "TIKTOK_CLIENT_ID")
+        XCTAssertThrowsError(try vault.storeValue("ignored", for: "UNKNOWN_KEY"))
+        XCTAssertThrowsError(try vault.storeValue("", for: "OPENAI_API_KEY"))
         XCTAssertEqual(String(data: try XCTUnwrap(store.data(for: "TIKTOK_CLIENT_ID")), encoding: .utf8), "client-id")
     }
 
-    func testTikTokAuthorizationRequestBuildsLoginKitURL() throws {
+    func testTikTokAuthorizationParametersRequireUniversalLinkRedirect() throws {
+        let configuration = TikTokConfiguration(values: [
+            "TIKTOK_CLIENT_ID": "client-id",
+            "TIKTOK_REDIRECT_URI": "https://example.com/oauth/tiktok",
+            "TIKTOK_SCOPES": "user.info.basic,video.publish"
+        ])
+
+        let parameters = try TikTokLoginKitAuthorizationParameters(
+            configuration: configuration,
+            state: "state-token"
+        )
+
+        XCTAssertEqual(parameters.redirectURI, "https://example.com/oauth/tiktok")
+        XCTAssertEqual(parameters.scopes, ["user.info.basic", "video.publish"])
+        XCTAssertEqual(parameters.state, "state-token")
+    }
+
+    func testTikTokAuthorizationParametersRejectCustomSchemeRedirect() throws {
         let configuration = TikTokConfiguration(values: [
             "TIKTOK_CLIENT_ID": "client-id",
             "TIKTOK_REDIRECT_URI": "flick://oauth/tiktok",
             "TIKTOK_SCOPES": "user.info.basic,video.publish"
         ])
 
-        let request = try TikTokAuthorizationRequest(
-            configuration: configuration,
-            state: "state-token",
-            codeVerifier: "verifier"
-        )
-        let queryItems = try XCTUnwrap(URLComponents(url: request.authorizationURL, resolvingAgainstBaseURL: false)?.queryItems)
-
-        XCTAssertEqual(request.authorizationURL.host(), "www.tiktok.com")
-        XCTAssertEqual(queryItems.value(named: "client_key"), "client-id")
-        XCTAssertEqual(queryItems.value(named: "response_type"), "code")
-        XCTAssertEqual(queryItems.value(named: "scope"), "user.info.basic,video.publish")
-        XCTAssertEqual(queryItems.value(named: "redirect_uri"), "flick://oauth/tiktok")
-        XCTAssertEqual(queryItems.value(named: "state"), "state-token")
-        XCTAssertEqual(queryItems.value(named: "code_challenge")?.count, 64)
-        XCTAssertEqual(queryItems.value(named: "code_challenge_method"), "S256")
-    }
-
-    func testTikTokAuthorizationCallbackValidatesStateAndScopes() throws {
-        let callback = try TikTokAuthorizationCallback(
-            url: try XCTUnwrap(URL(string: "flick://oauth/tiktok?code=auth-code&state=state-token&scopes=user.info.basic,video.publish")),
-            expectedState: "state-token"
-        )
-
-        XCTAssertEqual(callback.code, "auth-code")
-        XCTAssertEqual(callback.scopes, ["user.info.basic", "video.publish"])
         XCTAssertThrowsError(
-            try TikTokAuthorizationCallback(
-                url: try XCTUnwrap(URL(string: "flick://oauth/tiktok?code=auth-code&state=wrong")),
-                expectedState: "state-token"
-            )
+            try TikTokLoginKitAuthorizationParameters(configuration: configuration)
         )
     }
 
@@ -133,6 +100,22 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(accounts.first?.platformUserID, "real-open-id")
         XCTAssertEqual(accounts.first?.displayName, "@realaccount")
         XCTAssertEqual(accounts.first?.authorizationSource, .loginKit)
+    }
+
+    func testAccountManagementPolicyIsIOSOnly() {
+        #if os(iOS) && !targetEnvironment(macCatalyst)
+        XCTAssertTrue(AccountManagementPolicy.canAuthorizeAccountsOnThisDevice)
+        #else
+        XCTAssertFalse(AccountManagementPolicy.canAuthorizeAccountsOnThisDevice)
+        #endif
+    }
+
+    func testLoginKitStoresUseSynchronizableKeychainByDefault() {
+        let accountStore = LoginKitAccountStore()
+        let tokenStore = LoginKitTokenStore()
+
+        XCTAssertEqual((accountStore.store as? KeychainSecretStore)?.synchronizesAcrossDevices, true)
+        XCTAssertEqual((tokenStore.store as? KeychainSecretStore)?.synchronizesAcrossDevices, true)
     }
 }
 

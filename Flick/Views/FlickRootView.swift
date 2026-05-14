@@ -54,15 +54,10 @@ struct FlickRootView: View {
             await appModel.refresh()
         }
         .onOpenURL { url in
-            Task {
-                await appModel.handleOAuthCallback(url)
-            }
+            _ = TikTokOpenSDKURLHandler.handle(url)
         }
         .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
-            guard let url = activity.webpageURL else { return }
-            Task {
-                await appModel.handleOAuthCallback(url)
-            }
+            _ = TikTokOpenSDKURLHandler.handle(activity.webpageURL)
         }
         #if os(iOS)
         .tabBarMinimizeBehavior(.onScrollDown)
