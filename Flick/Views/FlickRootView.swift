@@ -37,32 +37,23 @@ struct FlickRootView: View {
             }
 
             Tab(FlickSection.queue.title, systemImage: FlickSection.queue.systemImage, value: FlickSection.queue) {
-                NavigationStack {
-                    QueueView()
-                }
+                QueueView()
             }
 
             Tab(FlickSection.trends.title, systemImage: FlickSection.trends.systemImage, value: FlickSection.trends) {
-                NavigationStack {
-                    TrendsView()
-                }
+                TrendsView()
             }
 
             Tab(FlickSection.analytics.title, systemImage: FlickSection.analytics.systemImage, value: FlickSection.analytics) {
-                NavigationStack {
-                    AnalyticsView()
-                }
+                AnalyticsView()
             }
 
             Tab(FlickSection.accounts.title, systemImage: FlickSection.accounts.systemImage, value: FlickSection.accounts) {
                 AccountsView()
-
             }
 
             Tab(FlickSection.settings.title, systemImage: FlickSection.settings.systemImage, value: FlickSection.settings) {
-                NavigationStack {
-                    SettingsView()
-                }
+                SettingsView()
             }
         }
         .tint(FlickStyle.appTint)
