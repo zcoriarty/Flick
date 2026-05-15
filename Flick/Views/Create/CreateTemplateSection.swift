@@ -67,6 +67,35 @@ struct CreateTemplateSection: View {
     }
 }
 
+struct AnalyzeTemplateSection: View {
+    var selectedTemplate: ExampleSlideshowTemplate?
+    var isPlanning: Bool
+    var action: () -> Void
+
+    var body: some View {
+        if selectedTemplate != nil {
+            Button(action: action) {
+                HStack(spacing: 10) {
+                    if isPlanning {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "wand.and.stars")
+                    }
+
+                    Text(isPlanning ? "Analyzing Template" : "Analyze Template")
+                        .fontWeight(.semibold)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .buttonStyle(.glassProminent)
+            .controlSize(.large)
+            .disabled(isPlanning)
+            .listRowBackground(Color.clear)
+            .padding(.top, -12)
+        }
+    }
+}
+
 private struct SelectedTemplateRow: View {
     var template: ExampleSlideshowTemplate
     var clearAction: () -> Void
@@ -101,5 +130,36 @@ private struct SelectedTemplateRow: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
+    }
+}
+
+private struct CreatePlanningProgressRow: View {
+    var step: String
+    var startedAt: Date
+
+    var body: some View {
+        TimelineView(.periodic(from: startedAt, by: 1)) { context in
+            HStack(spacing: 8) {
+                Text(cleanStep)
+                    .lineLimit(1)
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Label(elapsedText(at: context.date), systemImage: "timer")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+            .font(.caption)
+        }
+    }
+
+    private var cleanStep: String {
+        step.trimmingCharacters(in: CharacterSet(charactersIn: ". "))
+    }
+
+    private func elapsedText(at date: Date) -> String {
+        let elapsed = max(0, Int(date.timeIntervalSince(startedAt)))
+        return String(format: "%d:%02d", elapsed / 60, elapsed % 60)
     }
 }

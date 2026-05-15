@@ -23,29 +23,18 @@ final class CoreDataFlickRepository: FlickRepository {
     func loadOverview() async throws -> FlickOverviewState {
         var state = FlickEmptyState.make()
         state.assets = try fetchAssets()
+        state.templates = try fetchTemplates()
+        state.drafts = try fetchDrafts(slidesByDraftID: try fetchSlidesByDraftID())
         state.dashboard.syncHealth.iCloudAvailable = await cloudAvailability()
         state.dashboard.syncHealth.pendingChanges = context.hasChanges ? 1 : 0
         return state
     }
 
     func saveOverview(_ state: FlickOverviewState) async throws {
-        let request = assetFetchRequest()
-        let existingAssets = try context.fetch(request)
-        var existingByID = Dictionary(uniqueKeysWithValues: existingAssets.compactMap { object -> (UUID, NSManagedObject)? in
-            guard let id = object.value(forKey: AssetKey.id) as? UUID else { return nil }
-            return (id, object)
-        })
-        let stateIDs = Set(state.assets.map(\.id))
-
-        for asset in state.assets {
-            let object = existingByID.removeValue(forKey: asset.id) ?? insertAssetObject()
-            apply(asset, to: object)
-        }
-
-        for (id, object) in existingByID where !stateIDs.contains(id) {
-            context.delete(object)
-        }
-
+        try syncAssets(state.assets)
+        try syncTemplates(state.templates)
+        try syncDrafts(state.drafts)
+        try syncSlides(in: state.drafts)
         try saveIfNeeded()
     }
 
@@ -59,6 +48,81 @@ final class CoreDataFlickRepository: FlickRepository {
         guard let object = try fetchAsset(id: id) else { return }
         context.delete(object)
         try saveIfNeeded()
+    }
+
+    private func syncAssets(_ assets: [MediaAsset]) throws {
+        let existingAssets = try context.fetch(assetFetchRequest())
+        var existingByID = Dictionary(uniqueKeysWithValues: existingAssets.compactMap { object -> (UUID, NSManagedObject)? in
+            guard let id = object.value(forKey: AssetKey.id) as? UUID else { return nil }
+            return (id, object)
+        })
+        let stateIDs = Set(assets.map(\.id))
+
+        for asset in assets {
+            let object = existingByID.removeValue(forKey: asset.id) ?? insertAssetObject()
+            apply(asset, to: object)
+        }
+
+        for (id, object) in existingByID where !stateIDs.contains(id) {
+            context.delete(object)
+        }
+    }
+
+    private func syncTemplates(_ templates: [CreativeTemplate]) throws {
+        let existingTemplates = try context.fetch(templateFetchRequest())
+        var existingByID = Dictionary(uniqueKeysWithValues: existingTemplates.compactMap { object -> (UUID, NSManagedObject)? in
+            guard let id = object.value(forKey: TemplateKey.id) as? UUID else { return nil }
+            return (id, object)
+        })
+        let stateIDs = Set(templates.map(\.id))
+
+        for template in templates {
+            let object = existingByID.removeValue(forKey: template.id) ?? insertTemplateObject()
+            apply(template, to: object)
+        }
+
+        for (id, object) in existingByID where !stateIDs.contains(id) {
+            context.delete(object)
+        }
+    }
+
+    private func syncDrafts(_ drafts: [SlideshowDraft]) throws {
+        let existingDrafts = try context.fetch(draftFetchRequest())
+        var existingByID = Dictionary(uniqueKeysWithValues: existingDrafts.compactMap { object -> (UUID, NSManagedObject)? in
+            guard let id = object.value(forKey: DraftKey.id) as? UUID else { return nil }
+            return (id, object)
+        })
+        let stateIDs = Set(drafts.map(\.id))
+
+        for draft in drafts {
+            let object = existingByID.removeValue(forKey: draft.id) ?? insertDraftObject()
+            apply(draft, to: object)
+        }
+
+        for (id, object) in existingByID where !stateIDs.contains(id) {
+            context.delete(object)
+        }
+    }
+
+    private func syncSlides(in drafts: [SlideshowDraft]) throws {
+        let existingSlides = try context.fetch(slideFetchRequest())
+        var existingByID = Dictionary(uniqueKeysWithValues: existingSlides.compactMap { object -> (UUID, NSManagedObject)? in
+            guard let id = object.value(forKey: SlideKey.id) as? UUID else { return nil }
+            return (id, object)
+        })
+        let draftSlides = drafts.flatMap { draft in
+            draft.slides.map { (draft.id, $0) }
+        }
+        let stateIDs = Set(draftSlides.map(\.1.id))
+
+        for (draftID, slide) in draftSlides {
+            let object = existingByID.removeValue(forKey: slide.id) ?? insertSlideObject()
+            apply(slide, draftID: draftID, to: object)
+        }
+
+        for (id, object) in existingByID where !stateIDs.contains(id) {
+            context.delete(object)
+        }
     }
 
     private func fetchAssets() throws -> [MediaAsset] {
@@ -76,12 +140,70 @@ final class CoreDataFlickRepository: FlickRepository {
         return try context.fetch(request).first
     }
 
+    private func fetchTemplates() throws -> [CreativeTemplate] {
+        let request = templateFetchRequest()
+        request.sortDescriptors = [
+            NSSortDescriptor(key: TemplateKey.updatedAt, ascending: false)
+        ]
+        return try context.fetch(request).compactMap(CreativeTemplate.init)
+    }
+
+    private func fetchDrafts(slidesByDraftID: [UUID: [Slide]]) throws -> [SlideshowDraft] {
+        let request = draftFetchRequest()
+        request.sortDescriptors = [
+            NSSortDescriptor(key: DraftKey.updatedAt, ascending: false)
+        ]
+        return try context.fetch(request).compactMap { object in
+            SlideshowDraft(managedObject: object, slides: slidesByDraftID[object.uuidValue(forKey: DraftKey.id) ?? UUID()] ?? [])
+        }
+    }
+
+    private func fetchSlidesByDraftID() throws -> [UUID: [Slide]] {
+        let request = slideFetchRequest()
+        request.sortDescriptors = [
+            NSSortDescriptor(key: SlideKey.index, ascending: true)
+        ]
+        return try context.fetch(request).reduce(into: [UUID: [Slide]]()) { result, object in
+            guard
+                let draftID = object.value(forKey: SlideKey.draftID) as? UUID,
+                let slide = Slide(managedObject: object)
+            else {
+                return
+            }
+            result[draftID, default: []].append(slide)
+        }
+    }
+
     private func assetFetchRequest() -> NSFetchRequest<NSManagedObject> {
         NSFetchRequest<NSManagedObject>(entityName: "CDAsset")
     }
 
+    private func templateFetchRequest() -> NSFetchRequest<NSManagedObject> {
+        NSFetchRequest<NSManagedObject>(entityName: "CDCreativeTemplate")
+    }
+
+    private func draftFetchRequest() -> NSFetchRequest<NSManagedObject> {
+        NSFetchRequest<NSManagedObject>(entityName: "CDSlideshowDraft")
+    }
+
+    private func slideFetchRequest() -> NSFetchRequest<NSManagedObject> {
+        NSFetchRequest<NSManagedObject>(entityName: "CDSlide")
+    }
+
     private func insertAssetObject() -> NSManagedObject {
         NSEntityDescription.insertNewObject(forEntityName: "CDAsset", into: context)
+    }
+
+    private func insertTemplateObject() -> NSManagedObject {
+        NSEntityDescription.insertNewObject(forEntityName: "CDCreativeTemplate", into: context)
+    }
+
+    private func insertDraftObject() -> NSManagedObject {
+        NSEntityDescription.insertNewObject(forEntityName: "CDSlideshowDraft", into: context)
+    }
+
+    private func insertSlideObject() -> NSManagedObject {
+        NSEntityDescription.insertNewObject(forEntityName: "CDSlide", into: context)
     }
 
     private func apply(_ asset: MediaAsset, to object: NSManagedObject) {
@@ -101,6 +223,67 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(asset.trendTags.map(\.id.uuidString), asJSONForKey: AssetKey.trendTagIDsJSON)
         object.setValue(asset.createdAt, forKey: AssetKey.createdAt)
         object.setValue(asset.updatedAt, forKey: AssetKey.updatedAt)
+    }
+
+    private func apply(_ template: CreativeTemplate, to object: NSManagedObject) {
+        object.setValue(template.id, forKey: TemplateKey.id)
+        object.setValue(template.name, forKey: TemplateKey.name)
+        object.setValue(template.description, forKey: TemplateKey.summary)
+        object.setValue(template.platform.rawValue, forKey: TemplateKey.platform)
+        object.setValue(template.slideCount, forKey: TemplateKey.slideCount)
+        object.setValue(template.styleJSON, forKey: TemplateKey.styleJSON)
+        object.setValue(template.defaultTextRules, forKey: TemplateKey.defaultTextRules)
+        object.setValue(template.tags.map(\.id.uuidString), asJSONForKey: TemplateKey.tagIDsJSON)
+        object.setValue(template.createdAt, forKey: TemplateKey.createdAt)
+        object.setValue(template.updatedAt, forKey: TemplateKey.updatedAt)
+    }
+
+    private func apply(_ draft: SlideshowDraft, to object: NSManagedObject) {
+        object.setValue(draft.id, forKey: DraftKey.id)
+        object.setValue(draft.title, forKey: DraftKey.title)
+        object.setValue(draft.campaignID, forKey: DraftKey.campaignID)
+        object.setValue(draft.templateID, forKey: DraftKey.templateID)
+        object.setValue(draft.brief, forKey: DraftKey.brief)
+        object.setValue(draft.topic, forKey: DraftKey.topic)
+        object.setValue(draft.audience, forKey: DraftKey.audience)
+        object.setValue(draft.goal, forKey: DraftKey.goal)
+        object.setValue(draft.tone, forKey: DraftKey.tone)
+        object.setValue(draft.narrativeArc, asJSONForKey: DraftKey.narrativeArcJSON)
+        object.setValue(draft.globalVisualMotif, forKey: DraftKey.globalVisualMotif)
+        object.setValue(draft.planSummary, forKey: DraftKey.planSummary)
+        object.setValue(draft.slides.sorted { $0.index < $1.index }.map(\.id.uuidString), asJSONForKey: DraftKey.slideIDsJSON)
+        object.setValue(draft.caption, forKey: DraftKey.caption)
+        object.setValue(draft.hashtags, asJSONForKey: DraftKey.hashtagsJSON)
+        object.setValue(draft.targetPlatforms.map(\.rawValue), asJSONForKey: DraftKey.targetPlatformsJSON)
+        object.setValue(draft.status.rawValue, forKey: DraftKey.status)
+        object.setValue(draft.exportedImageAssetIDs.map(\.uuidString), asJSONForKey: DraftKey.exportedImageAssetIDsJSON)
+        object.setValue(draft.createdAt, forKey: DraftKey.createdAt)
+        object.setValue(draft.updatedAt, forKey: DraftKey.updatedAt)
+    }
+
+    private func apply(_ slide: Slide, draftID: UUID, to object: NSManagedObject) {
+        object.setValue(slide.id, forKey: SlideKey.id)
+        object.setValue(draftID, forKey: SlideKey.draftID)
+        object.setValue(slide.index, forKey: SlideKey.index)
+        object.setValue(slide.role.rawValue, forKey: SlideKey.role)
+        object.setValue(slide.imageAssetID, forKey: SlideKey.imageAssetID)
+        object.setValue(slide.prompt, forKey: SlideKey.prompt)
+        object.setValue(slide.overlayText, forKey: SlideKey.overlayText)
+        object.setValue(slide.supportingText, forKey: SlideKey.supportingText)
+        object.setValue(slide.ctaText, forKey: SlideKey.ctaText)
+        object.setValue(slide.visualGoal, forKey: SlideKey.visualGoal)
+        object.setValue(slide.textPosition.rawValue, forKey: SlideKey.textPosition)
+        object.setValue(slide.textSafeArea, forKey: SlideKey.textSafeArea)
+        object.setValue(slide.mainSubjectArea, forKey: SlideKey.mainSubjectArea)
+        object.setValue(slide.textStyle, asJSONForKey: SlideKey.textStyleJSON)
+        object.setValue(slide.selectedVisualSummary, forKey: SlideKey.selectedVisualSummary)
+        object.setValue(slide.generationStatus.rawValue, forKey: SlideKey.generationStatus)
+        object.setValue(slide.generationErrorMessage, forKey: SlideKey.generationErrorMessage)
+        object.setValue(slide.promptVersion, forKey: SlideKey.promptVersion)
+        object.setValue(slide.duration, forKey: SlideKey.duration)
+        object.setValue(slide.transition.rawValue, forKey: SlideKey.transition)
+        object.setValue(slide.createdAt, forKey: SlideKey.createdAt)
+        object.setValue(slide.updatedAt, forKey: SlideKey.updatedAt)
     }
 
     private func saveIfNeeded() throws {
@@ -138,6 +321,67 @@ private enum AssetKey {
     static let width = "width"
 }
 
+private enum TemplateKey {
+    static let createdAt = "createdAt"
+    static let defaultTextRules = "defaultTextRules"
+    static let id = "id"
+    static let name = "name"
+    static let platform = "platform"
+    static let slideCount = "slideCount"
+    static let styleJSON = "styleJSON"
+    static let summary = "summary"
+    static let tagIDsJSON = "tagIDsJSON"
+    static let updatedAt = "updatedAt"
+}
+
+private enum DraftKey {
+    static let brief = "brief"
+    static let campaignID = "campaignID"
+    static let caption = "caption"
+    static let createdAt = "createdAt"
+    static let exportedImageAssetIDsJSON = "exportedImageAssetIDsJSON"
+    static let globalVisualMotif = "globalVisualMotif"
+    static let goal = "goal"
+    static let hashtagsJSON = "hashtagsJSON"
+    static let id = "id"
+    static let narrativeArcJSON = "narrativeArcJSON"
+    static let planSummary = "planSummary"
+    static let slideIDsJSON = "slideIDsJSON"
+    static let status = "status"
+    static let targetPlatformsJSON = "targetPlatformsJSON"
+    static let templateID = "templateID"
+    static let title = "title"
+    static let tone = "tone"
+    static let topic = "topic"
+    static let audience = "audience"
+    static let updatedAt = "updatedAt"
+}
+
+private enum SlideKey {
+    static let createdAt = "createdAt"
+    static let ctaText = "ctaText"
+    static let draftID = "draftID"
+    static let duration = "duration"
+    static let generationErrorMessage = "generationErrorMessage"
+    static let generationStatus = "generationStatus"
+    static let id = "id"
+    static let imageAssetID = "imageAssetID"
+    static let index = "index"
+    static let mainSubjectArea = "mainSubjectArea"
+    static let overlayText = "overlayText"
+    static let prompt = "prompt"
+    static let promptVersion = "promptVersion"
+    static let role = "role"
+    static let selectedVisualSummary = "selectedVisualSummary"
+    static let supportingText = "supportingText"
+    static let textPosition = "textPosition"
+    static let textSafeArea = "textSafeArea"
+    static let textStyleJSON = "textStyleJSON"
+    static let transition = "transition"
+    static let updatedAt = "updatedAt"
+    static let visualGoal = "visualGoal"
+}
+
 private extension MediaAsset {
     init?(managedObject: NSManagedObject) {
         guard
@@ -171,7 +415,119 @@ private extension MediaAsset {
     }
 }
 
+private extension CreativeTemplate {
+    init?(managedObject: NSManagedObject) {
+        guard
+            let id = managedObject.value(forKey: TemplateKey.id) as? UUID,
+            let name = managedObject.value(forKey: TemplateKey.name) as? String,
+            let platformRawValue = managedObject.value(forKey: TemplateKey.platform) as? String,
+            let platform = SocialPlatform(rawValue: platformRawValue)
+        else {
+            return nil
+        }
+
+        self.init(
+            id: id,
+            name: name,
+            description: managedObject.value(forKey: TemplateKey.summary) as? String ?? "",
+            platform: platform,
+            slideCount: managedObject.integerValue(forKey: TemplateKey.slideCount),
+            styleJSON: managedObject.value(forKey: TemplateKey.styleJSON) as? String ?? "{}",
+            defaultTextRules: managedObject.value(forKey: TemplateKey.defaultTextRules) as? String ?? "",
+            tags: [],
+            createdAt: managedObject.value(forKey: TemplateKey.createdAt) as? Date ?? Date(),
+            updatedAt: managedObject.value(forKey: TemplateKey.updatedAt) as? Date ?? Date()
+        )
+    }
+}
+
+private extension SlideshowDraft {
+    init?(managedObject: NSManagedObject, slides: [Slide]) {
+        guard
+            let id = managedObject.value(forKey: DraftKey.id) as? UUID,
+            let title = managedObject.value(forKey: DraftKey.title) as? String,
+            let statusRawValue = managedObject.value(forKey: DraftKey.status) as? String,
+            let status = SlideshowDraftStatus(rawValue: statusRawValue)
+        else {
+            return nil
+        }
+
+        let targetPlatformsRawValues: [String] = managedObject.decodedJSON([String].self, forKey: DraftKey.targetPlatformsJSON) ?? []
+        let targetPlatforms = targetPlatformsRawValues.compactMap(SocialPlatform.init(rawValue:))
+        let exportedIDs: [String] = managedObject.decodedJSON([String].self, forKey: DraftKey.exportedImageAssetIDsJSON) ?? []
+
+        self.init(
+            id: id,
+            title: title,
+            campaignID: managedObject.value(forKey: DraftKey.campaignID) as? UUID,
+            templateID: managedObject.value(forKey: DraftKey.templateID) as? UUID,
+            brief: managedObject.value(forKey: DraftKey.brief) as? String ?? "",
+            topic: managedObject.value(forKey: DraftKey.topic) as? String ?? "",
+            audience: managedObject.value(forKey: DraftKey.audience) as? String ?? "",
+            goal: managedObject.value(forKey: DraftKey.goal) as? String ?? "",
+            tone: managedObject.value(forKey: DraftKey.tone) as? String ?? "",
+            narrativeArc: managedObject.decodedJSON([String].self, forKey: DraftKey.narrativeArcJSON) ?? [],
+            globalVisualMotif: managedObject.value(forKey: DraftKey.globalVisualMotif) as? String ?? "",
+            planSummary: managedObject.value(forKey: DraftKey.planSummary) as? String ?? "",
+            slides: slides.sorted { $0.index < $1.index },
+            caption: managedObject.value(forKey: DraftKey.caption) as? String ?? "",
+            hashtags: managedObject.decodedJSON([String].self, forKey: DraftKey.hashtagsJSON) ?? [],
+            targetPlatforms: targetPlatforms.isEmpty ? [.tiktok] : targetPlatforms,
+            status: status,
+            exportedImageAssetIDs: exportedIDs.compactMap(UUID.init(uuidString:)),
+            createdAt: managedObject.value(forKey: DraftKey.createdAt) as? Date ?? Date(),
+            updatedAt: managedObject.value(forKey: DraftKey.updatedAt) as? Date ?? Date()
+        )
+    }
+}
+
+private extension Slide {
+    init?(managedObject: NSManagedObject) {
+        guard
+            let id = managedObject.value(forKey: SlideKey.id) as? UUID,
+            let roleRawValue = managedObject.value(forKey: SlideKey.role) as? String,
+            let role = SlideRole(rawValue: roleRawValue),
+            let textPositionRawValue = managedObject.value(forKey: SlideKey.textPosition) as? String,
+            let textPosition = TextPosition(rawValue: textPositionRawValue),
+            let textStyle = managedObject.decodedJSON(SlideTextStyle.self, forKey: SlideKey.textStyleJSON),
+            let transitionRawValue = managedObject.value(forKey: SlideKey.transition) as? String,
+            let transition = TransitionStyle(rawValue: transitionRawValue)
+        else {
+            return nil
+        }
+
+        let statusRawValue = managedObject.value(forKey: SlideKey.generationStatus) as? String
+        self.init(
+            id: id,
+            index: managedObject.integerValue(forKey: SlideKey.index),
+            role: role,
+            imageAssetID: managedObject.value(forKey: SlideKey.imageAssetID) as? UUID,
+            prompt: managedObject.value(forKey: SlideKey.prompt) as? String ?? "",
+            overlayText: managedObject.value(forKey: SlideKey.overlayText) as? String ?? "",
+            supportingText: managedObject.value(forKey: SlideKey.supportingText) as? String ?? "",
+            ctaText: managedObject.value(forKey: SlideKey.ctaText) as? String ?? "",
+            visualGoal: managedObject.value(forKey: SlideKey.visualGoal) as? String ?? "",
+            textPosition: textPosition,
+            textSafeArea: managedObject.value(forKey: SlideKey.textSafeArea) as? String ?? textPosition.defaultSafeArea,
+            mainSubjectArea: managedObject.value(forKey: SlideKey.mainSubjectArea) as? String ?? textPosition.defaultSubjectArea,
+            textStyle: textStyle,
+            selectedVisualSummary: managedObject.value(forKey: SlideKey.selectedVisualSummary) as? String ?? "",
+            generationStatus: statusRawValue.flatMap(SlideGenerationStatus.init(rawValue:)) ?? .notStarted,
+            generationErrorMessage: managedObject.value(forKey: SlideKey.generationErrorMessage) as? String,
+            promptVersion: max(1, managedObject.integerValue(forKey: SlideKey.promptVersion)),
+            duration: managedObject.doubleValue(forKey: SlideKey.duration) ?? 1.5,
+            transition: transition,
+            createdAt: managedObject.value(forKey: SlideKey.createdAt) as? Date ?? Date(),
+            updatedAt: managedObject.value(forKey: SlideKey.updatedAt) as? Date ?? Date()
+        )
+    }
+}
+
 private extension NSManagedObject {
+    func uuidValue(forKey key: String) -> UUID? {
+        value(forKey: key) as? UUID
+    }
+
     func integerValue(forKey key: String) -> Int {
         (value(forKey: key) as? NSNumber)?.intValue ?? 0
     }
@@ -194,5 +550,16 @@ private extension NSManagedObject {
         }
 
         setValue(json, forKey: key)
+    }
+
+    func decodedJSON<T: Decodable>(_ type: T.Type, forKey key: String) -> T? {
+        _ = type
+        guard
+            let json = value(forKey: key) as? String,
+            let data = json.data(using: .utf8)
+        else {
+            return nil
+        }
+        return try? JSONDecoder.flick.decode(T.self, from: data)
     }
 }
