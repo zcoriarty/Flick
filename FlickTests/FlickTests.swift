@@ -348,6 +348,37 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual((accountStore.store as? KeychainSecretStore)?.synchronizesAcrossDevices, true)
         XCTAssertEqual((tokenStore.store as? KeychainSecretStore)?.synchronizesAcrossDevices, true)
     }
+
+    func testSlideshowImageGenerationSettingsUseVerticalReelsFormat() {
+        XCTAssertEqual(SlideshowImageGenerationSettings.draft.size, "720x1280")
+        XCTAssertEqual(SlideshowImageGenerationSettings.draft.width, 720)
+        XCTAssertEqual(SlideshowImageGenerationSettings.draft.height, 1280)
+        XCTAssertLessThan(SlideshowImageGenerationSettings.draft.aspectRatio, 1)
+
+        XCTAssertEqual(SlideshowImageGenerationSettings.finalExport.size, "1080x1920")
+        XCTAssertEqual(SlideshowImageGenerationSettings.finalExport.width, 1080)
+        XCTAssertEqual(SlideshowImageGenerationSettings.finalExport.height, 1920)
+        XCTAssertEqual(SlideshowImageGenerationSettings.finalExport.aspectRatio, 9.0 / 16.0)
+    }
+
+    func testSlideshowImageGenerationSettingsRejectHorizontalAssets() {
+        let verticalAsset = makeMediaAsset(width: 1080, height: 1920)
+        let horizontalAsset = makeMediaAsset(width: 2560, height: 1440)
+
+        XCTAssertTrue(SlideshowImageGenerationSettings.finalExport.isSatisfied(by: verticalAsset))
+        XCTAssertFalse(SlideshowImageGenerationSettings.finalExport.isSatisfied(by: horizontalAsset))
+    }
+
+    func testGeneratedImagePromptOverridesStaleHorizontalFormat() {
+        let prompt = SlideshowImagePromptFormatter.applyVerticalOutputContract(
+            to: "Create a 16:9 horizontal social slideshow image with no readable text.",
+            settings: .draft
+        )
+
+        XCTAssertTrue(prompt.contains("vertical 9:16 image"))
+        XCTAssertTrue(prompt.contains("720x1280 portrait canvas"))
+        XCTAssertTrue(prompt.contains("ignore that stale format instruction"))
+    }
 }
 
 private func makePublishingJob(status: PublishingJobStatus = .queued) -> PublishingJob {
@@ -412,27 +443,19 @@ private func makeSlide(
     Slide(
         id: id,
         index: 0,
-        role: .hook,
         imageAssetID: imageAssetID,
         prompt: "A polished app screenshot on a phone.",
-        overlayText: "Grow faster",
-        supportingText: "Create better posts",
-        ctaText: "Start today",
-        visualGoal: "Hero product shot",
+        text: "Grow faster",
         textPosition: .left,
-        textSafeArea: TextPosition.left.defaultSafeArea,
-        mainSubjectArea: TextPosition.left.defaultSubjectArea,
         textStyle: SlideTextStyle(
             fontName: "System Rounded",
             weight: "Black",
+            sizeScale: 1.0,
             foregroundHex: "#FFFFFF",
-            backgroundHex: "#111111",
-            alignment: "left"
+            outlineColorHex: "#111111"
         ),
         selectedVisualSummary: "Phone with dashboard",
         generationStatus: generationStatus,
-        duration: 1.5,
-        transition: .none,
         createdAt: now,
         updatedAt: now
     )
@@ -443,6 +466,8 @@ private func makeMediaAsset(
     source: AssetSource = .generated,
     localFilePath: String? = nil,
     publicURL: URL? = nil,
+    width: Int = 1080,
+    height: Int = 1920,
     now: Date = Date()
 ) -> MediaAsset {
     MediaAsset(
@@ -454,8 +479,8 @@ private func makeMediaAsset(
         storagePath: "generated-slides/\(id.uuidString).png",
         publicURL: publicURL,
         signedURLExpiration: nil,
-        width: 1536,
-        height: 864,
+        width: width,
+        height: height,
         duration: nil,
         fileSize: 1024,
         checksum: nil,

@@ -47,7 +47,7 @@ struct CreateExportSection: View {
 
                     Spacer()
 
-                    Text("2560x1440")
+                    Text("\(SlideshowImageGenerationSettings.finalExport.width)x\(SlideshowImageGenerationSettings.finalExport.height)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

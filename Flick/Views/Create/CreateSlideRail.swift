@@ -40,7 +40,7 @@ private struct SlideRailItem: View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .bottomLeading) {
                 GeneratedSlideImageView(asset: asset)
-                    .frame(width: 132, height: 74)
+                    .frame(width: 74, height: 132)
                     .clipShape(.rect(cornerRadius: 8))
 
                 Text("\(slide.index + 1)")
@@ -66,7 +66,7 @@ private struct SlideRailItem: View {
                 }
             }
         }
-        .frame(width: 132, alignment: .leading)
+        .frame(width: 90, alignment: .leading)
         .padding(8)
         .background(
             Color.secondary.opacity(0.08),

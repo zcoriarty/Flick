@@ -28,7 +28,7 @@ struct TemplateAnalysisService {
 
     private var instructions: String {
         """
-        Convert the selected Flick slideshow template into a compact reusable style guide for AI-generated 16:9 social carousel images.
+        Convert the selected Flick slideshow template into a compact reusable style guide for AI-generated vertical 9:16 social carousel images.
         Capture visual style, polish, palette, lighting, recurring motifs, what to reuse structurally, and what not to copy directly.
         Do not copy people, exact products, logos, creators, captions, or readable text from the reference template.
         Always include image generation rules that require no readable text, no captions, no logos, no watermarks, and slide-to-slide continuity.

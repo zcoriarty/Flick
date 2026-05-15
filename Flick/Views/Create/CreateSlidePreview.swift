@@ -21,7 +21,7 @@ struct CreateSlidePreviewCanvas: View {
             }
             .clipShape(.rect(cornerRadius: 10))
         }
-        .aspectRatio(16.0 / 9.0, contentMode: .fit)
+        .aspectRatio(CGFloat(SlideshowImageGenerationSettings.finalExport.aspectRatio), contentMode: .fit)
     }
 }
 

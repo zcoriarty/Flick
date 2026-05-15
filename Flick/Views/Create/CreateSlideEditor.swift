@@ -192,7 +192,7 @@ private struct CreateSlidePreviewPager: View {
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
-        .frame(height: 226)
+        .frame(height: 360)
     }
 }
 

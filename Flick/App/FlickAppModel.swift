@@ -925,7 +925,7 @@ private extension FlickAppModel {
                 guard asset.hasAvailableMediaLocation else {
                     return true
                 }
-                return asset.width < SlideshowImageGenerationSettings.finalExport.width || asset.height < SlideshowImageGenerationSettings.finalExport.height
+                return !SlideshowImageGenerationSettings.finalExport.isSatisfied(by: asset)
             }
             .map(\.id)
 
@@ -1085,7 +1085,7 @@ private extension FlickAppModel {
         Template niche: \(template.niche).
         Creator profile: @\(template.profile).
         Template context: \(template.subtitle).
-        Preserve the template's pacing, composition rhythm, safe-area behavior, and style guide. Create a plan that can generate one clean 16:9 background image per slide with Flick-rendered editable text.
+        Preserve the template's pacing, composition rhythm, safe-area behavior, and style guide. Create a plan that can generate one clean vertical 9:16 background image per slide with Flick-rendered editable text.
         """
     }
 }

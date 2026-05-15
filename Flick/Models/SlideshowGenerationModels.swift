@@ -71,19 +71,32 @@ struct SlideshowImageGenerationSettings: Hashable {
     var width: Int
     var height: Int
 
+    var aspectRatio: Double {
+        Double(width) / Double(height)
+    }
+
     static let draft = SlideshowImageGenerationSettings(
-        size: "1536x864",
+        size: "720x1280",
         quality: "medium",
-        width: 1536,
-        height: 864
+        width: 720,
+        height: 1280
     )
 
     static let finalExport = SlideshowImageGenerationSettings(
-        size: "2560x1440",
+        size: "1080x1920",
         quality: "high",
-        width: 2560,
-        height: 1440
+        width: 1080,
+        height: 1920
     )
+
+    func isSatisfied(by asset: MediaAsset) -> Bool {
+        guard asset.width >= width, asset.height >= height else {
+            return false
+        }
+
+        let assetAspectRatio = Double(asset.width) / Double(asset.height)
+        return abs(assetAspectRatio - aspectRatio) <= 0.01
+    }
 }
 
 extension TemplateStyleGuide {
