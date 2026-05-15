@@ -7,8 +7,8 @@ import SwiftUI
 
 struct CreateSlideEditor: View {
     @Binding var draft: SlideshowDraft
-    var selectedSlideID: UUID?
-    var asset: MediaAsset?
+    @Binding var selectedSlideID: UUID?
+    var assetsByID: [UUID: MediaAsset]
     var isGenerating: Bool
     var moveAction: (UUID, MoveDirection) -> Void
     var duplicateAction: (UUID) -> Void
@@ -24,22 +24,28 @@ struct CreateSlideEditor: View {
     var body: some View {
         NavigationStack {
             Form {
-                if let index = draft.slides.firstIndex(where: { $0.id == selectedSlideID }) {
+                if draft.slides.isEmpty {
+                    CreateMessageRow(
+                        title: "No slides",
+                        message: "This draft does not have any slides to edit."
+                    )
+                } else if let index = selectedSlideIndex {
                     let slide = draft.slides[index]
+                    let focusedAsset = slide.imageAssetID.flatMap { assetsByID[$0] }
 
-                    if let asset {
-                        Section {
-                            CreateSlidePreviewCanvas(slide: slide, asset: asset)
-                                .listRowInsets(EdgeInsets())
-                        }
-                    }
+                    CreateSlidePreviewPager(
+                        slides: sortedSlides,
+                        assetsByID: assetsByID,
+                        selectedSlideID: $selectedSlideID
+                    )
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
 
-                    Picker("Edit", selection: $selectedTab) {
-                        ForEach(CreateSlideEditorTab.allCases) { tab in
-                            Text(tab.title).tag(tab)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                    editorTabPicker
+                        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 4, trailing: 16))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
 
                     switch selectedTab {
                     case .text:
@@ -47,26 +53,23 @@ struct CreateSlideEditor: View {
                     case .image:
                         CreateSlideImageEditor(
                             slide: $draft.slides[index],
-                            hasImage: asset != nil,
+                            hasImage: focusedAsset != nil,
                             isGenerating: isGenerating,
                             promptRewriteInstruction: $promptRewriteInstruction,
                             regenerationInstruction: $regenerationInstruction,
-                            rewritePromptAction: rewritePromptAction,
-                            regenerateAction: regenerateAction
-                        )
-                    case .layout:
-                        CreateSlideLayoutEditor(slide: $draft.slides[index])
-                    case .actions:
-                        CreateSlideActionsEditor(
-                            slide: $draft.slides[index],
-                            isFirst: index == 0,
-                            isLast: index == draft.slides.count - 1,
+                            isFirst: sortedSlides.first?.id == slide.id,
+                            isLast: sortedSlides.last?.id == slide.id,
                             moveAction: moveAction,
                             duplicateAction: duplicateAction,
                             deleteAction: { slideID in
+                                selectedSlideID = nextSlideID(afterDeleting: slideID)
                                 deleteAction(slideID)
-                                dismiss()
-                            }
+                                if selectedSlideID == nil {
+                                    dismiss()
+                                }
+                            },
+                            rewritePromptAction: rewritePromptAction,
+                            regenerateAction: regenerateAction
                         )
                     }
                 } else {
@@ -88,25 +91,133 @@ struct CreateSlideEditor: View {
             .scrollDismissesKeyboard(.interactively)
             .dismissKeyboardOnTap()
         }
+        .onAppear(perform: focusInitialSlideIfNeeded)
         .onChange(of: selectedSlideID) { _, _ in
             promptRewriteInstruction = ""
             regenerationInstruction = ""
         }
+        .onChange(of: slideIDs) { _, _ in
+            focusInitialSlideIfNeeded()
+        }
+    }
+
+    private var editorTabPicker: some View {
+        Picker("Edit", selection: $selectedTab) {
+            ForEach(CreateSlideEditorTab.allCases) { tab in
+                Text(tab.title).tag(tab)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
     }
 
     private var editorTitle: String {
-        guard let slide = draft.slides.first(where: { $0.id == selectedSlideID }) else {
+        guard let slide = draft.slides.first(where: { $0.id == focusedSlideID }) else {
             return "Slide"
         }
         return "Slide \(slide.index + 1)"
+    }
+
+    private var focusedSlideID: UUID? {
+        selectedSlideID ?? sortedSlides.first?.id
+    }
+
+    private var selectedSlideIndex: Int? {
+        guard let focusedSlideID else { return nil }
+        return draft.slides.firstIndex { $0.id == focusedSlideID }
+    }
+
+    private var sortedSlides: [Slide] {
+        draft.slides.sorted { $0.index < $1.index }
+    }
+
+    private var slideIDs: [UUID] {
+        sortedSlides.map(\.id)
+    }
+
+    private func focusInitialSlideIfNeeded() {
+        guard !sortedSlides.isEmpty else {
+            selectedSlideID = nil
+            return
+        }
+
+        if let selectedSlideID, slideIDs.contains(selectedSlideID) {
+            return
+        }
+        selectedSlideID = sortedSlides.first?.id
+    }
+
+    private func nextSlideID(afterDeleting slideID: UUID) -> UUID? {
+        let slides = sortedSlides
+        guard let deletedIndex = slides.firstIndex(where: { $0.id == slideID }) else {
+            return slides.first?.id
+        }
+
+        if slides.count <= 1 {
+            return nil
+        }
+
+        let nextIndex = slides.index(after: deletedIndex)
+        if nextIndex < slides.endIndex {
+            return slides[nextIndex].id
+        }
+        return slides[slides.index(before: deletedIndex)].id
+    }
+}
+
+private struct CreateSlidePreviewPager: View {
+    var slides: [Slide]
+    var assetsByID: [UUID: MediaAsset]
+    @Binding var selectedSlideID: UUID?
+
+    var body: some View {
+        TabView(selection: $selectedSlideID) {
+            ForEach(slides) { slide in
+                VStack(spacing: 8) {
+                    CreateSlidePreviewCanvas(
+                        slide: slide,
+                        asset: slide.imageAssetID.flatMap { assetsByID[$0] }
+                    )
+                    .accessibilityLabel("Slide \(slide.index + 1)")
+
+                    CreateSlidePageIndicator(
+                        slides: slides,
+                        selectedSlideID: $selectedSlideID
+                    )
+                }
+                .tag(Optional(slide.id))
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .frame(height: 226)
+    }
+}
+
+private struct CreateSlidePageIndicator: View {
+    var slides: [Slide]
+    @Binding var selectedSlideID: UUID?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(slides) { slide in
+                Circle()
+                    .fill(slide.id == selectedSlideID ? Color.primary : Color.secondary.opacity(0.35))
+                    .frame(width: 6, height: 6)
+                    .contentShape(.rect)
+                    .onTapGesture {
+                        selectedSlideID = slide.id
+                    }
+                    .accessibilityLabel("Slide \(slide.index + 1)")
+                    .accessibilityAddTraits(slide.id == selectedSlideID ? [.isSelected] : [])
+            }
+        }
+        .frame(height: 12)
     }
 }
 
 private enum CreateSlideEditorTab: String, CaseIterable, Identifiable {
     case text
     case image
-    case layout
-    case actions
 
     var id: String { rawValue }
 
@@ -114,8 +225,6 @@ private enum CreateSlideEditorTab: String, CaseIterable, Identifiable {
         switch self {
         case .text: "Text"
         case .image: "Image"
-        case .layout: "Layout"
-        case .actions: "Actions"
         }
     }
 }
@@ -172,6 +281,50 @@ private struct CreateSlideTextEditor: View {
                 Text("Right").tag("right")
             }
             .pickerStyle(.segmented)
+
+            CreateSlideLayoutMenuRow(
+                title: "Role",
+                systemImage: "tag",
+                value: slide.role.displayName
+            ) {
+                ForEach(SlideRole.allCases) { role in
+                    Button {
+                        slide.role = role
+                    } label: {
+                        CreateMenuOptionLabel(title: role.displayName, isSelected: slide.role == role)
+                    }
+                }
+            }
+
+            CreateSlideLayoutMenuRow(
+                title: "Text position",
+                systemImage: "text.alignleft",
+                value: slide.textPosition.displayName
+            ) {
+                ForEach(TextPosition.allCases) { position in
+                    Button {
+                        slide.textPosition = position
+                    } label: {
+                        CreateMenuOptionLabel(title: position.displayName, isSelected: slide.textPosition == position)
+                    }
+                }
+            }
+
+            TextField("Text-safe area", text: $slide.textSafeArea, axis: .vertical)
+                .lineLimit(1...2)
+                .textInputAutocapitalization(.never)
+
+            TextField("Subject area", text: $slide.mainSubjectArea, axis: .vertical)
+                .lineLimit(1...2)
+                .textInputAutocapitalization(.never)
+        }
+        .onChange(of: slide.textPosition) { _, newValue in
+            if slide.textSafeArea.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                slide.textSafeArea = newValue.defaultSafeArea
+            }
+            if slide.mainSubjectArea.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                slide.mainSubjectArea = newValue.defaultSubjectArea
+            }
         }
     }
 }
@@ -182,6 +335,11 @@ private struct CreateSlideImageEditor: View {
     var isGenerating: Bool
     @Binding var promptRewriteInstruction: String
     @Binding var regenerationInstruction: String
+    var isFirst: Bool
+    var isLast: Bool
+    var moveAction: (UUID, MoveDirection) -> Void
+    var duplicateAction: (UUID) -> Void
+    var deleteAction: (UUID) -> Void
     var rewritePromptAction: (UUID, String) -> Void
     var regenerateAction: (UUID, String) -> Void
 
@@ -189,7 +347,7 @@ private struct CreateSlideImageEditor: View {
         Section("Prompt") {
             CreateTextEditorRow(
                 title: "Image prompt",
-                systemImage: "photo.badge.sparkles",
+                systemImage: "photo",
                 text: $slide.prompt,
                 placeholder: "The exact one-image prompt used for this slide.",
                 minHeight: 150
@@ -231,6 +389,15 @@ private struct CreateSlideImageEditor: View {
                 CreateMessageRow(title: "Generation failed", message: message)
             }
         }
+
+        CreateSlideActionsEditor(
+            slide: $slide,
+            isFirst: isFirst,
+            isLast: isLast,
+            moveAction: moveAction,
+            duplicateAction: duplicateAction,
+            deleteAction: deleteAction
+        )
     }
 
     private var regenerationTitle: String {
@@ -241,38 +408,46 @@ private struct CreateSlideImageEditor: View {
     }
 }
 
-private struct CreateSlideLayoutEditor: View {
-    @Binding var slide: Slide
+private struct CreateSlideLayoutMenuRow<MenuContent: View>: View {
+    var title: String
+    var systemImage: String
+    var value: String
+    @ViewBuilder var menuContent: () -> MenuContent
 
     var body: some View {
-        Section("Layout") {
-            Picker("Role", selection: $slide.role) {
-                ForEach(SlideRole.allCases) { role in
-                    Text(role.displayName).tag(role)
+        Menu {
+            menuContent()
+        } label: {
+            FlickSettingsRow(
+                title: title,
+                systemImage: systemImage,
+                iconColor: .indigo
+            ) {
+                HStack(spacing: 6) {
+                    Text(value)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.tertiary)
                 }
             }
-
-            Picker("Text position", selection: $slide.textPosition) {
-                ForEach(TextPosition.allCases) { position in
-                    Text(position.displayName).tag(position)
-                }
-            }
-
-            TextField("Text-safe area", text: $slide.textSafeArea, axis: .vertical)
-                .lineLimit(1...2)
-                .textInputAutocapitalization(.never)
-
-            TextField("Subject area", text: $slide.mainSubjectArea, axis: .vertical)
-                .lineLimit(1...2)
-                .textInputAutocapitalization(.never)
         }
-        .onChange(of: slide.textPosition) { _, newValue in
-            if slide.textSafeArea.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                slide.textSafeArea = newValue.defaultSafeArea
-            }
-            if slide.mainSubjectArea.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                slide.mainSubjectArea = newValue.defaultSubjectArea
-            }
+        .buttonStyle(.plain)
+        .accessibilityValue(value)
+    }
+}
+
+private struct CreateMenuOptionLabel: View {
+    var title: String
+    var isSelected: Bool
+
+    var body: some View {
+        if isSelected {
+            Label(title, systemImage: "checkmark")
+        } else {
+            Text(title)
         }
     }
 }

@@ -6,19 +6,26 @@
 import Foundation
 import SwiftUI
 
+private enum CreateSheet: String, Identifiable {
+    case templatePicker
+    case drafts
+    case slideEditor
+    case tikTokSettings
+    case songPicker
+
+    var id: String { rawValue }
+}
+
 struct CreateView: View {
     @Environment(FlickAppModel.self) private var appModel
 
     @State private var templateLoadState: CreateTemplateLoadState = .loading
     @State private var selectedTemplate: ExampleSlideshowTemplate?
-    @State private var isTemplatePickerPresented = false
-    @State private var isDraftsPresented = false
+    @State private var presentedSheet: CreateSheet?
     @State private var selectedSlideID: UUID?
     @State private var postTime = Date()
     @State private var selectedWeekdays: Set<CreateWeekday> = [CreateWeekday.current]
     @State private var selectedSongs: [SelectedSong] = []
-    @State private var isSongPickerPresented = false
-    @State private var isTikTokSettingsPresented = false
     @State private var postTitle = ""
     @State private var postAsDraft = true
     @State private var selectedVisibility: TikTokAudience?
@@ -36,13 +43,14 @@ struct CreateView: View {
     }
 
     var body: some View {
+        @Bindable var appModel = appModel
         let currentDraftID = activeDraftID(in: appModel)
 
         List {
             CreateTemplateSection(
                 loadState: templateLoadState,
                 selectedTemplate: selectedTemplate,
-                selectAction: { isTemplatePickerPresented = true },
+                selectAction: { presentedSheet = .templatePicker },
                 clearAction: { selectedTemplate = nil },
                 retryAction: loadTemplates
             )
@@ -57,7 +65,8 @@ struct CreateView: View {
                 CreateDraftWorkflowSections(
                     appModel: appModel,
                     draftID: currentDraftID,
-                    selectedSlideID: $selectedSlideID
+                    selectedSlideID: $selectedSlideID,
+                    openEditorAction: { presentedSheet = .slideEditor }
                 )
             } else {
                 Section("Slideshow") {
@@ -75,7 +84,7 @@ struct CreateView: View {
 
             CreateSongSection(
                 selectedSongs: $selectedSongs,
-                selectAction: { isSongPickerPresented = true }
+                selectAction: { presentedSheet = .songPicker }
             )
 
             CreateTikTokSettingsSection(
@@ -85,7 +94,7 @@ struct CreateView: View {
                 disclosesVideoContent: disclosesVideoContent,
                 promotesYourBrand: promotesYourBrand,
                 promotesBrandedContent: promotesBrandedContent,
-                action: { isTikTokSettingsPresented = true }
+                action: { presentedSheet = .tikTokSettings }
             )
         }
         .flickSettingsListStyle()
@@ -124,47 +133,90 @@ struct CreateView: View {
                 await appModel.persistCreateState()
             }
         }
-        .sheet(isPresented: $isTemplatePickerPresented) {
-            TemplatePickerSheet(
-                collections: templateLoadState.collections,
-                selectedTemplate: $selectedTemplate
-            )
-        }
-        .sheet(isPresented: $isDraftsPresented) {
-            CreateDraftsSheet(
-                drafts: appModel.createDrafts,
-                assetsByID: Dictionary(uniqueKeysWithValues: appModel.overview.assets.map { ($0.id, $0) }),
-                selectedDraftID: appModel.activeCreateDraftID,
-                selectAction: { draftID in
-                    appModel.selectCreateDraft(id: draftID)
-                    updateSelectedSlide(using: appModel)
+        .sheet(item: $presentedSheet) { sheet in
+            switch sheet {
+            case .templatePicker:
+                TemplatePickerSheet(
+                    collections: templateLoadState.collections,
+                    selectedTemplate: $selectedTemplate
+                )
+            case .drafts:
+                CreateDraftsSheet(
+                    drafts: appModel.createDrafts,
+                    assetsByID: Dictionary(uniqueKeysWithValues: appModel.overview.assets.map { ($0.id, $0) }),
+                    selectedDraftID: appModel.activeCreateDraftID,
+                    selectAction: { draftID in
+                        appModel.selectCreateDraft(id: draftID)
+                        updateSelectedSlide(using: appModel)
+                    }
+                )
+            case .slideEditor:
+                if
+                    let currentDraftID = activeDraftID(in: appModel),
+                    let draftIndex = appModel.overview.drafts.firstIndex(where: { $0.id == currentDraftID })
+                {
+                    let draft = appModel.overview.drafts[draftIndex]
+                    let assetsByID = Dictionary(uniqueKeysWithValues: appModel.overview.assets.map { ($0.id, $0) })
+
+                    CreateSlideEditor(
+                        draft: $appModel.overview.drafts[draftIndex],
+                        selectedSlideID: $selectedSlideID,
+                        assetsByID: assetsByID,
+                        isGenerating: appModel.isGeneratingSlideshowImages,
+                        moveAction: { slideID, direction in
+                            appModel.moveSlide(slideID, in: draft.id, direction: direction)
+                        },
+                        duplicateAction: { slideID in
+                            appModel.duplicateSlide(slideID, in: draft.id)
+                        },
+                        deleteAction: { slideID in
+                            appModel.deleteSlide(slideID, in: draft.id)
+                        },
+                        rewritePromptAction: { slideID, instruction in
+                            Task {
+                                await appModel.rewritePrompt(for: slideID, in: draft.id, instruction: instruction)
+                            }
+                        },
+                        regenerateAction: { slideID, instruction in
+                            Task {
+                                await appModel.regenerateSlideImage(slideID: slideID, in: draft.id, instruction: instruction)
+                            }
+                        }
+                    )
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+                } else {
+                    CreateMessageRow(
+                        title: "No slide selected",
+                        message: "Select a slide from the rail to edit it."
+                    )
                 }
-            )
+            case .tikTokSettings:
+                TikTokSettingsSheet(
+                    accountName: tiktokAccountName,
+                    postTitle: $postTitle,
+                    postAsDraft: $postAsDraft,
+                    selectedVisibility: $selectedVisibility,
+                    allowComment: $allowComment,
+                    allowDuet: $allowDuet,
+                    allowStitch: $allowStitch,
+                    disclosesVideoContent: $disclosesVideoContent,
+                    promotesYourBrand: $promotesYourBrand,
+                    promotesBrandedContent: $promotesBrandedContent
+                )
+            case .songPicker:
+                #if os(iOS) && canImport(MediaPlayer)
+                MediaLibraryPicker(selectedSongs: $selectedSongs)
+                #else
+                EmptyView()
+                #endif
+            }
         }
-        .sheet(isPresented: $isTikTokSettingsPresented) {
-            TikTokSettingsSheet(
-                accountName: tiktokAccountName,
-                postTitle: $postTitle,
-                postAsDraft: $postAsDraft,
-                selectedVisibility: $selectedVisibility,
-                allowComment: $allowComment,
-                allowDuet: $allowDuet,
-                allowStitch: $allowStitch,
-                disclosesVideoContent: $disclosesVideoContent,
-                promotesYourBrand: $promotesYourBrand,
-                promotesBrandedContent: $promotesBrandedContent
-            )
-        }
-        #if os(iOS) && canImport(MediaPlayer)
-        .sheet(isPresented: $isSongPickerPresented) {
-            MediaLibraryPicker(selectedSongs: $selectedSongs)
-        }
-        #endif
     }
 
     private var draftsButton: some View {
         Button("Drafts", systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90") {
-            isDraftsPresented = true
+            presentedSheet = .drafts
         }
     }
 
@@ -211,14 +263,13 @@ private struct CreateDraftWorkflowSections: View {
     @Bindable var appModel: FlickAppModel
     var draftID: UUID
     @Binding var selectedSlideID: UUID?
-    @State private var isSlideEditorPresented = false
+    var openEditorAction: () -> Void
 
     var body: some View {
         if let draftIndex = appModel.overview.drafts.firstIndex(where: { $0.id == draftID }) {
             let draftBinding = $appModel.overview.drafts[draftIndex]
             let draft = appModel.overview.drafts[draftIndex]
             let assetsByID = Dictionary(uniqueKeysWithValues: appModel.overview.assets.map { ($0.id, $0) })
-            let selectedAsset = selectedSlide(in: draft)?.imageAssetID.flatMap { assetsByID[$0] }
 
             if let templateIndex = activeTemplateIndex(for: draft) {
                 CreatePlanSection(
@@ -235,10 +286,9 @@ private struct CreateDraftWorkflowSections: View {
             CreateSlideRail(
                 slides: draft.slides,
                 assetsByID: assetsByID,
-                selectedSlideID: $selectedSlideID,
                 openAction: { slideID in
                     selectedSlideID = slideID
-                    isSlideEditorPresented = true
+                    openEditorAction()
                 }
             )
 
@@ -264,41 +314,6 @@ private struct CreateDraftWorkflowSections: View {
                     }
                 }
             )
-            .sheet(isPresented: $isSlideEditorPresented) {
-                CreateSlideEditor(
-                    draft: draftBinding,
-                    selectedSlideID: selectedSlideID,
-                    asset: selectedAsset,
-                    isGenerating: appModel.isGeneratingSlideshowImages,
-                    moveAction: { slideID, direction in
-                        appModel.moveSlide(slideID, in: draft.id, direction: direction)
-                    },
-                    duplicateAction: { slideID in
-                        appModel.duplicateSlide(slideID, in: draft.id)
-                    },
-                    deleteAction: { slideID in
-                        appModel.deleteSlide(slideID, in: draft.id)
-                        selectedSlideID = appModel.overview.drafts
-                            .first(where: { $0.id == draft.id })?
-                            .slides
-                            .sorted { $0.index < $1.index }
-                            .first?
-                            .id
-                    },
-                    rewritePromptAction: { slideID, instruction in
-                        Task {
-                            await appModel.rewritePrompt(for: slideID, in: draft.id, instruction: instruction)
-                        }
-                    },
-                    regenerateAction: { slideID, instruction in
-                        Task {
-                            await appModel.regenerateSlideImage(slideID: slideID, in: draft.id, instruction: instruction)
-                        }
-                    }
-                )
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-            }
         }
     }
 
@@ -307,12 +322,6 @@ private struct CreateDraftWorkflowSections: View {
         return appModel.overview.templates.firstIndex { $0.id == templateID }
     }
 
-    private func selectedSlide(in draft: SlideshowDraft) -> Slide? {
-        if let selectedSlideID, let slide = draft.slides.first(where: { $0.id == selectedSlideID }) {
-            return slide
-        }
-        return draft.slides.sorted { $0.index < $1.index }.first
-    }
 }
 
 #Preview {

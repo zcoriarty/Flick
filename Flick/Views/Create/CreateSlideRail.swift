@@ -8,7 +8,6 @@ import SwiftUI
 struct CreateSlideRail: View {
     var slides: [Slide]
     var assetsByID: [UUID: MediaAsset]
-    @Binding var selectedSlideID: UUID?
     var openAction: (UUID) -> Void
 
     var body: some View {
@@ -17,13 +16,11 @@ struct CreateSlideRail: View {
                 HStack(spacing: 12) {
                     ForEach(slides.sorted { $0.index < $1.index }) { slide in
                         Button {
-                            selectedSlideID = slide.id
                             openAction(slide.id)
                         } label: {
                             SlideRailItem(
                                 slide: slide,
-                                asset: slide.imageAssetID.flatMap { assetsByID[$0] },
-                                isSelected: selectedSlideID == slide.id
+                                asset: slide.imageAssetID.flatMap { assetsByID[$0] }
                             )
                         }
                         .buttonStyle(.plain)
@@ -38,7 +35,6 @@ struct CreateSlideRail: View {
 private struct SlideRailItem: View {
     var slide: Slide
     var asset: MediaAsset?
-    var isSelected: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -73,13 +69,9 @@ private struct SlideRailItem: View {
         .frame(width: 132, alignment: .leading)
         .padding(8)
         .background(
-            isSelected ? Color.indigo.opacity(0.14) : Color.secondary.opacity(0.08),
+            Color.secondary.opacity(0.08),
             in: .rect(cornerRadius: 10)
         )
-        .overlay {
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(isSelected ? Color.indigo : Color.clear, lineWidth: 1.5)
-        }
         .accessibilityElement(children: .combine)
     }
 }

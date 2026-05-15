@@ -13,14 +13,16 @@ extension View {
     @ViewBuilder
     func dismissKeyboardOnTap() -> some View {
         #if canImport(UIKit)
-        onTapGesture {
-            UIApplication.shared.sendAction(
-                #selector(UIResponder.resignFirstResponder),
-                to: nil,
-                from: nil,
-                for: nil
-            )
-        }
+        simultaneousGesture(
+            TapGesture().onEnded {
+                UIApplication.shared.sendAction(
+                    #selector(UIResponder.resignFirstResponder),
+                    to: nil,
+                    from: nil,
+                    for: nil
+                )
+            }
+        )
         #else
         self
         #endif

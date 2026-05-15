@@ -7,7 +7,7 @@ import SwiftUI
 
 struct CreateSlidePreviewCanvas: View {
     var slide: Slide
-    var asset: MediaAsset
+    var asset: MediaAsset?
 
     var body: some View {
         GeometryReader { proxy in
