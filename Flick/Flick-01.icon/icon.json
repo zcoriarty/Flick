@@ -1,6 +1,6 @@
 {
   "fill" : {
-    "automatic-gradient" : "display-p3:0.93916,0.91603,0.96783,1.00000"
+    "automatic-gradient" : "srgb:0.58188,0.21569,1.00000,1.00000"
   },
   "groups" : [
     {
@@ -9,7 +9,7 @@
           "image-name" : "flick-01.png",
           "name" : "flick-01",
           "position" : {
-            "scale" : 1,
+            "scale" : 0.95,
             "translation-in-points" : [
               -70.7578125,
               -31.25
