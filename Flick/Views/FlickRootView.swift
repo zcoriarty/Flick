@@ -36,14 +36,6 @@ struct FlickRootView: View {
                 }
             }
 
-            Tab(FlickSection.queue.title, systemImage: FlickSection.queue.systemImage, value: FlickSection.queue) {
-                QueueView()
-            }
-
-            Tab(FlickSection.trends.title, systemImage: FlickSection.trends.systemImage, value: FlickSection.trends) {
-                TrendsView()
-            }
-
             Tab(FlickSection.analytics.title, systemImage: FlickSection.analytics.systemImage, value: FlickSection.analytics) {
                 AnalyticsView()
             }

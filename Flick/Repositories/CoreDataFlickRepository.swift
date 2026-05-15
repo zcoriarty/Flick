@@ -109,7 +109,9 @@ final class CoreDataFlickRepository: FlickRepository {
     }
 
     private static func defaultCloudAvailability() async -> Bool {
-        await withCheckedContinuation { continuation in
+        guard !ProcessInfo.processInfo.flickIsRunningXCTest else { return false }
+
+        return await withCheckedContinuation { continuation in
             CKContainer(identifier: PersistenceController.cloudKitContainerIdentifier).accountStatus { status, _ in
                 continuation.resume(returning: status == .available)
             }

@@ -20,6 +20,8 @@
 		<string>snssdk1180</string>
 		<string>snssdk1233</string>
 	</array>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>Flick lets you choose songs from your music library for generated posts.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

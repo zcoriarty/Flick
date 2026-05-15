@@ -94,8 +94,8 @@ struct AnalyticsView: View {
                     tint: .purple
                 )
                 ExperimentRow(
-                    title: "Compare tags",
-                    detail: "Use saved trend tags and snapshots to identify which creative patterns are working.",
+                    title: "Compare creative tags",
+                    detail: "Use saved tags and snapshots to identify which creative patterns are working.",
                     systemImage: "tag",
                     tint: .green
                 )

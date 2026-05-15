@@ -103,21 +103,6 @@ extension PublishingJobStatus {
     }
 }
 
-extension TrendStatus {
-    var displayName: String { rawValue.capitalized }
-
-    var tint: Color {
-        switch self {
-        case .new: .blue
-        case .active: .green
-        case .testing: .orange
-        case .winning: .purple
-        case .declining: .red
-        case .archived: .secondary
-        }
-    }
-}
-
 extension CredentialStatus.Source {
     var tint: Color {
         switch self {

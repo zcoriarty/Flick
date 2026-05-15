@@ -71,17 +71,6 @@ enum CampaignStatus: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
-enum TrendStatus: String, CaseIterable, Codable, Identifiable {
-    case new
-    case active
-    case testing
-    case winning
-    case declining
-    case archived
-
-    var id: String { rawValue }
-}
-
 enum TrendTagCategory: String, CaseIterable, Codable, Identifiable {
     case hook
     case template
@@ -310,21 +299,6 @@ struct TrendTag: Identifiable, Codable, Hashable {
     var createdAt: Date
 }
 
-struct Trend: Identifiable, Codable, Hashable {
-    var id: UUID
-    var name: String
-    var source: String
-    var sourceURL: URL?
-    var notes: String
-    var status: TrendStatus
-    var tags: [TrendTag]
-    var referenceAssetIDs: [UUID]
-    var examples: [String]
-    var performanceSummary: String
-    var createdAt: Date
-    var updatedAt: Date
-}
-
 struct MediaAsset: Identifiable, Codable, Hashable {
     var id: UUID
     var mediaType: AssetMediaType
@@ -385,7 +359,6 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
     var title: String
     var campaignID: UUID?
     var templateID: UUID?
-    var sourceTrendID: UUID?
     var slides: [Slide]
     var caption: String
     var hashtags: [String]
@@ -525,8 +498,6 @@ struct FlickOverviewState: Codable, Hashable {
     var devices: [FlickDevice]
     var accounts: [ConnectedAccount]
     var campaigns: [Campaign]
-    var trends: [Trend]
-    var trendTags: [TrendTag]
     var assets: [MediaAsset]
     var drafts: [SlideshowDraft]
     var templates: [CreativeTemplate]

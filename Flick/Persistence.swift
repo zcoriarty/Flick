@@ -7,7 +7,7 @@ import CoreData
 
 struct PersistenceController {
     static let cloudKitContainerIdentifier = "iCloud.com.orion.Flick"
-    static let shared = PersistenceController()
+    static let shared = PersistenceController(inMemory: ProcessInfo.processInfo.flickIsRunningXCTest)
 
     @MainActor
     static let preview: PersistenceController = PersistenceController(inMemory: true)
@@ -44,5 +44,13 @@ struct PersistenceController {
         container.viewContext.automaticallyMergesChangesFromParent = true
         container.viewContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
         container.viewContext.transactionAuthor = "FlickApp"
+    }
+}
+
+extension ProcessInfo {
+    var flickIsRunningXCTest: Bool {
+        environment["XCTestConfigurationFilePath"] != nil
+            || environment["XCTestBundlePath"] != nil
+            || environment["XCInjectBundleInto"] != nil
     }
 }

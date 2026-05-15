@@ -198,7 +198,6 @@ private struct ProductMediaDetailSheet: View {
                 mediaSection
                 overviewSection
                 storageSection
-                tagsSection
                 timestampsSection
             }
             .flickSettingsListStyle()
@@ -309,18 +308,6 @@ private struct ProductMediaDetailSheet: View {
                 systemImage: "number",
                 iconColor: .secondary,
                 value: asset.checksum ?? "Not set",
-                valueLineLimit: nil
-            )
-        }
-    }
-
-    private var tagsSection: some View {
-        Section("Tags") {
-            FlickSettingsValueRow(
-                title: "Trend Tags",
-                systemImage: "tag",
-                iconColor: .pink,
-                value: asset.productTrendTags,
                 valueLineLimit: nil
             )
         }
@@ -443,11 +430,6 @@ private extension MediaAsset {
     var productSignedURLExpiration: String {
         guard let signedURLExpiration else { return "Not set" }
         return signedURLExpiration.formatted(date: .abbreviated, time: .shortened)
-    }
-
-    var productTrendTags: String {
-        guard !trendTags.isEmpty else { return "None" }
-        return trendTags.map(\.name).joined(separator: ", ")
     }
 
     var productCreatedAt: String {

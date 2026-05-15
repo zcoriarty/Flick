@@ -10,8 +10,6 @@ enum FlickSection: String, CaseIterable, Identifiable {
     case product
     case create
     case templates
-    case queue
-    case trends
     case analytics
     case accounts
     case settings
@@ -24,8 +22,6 @@ enum FlickSection: String, CaseIterable, Identifiable {
         case .product: "Product"
         case .create: "Create"
         case .templates: "Templates"
-        case .queue: "Queue"
-        case .trends: "Trends"
         case .analytics: "Analytics"
         case .accounts: "Accounts"
         case .settings: "Settings"
@@ -38,8 +34,6 @@ enum FlickSection: String, CaseIterable, Identifiable {
         case .product: "shippingbox"
         case .create: "wand.and.sparkles"
         case .templates: "rectangle.stack.badge.play"
-        case .queue: "calendar.badge.clock"
-        case .trends: "sparkles.rectangle.stack"
         case .analytics: "chart.xyaxis.line"
         case .accounts: "person.2.badge.gearshape"
         case .settings: "gearshape"

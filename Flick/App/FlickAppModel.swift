@@ -20,7 +20,6 @@ final class FlickAppModel {
     var connectingPlatform: SocialPlatform?
 
     @ObservationIgnored private let repository: FlickRepository
-    @ObservationIgnored private let scheduler = PublishingScheduler()
     @ObservationIgnored private let credentialVault = CredentialVault()
     @ObservationIgnored private let loginKitAccountStore = LoginKitAccountStore()
     @ObservationIgnored private let tiktokLoginKitClient = TikTokLoginKitClient()
@@ -78,22 +77,6 @@ final class FlickAppModel {
     func toggleAutomationPaused() {
         overview.workspace.automationPaused.toggle()
         overview.dashboard.workerStatus.automationPaused = overview.workspace.automationPaused
-    }
-
-    func approve(job: PublishingJob) {
-        update(job: job, to: .approved)
-    }
-
-    func pause(job: PublishingJob) {
-        update(job: job, to: .paused)
-    }
-
-    func resume(job: PublishingJob) {
-        update(job: job, to: .queued)
-    }
-
-    func retry(job: PublishingJob) {
-        update(job: job, to: .queued)
     }
 
     func connectAccount(platform: SocialPlatform) async {
@@ -204,7 +187,6 @@ final class FlickAppModel {
             title: "\(template.niche) template - @\(template.profile)",
             campaignID: overview.campaigns.first?.id,
             templateID: templateID,
-            sourceTrendID: nil,
             slides: slides,
             caption: "Draft based on @\(template.profile)'s \(template.niche.lowercased()) slideshow format.",
             hashtags: templateHashtags(for: template),
@@ -321,28 +303,6 @@ final class FlickAppModel {
             lastErrorMessage = error.localizedDescription
             return false
         }
-    }
-
-    private func update(job: PublishingJob, to status: PublishingJobStatus) {
-        guard let index = overview.publishingJobs.firstIndex(where: { $0.id == job.id }) else {
-            lastErrorMessage = FlickRepositoryError.missingJob(job.id).localizedDescription
-            return
-        }
-
-        do {
-            let updated = try scheduler.transition(overview.publishingJobs[index], to: status)
-            overview.publishingJobs[index] = updated
-            refreshDashboardCounts()
-            lastErrorMessage = nil
-        } catch {
-            lastErrorMessage = error.localizedDescription
-        }
-    }
-
-    private func refreshDashboardCounts() {
-        overview.dashboard.awaitingApprovalCount = overview.publishingJobs.filter { $0.status == .awaitingApproval }.count
-        overview.dashboard.failedJobCount = overview.publishingJobs.filter { $0.status == .failed }.count
-        overview.dashboard.scheduledTodayCount = overview.publishingJobs.filter { Calendar.current.isDateInToday($0.scheduledAt) }.count
     }
 
     private func applyAuthorizedAccounts() {
