@@ -10,7 +10,7 @@ struct CreateGenerationControls: View {
     var assetsByID: [UUID: MediaAsset]
     var isGenerating: Bool
     var message: String?
-    var generateMissingAction: () -> Void
+    var generateAction: () -> Void
 
     private var completeCount: Int {
         draft.createGeneratedImageCount(assetsByID: assetsByID)
@@ -27,7 +27,18 @@ struct CreateGenerationControls: View {
         if completeCount == 0 {
             return "Generate Images"
         }
+        if missingCount == 0 {
+            return "Redo Image Generation"
+        }
         return "Generate Missing Images"
+    }
+
+    private var hasRunGeneration: Bool {
+        completeCount > 0
+    }
+
+    private var shouldShowAction: Bool {
+        isGenerating || missingCount > 0 || completeCount > 0
     }
 
     var body: some View {
@@ -46,25 +57,40 @@ struct CreateGenerationControls: View {
             }
         }
 
-        if isGenerating || missingCount > 0 {
-            Button(action: generateMissingAction) {
-                HStack(spacing: 10) {
-                    if isGenerating {
-                        ProgressView()
-                    } else {
-                        Image(systemName: "photo.badge.plus")
-                    }
-
-                    Text(actionTitle)
-                        .fontWeight(.semibold)
-                }
-                .frame(maxWidth: .infinity)
-            }
+        if shouldShowAction {
+            styledButton
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets(top: 0, leading: -16, bottom: 0, trailing: -16))
-            .buttonStyle(.glassProminent)
             .controlSize(.large)
-            .disabled(isGenerating || draft.slides.isEmpty || missingCount == 0)
+            .disabled(isGenerating || draft.slides.isEmpty)
+        }
+    }
+
+    @ViewBuilder
+    private var styledButton: some View {
+        if hasRunGeneration {
+            generationButton
+                .buttonStyle(.glass)
+        } else {
+            generationButton
+                .buttonStyle(.glassProminent)
+        }
+    }
+
+    private var generationButton: some View {
+        Button(action: generateAction) {
+            HStack(spacing: 10) {
+                if isGenerating {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: missingCount == 0 && hasRunGeneration ? "arrow.clockwise" : "photo.badge.plus")
+                }
+
+                Text(actionTitle)
+                    .fontWeight(.semibold)
+            }
+            .frame(maxWidth: .infinity)
         }
     }
 }

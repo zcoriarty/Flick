@@ -83,10 +83,10 @@ struct SlideshowImageGenerationSettings: Hashable {
     )
 
     static let finalExport = SlideshowImageGenerationSettings(
-        size: "1080x1920",
+        size: "1024x1536",
         quality: "high",
-        width: 1080,
-        height: 1920
+        width: 1024,
+        height: 1536
     )
 
     func isSatisfied(by asset: MediaAsset) -> Bool {

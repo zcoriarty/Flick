@@ -386,6 +386,125 @@ final class FlickTests: XCTestCase {
         XCTAssertTrue(status.privacyOptions.contains(TikTokPrivacyLevel.publicToEveryone.rawValue))
     }
 
+    func testTikTokAdapterRefreshesExpiredAccessTokenBeforePublishing() async throws {
+        let secretStore = MemorySecretStore()
+        let account = LoginKitAccountMapper.connectedAccount(
+            from: LoginKitAuthorizedUser(
+                platform: .tiktok,
+                openID: "real-open-id",
+                displayName: "@realaccount",
+                avatarURL: nil,
+                scopes: ["user.info.basic", "video.publish", "video.upload"]
+            )
+        )
+        let expiredBundle = LoginKitTokenBundle(
+            platform: .tiktok,
+            platformUserID: account.platformUserID,
+            accessToken: "expired-access-token",
+            refreshToken: "refresh-token",
+            tokenType: "Bearer",
+            scopes: account.scopes,
+            accessTokenExpiresAt: Date(timeIntervalSinceNow: -60),
+            refreshTokenExpiresAt: Date(timeIntervalSinceNow: 3_600),
+            updatedAt: Date(timeIntervalSinceNow: -120)
+        )
+        try LoginKitTokenStore(store: secretStore).save(expiredBundle, for: account)
+
+        let publishAuthorizationHeader = CapturingURLProtocol.CapturedValue()
+        CapturingURLProtocol.requestHandler = { request in
+            switch request.url?.path.removingTrailingSlash {
+            case "/v2/oauth/token":
+                let body = request.encodedBodyString
+                XCTAssertTrue(body.contains("grant_type=refresh_token"))
+                XCTAssertTrue(body.contains("refresh_token=refresh-token"))
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data(
+                        """
+                        {
+                            "access_token": "refreshed-access-token",
+                            "expires_in": 86400,
+                            "open_id": "real-open-id",
+                            "refresh_expires_in": 31536000,
+                            "refresh_token": "new-refresh-token",
+                            "scope": "user.info.basic,video.publish,video.upload",
+                            "token_type": "Bearer"
+                        }
+                        """.utf8
+                    )
+                )
+            case "/v2/post/publish/content/init":
+                publishAuthorizationHeader.value = request.value(forHTTPHeaderField: "Authorization")
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data(
+                        """
+                        {
+                            "data": {
+                                "publish_id": "p_pub_url~v2.123"
+                            },
+                            "error": {
+                                "code": "ok",
+                                "message": "",
+                                "log_id": "log-123"
+                            }
+                        }
+                        """.utf8
+                    )
+                )
+            default:
+                XCTFail("Unexpected request URL: \(request.url?.absoluteString ?? "nil")")
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!,
+                    Data()
+                )
+            }
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CapturingURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let adapter = TikTokAdapter(
+            configuration: TikTokConfiguration(values: [
+                "TIKTOK_CLIENT_ID": "client-key",
+                "TIKTOK_CLIENT_SECRET": "client-secret",
+                "TIKTOK_VERIFIED_BASE_URL": "https://example.com"
+            ]),
+            tokenStore: secretStore,
+            urlSession: session
+        )
+        var job = makePublishingJob()
+        job.accountID = account.id
+        let result = try await adapter.publish(
+            job,
+            account: account,
+            media: PreparedPlatformMedia(
+                mode: .photoDirectPost,
+                imageURLs: [try XCTUnwrap(URL(string: "https://example.com/rendered-slide.png"))],
+                videoURL: nil,
+                warnings: []
+            ),
+            settings: TikTokManualPublishSettings(
+                title: "Launch",
+                description: "Try Flick",
+                postAsDraft: false,
+                privacyLevel: .selfOnly,
+                allowComment: true,
+                allowDuet: false,
+                allowStitch: false,
+                disclosesVideoContent: false,
+                promotesYourBrand: false,
+                promotesBrandedContent: false
+            )
+        )
+
+        XCTAssertEqual(result.platformPostID, "p_pub_url~v2.123")
+        XCTAssertEqual(publishAuthorizationHeader.value, "Bearer refreshed-access-token")
+        let storedBundle = try XCTUnwrap(LoginKitTokenStore(store: secretStore).tokenBundle(for: account))
+        XCTAssertEqual(storedBundle.accessToken, "refreshed-access-token")
+        XCTAssertEqual(storedBundle.refreshToken, "new-refresh-token")
+    }
+
     func testAccountManagementPolicyIsIOSOnly() {
         #if os(iOS) && !targetEnvironment(macCatalyst)
         XCTAssertTrue(AccountManagementPolicy.canAuthorizeAccountsOnThisDevice)
@@ -408,14 +527,14 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(SlideshowImageGenerationSettings.draft.height, 1280)
         XCTAssertLessThan(SlideshowImageGenerationSettings.draft.aspectRatio, 1)
 
-        XCTAssertEqual(SlideshowImageGenerationSettings.finalExport.size, "1080x1920")
-        XCTAssertEqual(SlideshowImageGenerationSettings.finalExport.width, 1080)
-        XCTAssertEqual(SlideshowImageGenerationSettings.finalExport.height, 1920)
-        XCTAssertEqual(SlideshowImageGenerationSettings.finalExport.aspectRatio, 9.0 / 16.0)
+        XCTAssertEqual(SlideshowImageGenerationSettings.finalExport.size, "1024x1536")
+        XCTAssertEqual(SlideshowImageGenerationSettings.finalExport.width, 1024)
+        XCTAssertEqual(SlideshowImageGenerationSettings.finalExport.height, 1536)
+        XCTAssertEqual(SlideshowImageGenerationSettings.finalExport.aspectRatio, 2.0 / 3.0)
     }
 
     func testSlideshowImageGenerationSettingsRejectHorizontalAssets() {
-        let verticalAsset = makeMediaAsset(width: 1080, height: 1920)
+        let verticalAsset = makeMediaAsset(width: 1024, height: 1536)
         let horizontalAsset = makeMediaAsset(width: 2560, height: 1440)
 
         XCTAssertTrue(SlideshowImageGenerationSettings.finalExport.isSatisfied(by: verticalAsset))
@@ -428,9 +547,10 @@ final class FlickTests: XCTestCase {
             settings: .draft
         )
 
-        XCTAssertTrue(prompt.contains("vertical 9:16 image"))
+        XCTAssertTrue(prompt.contains("vertical portrait image"))
         XCTAssertTrue(prompt.contains("720x1280 portrait canvas"))
         XCTAssertTrue(prompt.contains("ignore that stale format instruction"))
+        XCTAssertTrue(prompt.contains("stale output size"))
     }
 }
 
@@ -519,8 +639,8 @@ private func makeMediaAsset(
     source: AssetSource = .generated,
     localFilePath: String? = nil,
     publicURL: URL? = nil,
-    width: Int = 1080,
-    height: Int = 1920,
+    width: Int = 1024,
+    height: Int = 1536,
     now: Date = Date()
 ) -> MediaAsset {
     MediaAsset(
@@ -595,8 +715,80 @@ private final class MemorySecretStore: SecretStoring {
     }
 }
 
+private final class CapturingURLProtocol: URLProtocol {
+    final class CapturedValue {
+        var value: String?
+    }
+
+    static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let requestHandler = Self.requestHandler else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+
+        do {
+            let (response, data) = try requestHandler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+}
+
 private extension Array where Element == URLQueryItem {
     func value(named name: String) -> String? {
         first { $0.name == name }?.value
+    }
+}
+
+private extension Optional where Wrapped == String {
+    var removingTrailingSlash: String? {
+        guard let self else { return nil }
+        return self.hasSuffix("/") ? String(self.dropLast()) : self
+    }
+}
+
+private extension String {
+    var removingTrailingSlash: String {
+        hasSuffix("/") ? String(dropLast()) : self
+    }
+}
+
+private extension URLRequest {
+    var encodedBodyString: String {
+        if let httpBody {
+            return String(data: httpBody, encoding: .utf8) ?? ""
+        }
+
+        guard let httpBodyStream else { return "" }
+        httpBodyStream.open()
+        defer { httpBodyStream.close() }
+
+        var data = Data()
+        let bufferSize = 1024
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+        defer { buffer.deallocate() }
+
+        while httpBodyStream.hasBytesAvailable {
+            let readCount = httpBodyStream.read(buffer, maxLength: bufferSize)
+            guard readCount > 0 else { break }
+            data.append(buffer, count: readCount)
+        }
+
+        return String(data: data, encoding: .utf8) ?? ""
     }
 }

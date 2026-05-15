@@ -22,9 +22,9 @@ enum SlideshowImagePromptFormatter {
         \(prompt)
 
         Output format:
-        - Generate exactly one vertical 9:16 image optimized for TikTok, Instagram Reels, and YouTube Shorts.
+        - Generate exactly one vertical portrait image optimized for TikTok, Instagram Reels, and YouTube Shorts.
         - Use a \(settings.width)x\(settings.height) portrait canvas with full-screen mobile composition.
-        - If any earlier prompt text asks for 16:9, horizontal, or landscape output, ignore that stale format instruction and use vertical 9:16 instead.
+        - If any earlier prompt text asks for 16:9, horizontal, landscape, or another stale output size, ignore that stale format instruction and use the requested \(settings.width)x\(settings.height) portrait canvas instead.
         - Keep the image free of readable text, captions, logos, watermarks, fake UI text, and gibberish.
         """
     }

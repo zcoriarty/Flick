@@ -6,15 +6,15 @@
 import Foundation
 
 struct RenderOptions: Hashable {
-    var canvasWidth: Int = 1080
-    var canvasHeight: Int = 1920
+    var canvasWidth: Int = 1024
+    var canvasHeight: Int = 1536
     var framesPerSecond: Int = 30
     var includeAudio: Bool = false
 }
 
 struct ImageRenderOptions: Hashable {
-    var width: Int = 1080
-    var height: Int = 1920
+    var width: Int = 1024
+    var height: Int = 1536
     var scale: Double = 1
 }
 

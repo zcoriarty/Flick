@@ -7,6 +7,7 @@ import SwiftUI
 
 struct CreateTikTokSettingsSection: View {
     var accountName: String?
+    var hasConfiguredSettings: Bool
     var postAsDraft: Bool
     var selectedVisibility: TikTokAudience?
     var disclosesVideoContent: Bool
@@ -15,6 +16,8 @@ struct CreateTikTokSettingsSection: View {
     var action: () -> Void
 
     private var settingsSummary: String {
+        guard hasConfiguredSettings else { return "Select settings" }
+
         if postAsDraft {
             return "Draft upload"
         }

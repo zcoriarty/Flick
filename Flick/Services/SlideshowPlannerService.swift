@@ -140,7 +140,7 @@ struct SlideshowPlannerService {
         Normalize the brief, reuse the selected template structurally, and create one cohesive TikTok/Instagram-style image carousel plan.
         Use the existing Flick template as style and pacing reference only.
         Do not create image variants or candidate grids.
-        Every slide must have editable Flick-rendered overlay text and exactly one vertical 9:16 image prompt.
+        Every slide must have editable Flick-rendered overlay text and exactly one vertical portrait image prompt.
         The generated images are backgrounds and must leave clean low-detail room for text overlays.
         """
     }
@@ -149,7 +149,7 @@ struct SlideshowPlannerService {
         """
         Rewrite a single slide image prompt for gpt-image-2.
         Preserve the selected Flick template style guide, slideshow continuity, current text overlay position, and user edit instruction.
-        The output prompt must request one vertical 9:16 social slideshow image and must forbid readable text, captions, logos, watermarks, fake UI text, and gibberish.
+        The output prompt must request one vertical portrait social slideshow image and must forbid readable text, captions, logos, watermarks, fake UI text, and gibberish.
         Do not propose variants.
         """
     }
@@ -246,7 +246,7 @@ enum SlideshowPromptBuilder {
         previousVisualSummary: String
     ) -> String {
         """
-        Create a vertical 9:16 social slideshow image for slide \(slide.index + 1), optimized for TikTok and Instagram Reels.
+        Create a vertical portrait social slideshow image for slide \(slide.index + 1), optimized for TikTok and Instagram Reels.
 
         Template style:
         \(styleGuide.promptSummary)

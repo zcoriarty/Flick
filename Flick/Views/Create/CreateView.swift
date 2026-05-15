@@ -12,6 +12,7 @@ private enum CreateSheet: String, Identifiable {
     case slideEditor
     case tikTokSettings
     case songPicker
+    case publishProgress
 
     var id: String { rawValue }
 }
@@ -28,17 +29,51 @@ struct CreateView: View {
     @State private var selectedWeekdays: Set<CreateWeekday> = [CreateWeekday.current]
     @State private var selectedSongs: [SelectedSong] = []
     @State private var postTitle = ""
-    @State private var postAsDraft = true
-    @State private var selectedVisibility: TikTokAudience?
-    @State private var allowComment = false
-    @State private var allowDuet = false
-    @State private var allowStitch = false
-    @State private var disclosesVideoContent = false
-    @State private var promotesYourBrand = false
-    @State private var promotesBrandedContent = false
+    @AppStorage("create.tiktok.hasSavedSettings") private var hasSavedTikTokSettings = false
+    @AppStorage("create.tiktok.postAsDraft") private var storedPostAsDraft = false
+    @AppStorage("create.tiktok.selectedVisibility") private var storedSelectedVisibility = ""
+    @AppStorage("create.tiktok.allowComment") private var storedAllowComment = false
+    @AppStorage("create.tiktok.allowDuet") private var storedAllowDuet = false
+    @AppStorage("create.tiktok.allowStitch") private var storedAllowStitch = false
+    @AppStorage("create.tiktok.disclosesVideoContent") private var storedDisclosesVideoContent = false
+    @AppStorage("create.tiktok.promotesYourBrand") private var storedPromotesYourBrand = false
+    @AppStorage("create.tiktok.promotesBrandedContent") private var storedPromotesBrandedContent = false
 
     private var tiktokAccountName: String? {
         publishingTikTokAccount(in: appModel)?.displayName
+    }
+
+    private var postAsDraft: Bool {
+        hasSavedTikTokSettings && storedPostAsDraft
+    }
+
+    private var selectedVisibility: TikTokAudience? {
+        guard hasSavedTikTokSettings else { return nil }
+        return TikTokAudience(rawValue: storedSelectedVisibility)
+    }
+
+    private var allowComment: Bool {
+        hasSavedTikTokSettings && storedAllowComment
+    }
+
+    private var allowDuet: Bool {
+        hasSavedTikTokSettings && storedAllowDuet
+    }
+
+    private var allowStitch: Bool {
+        hasSavedTikTokSettings && storedAllowStitch
+    }
+
+    private var disclosesVideoContent: Bool {
+        hasSavedTikTokSettings && storedDisclosesVideoContent
+    }
+
+    private var promotesYourBrand: Bool {
+        hasSavedTikTokSettings && storedPromotesYourBrand
+    }
+
+    private var promotesBrandedContent: Bool {
+        hasSavedTikTokSettings && storedPromotesBrandedContent
     }
 
     var body: some View {
@@ -59,6 +94,7 @@ struct CreateView: View {
             AnalyzeTemplateSection(
                 selectedTemplate: selectedTemplate,
                 isPlanning: appModel.isPlanningSlideshow,
+                hasAnalyzedTemplate: currentDraftID != nil,
                 action: analyzeTemplate
             )
 
@@ -92,6 +128,7 @@ struct CreateView: View {
 
             CreateTikTokSettingsSection(
                 accountName: tiktokAccountName,
+                hasConfiguredSettings: hasSavedTikTokSettings,
                 postAsDraft: postAsDraft,
                 selectedVisibility: selectedVisibility,
                 disclosesVideoContent: disclosesVideoContent,
@@ -116,18 +153,16 @@ struct CreateView: View {
             }
             #endif
             ToolbarItem(placement: .confirmationAction) {
-                if shouldShowPublishButton(in: appModel) {
-                    Button {
-                        publishManualPost(using: appModel)
-                    } label: {
-                        if appModel.isPublishingSlideshow {
-                            ProgressView()
-                        } else {
-                            Text("Publish")
-                        }
+                Button {
+                    publishManualPost(using: appModel)
+                } label: {
+                    if appModel.isPublishingSlideshow {
+                        ProgressView()
+                    } else {
+                        Text("Publish")
                     }
-                    .disabled(appModel.isPublishingSlideshow)
                 }
+                .disabled(!canPublishManualPost(in: appModel) || appModel.isPublishingSlideshow)
             }
         }
         .task {
@@ -218,14 +253,14 @@ struct CreateView: View {
                 TikTokSettingsSheet(
                     accountName: tiktokAccountName,
                     postTitle: $postTitle,
-                    postAsDraft: $postAsDraft,
-                    selectedVisibility: $selectedVisibility,
-                    allowComment: $allowComment,
-                    allowDuet: $allowDuet,
-                    allowStitch: $allowStitch,
-                    disclosesVideoContent: $disclosesVideoContent,
-                    promotesYourBrand: $promotesYourBrand,
-                    promotesBrandedContent: $promotesBrandedContent
+                    postAsDraft: postAsDraftBinding,
+                    selectedVisibility: selectedVisibilityBinding,
+                    allowComment: allowCommentBinding,
+                    allowDuet: allowDuetBinding,
+                    allowStitch: allowStitchBinding,
+                    disclosesVideoContent: disclosesVideoContentBinding,
+                    promotesYourBrand: promotesYourBrandBinding,
+                    promotesBrandedContent: promotesBrandedContentBinding
                 )
             case .songPicker:
                 #if os(iOS) && canImport(MediaPlayer)
@@ -233,6 +268,8 @@ struct CreateView: View {
                 #else
                 EmptyView()
                 #endif
+            case .publishProgress:
+                CreatePublishProgressSheet(progress: appModel.manualPublishProgress)
             }
         }
     }
@@ -241,6 +278,86 @@ struct CreateView: View {
         Button("Drafts", systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90") {
             presentedSheet = .drafts
         }
+    }
+
+    private var postAsDraftBinding: Binding<Bool> {
+        Binding(
+            get: { postAsDraft },
+            set: { newValue in
+                storedPostAsDraft = newValue
+                hasSavedTikTokSettings = true
+            }
+        )
+    }
+
+    private var selectedVisibilityBinding: Binding<TikTokAudience?> {
+        Binding(
+            get: { selectedVisibility },
+            set: { newValue in
+                storedSelectedVisibility = newValue?.rawValue ?? ""
+                hasSavedTikTokSettings = true
+            }
+        )
+    }
+
+    private var allowCommentBinding: Binding<Bool> {
+        Binding(
+            get: { allowComment },
+            set: { newValue in
+                storedAllowComment = newValue
+                hasSavedTikTokSettings = true
+            }
+        )
+    }
+
+    private var allowDuetBinding: Binding<Bool> {
+        Binding(
+            get: { allowDuet },
+            set: { newValue in
+                storedAllowDuet = newValue
+                hasSavedTikTokSettings = true
+            }
+        )
+    }
+
+    private var allowStitchBinding: Binding<Bool> {
+        Binding(
+            get: { allowStitch },
+            set: { newValue in
+                storedAllowStitch = newValue
+                hasSavedTikTokSettings = true
+            }
+        )
+    }
+
+    private var disclosesVideoContentBinding: Binding<Bool> {
+        Binding(
+            get: { disclosesVideoContent },
+            set: { newValue in
+                storedDisclosesVideoContent = newValue
+                hasSavedTikTokSettings = true
+            }
+        )
+    }
+
+    private var promotesYourBrandBinding: Binding<Bool> {
+        Binding(
+            get: { promotesYourBrand },
+            set: { newValue in
+                storedPromotesYourBrand = newValue
+                hasSavedTikTokSettings = true
+            }
+        )
+    }
+
+    private var promotesBrandedContentBinding: Binding<Bool> {
+        Binding(
+            get: { promotesBrandedContent },
+            set: { newValue in
+                storedPromotesBrandedContent = newValue
+                hasSavedTikTokSettings = true
+            }
+        )
     }
 
     private func loadTemplates() {
@@ -260,7 +377,7 @@ struct CreateView: View {
         }
     }
 
-    private func shouldShowPublishButton(in appModel: FlickAppModel) -> Bool {
+    private func canPublishManualPost(in appModel: FlickAppModel) -> Bool {
         guard !isAutonomous else { return false }
         guard let draft = appModel.activeCreateDraft else { return false }
         let assetsByID = Dictionary(uniqueKeysWithValues: appModel.overview.assets.map { ($0.id, $0) })
@@ -271,6 +388,8 @@ struct CreateView: View {
 
     private func publishManualPost(using appModel: FlickAppModel) {
         guard let draft = appModel.activeCreateDraft, let settings = publishSettings(for: draft) else { return }
+        appModel.beginManualPublishProgress(for: draft)
+        presentedSheet = .publishProgress
         Task {
             await appModel.publishManualSlideshow(draftID: draft.id, settings: settings)
         }
@@ -279,6 +398,7 @@ struct CreateView: View {
     private func publishSettings(for draft: SlideshowDraft) -> TikTokManualPublishSettings? {
         let title = postTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return nil }
+        guard hasSavedTikTokSettings else { return nil }
         guard postAsDraft || selectedVisibility != nil else { return nil }
         guard !disclosesVideoContent || promotesYourBrand || promotesBrandedContent else { return nil }
 
@@ -371,9 +491,13 @@ private struct CreateDraftWorkflowSections: View {
                 assetsByID: assetsByID,
                 isGenerating: appModel.isGeneratingSlideshowImages,
                 message: appModel.createWorkflowMessage,
-                generateMissingAction: {
+                generateAction: {
                     Task {
-                        await appModel.generateMissingSlideImages(for: draft.id)
+                        if draft.createMissingImageCount(assetsByID: assetsByID) == 0 {
+                            await appModel.regenerateSlideImages(for: draft.id)
+                        } else {
+                            await appModel.generateMissingSlideImages(for: draft.id)
+                        }
                     }
                 }
             )

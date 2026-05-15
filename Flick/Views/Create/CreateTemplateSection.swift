@@ -70,29 +70,52 @@ struct CreateTemplateSection: View {
 struct AnalyzeTemplateSection: View {
     var selectedTemplate: ExampleSlideshowTemplate?
     var isPlanning: Bool
+    var hasAnalyzedTemplate: Bool
     var action: () -> Void
 
     var body: some View {
         if selectedTemplate != nil {
-            Button(action: action) {
-                HStack(spacing: 10) {
-                    if isPlanning {
-                        ProgressView()
-                    } else {
-                        Image(systemName: "wand.and.stars")
-                    }
-
-                    Text(isPlanning ? "Analyzing Template" : "Analyze Template")
-                        .fontWeight(.semibold)
-                }
-                .frame(maxWidth: .infinity)
-            }
+            styledButton
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets(top: 0, leading: -16, bottom: 0, trailing: -16))
-            .buttonStyle(.glassProminent)
             .controlSize(.large)
             .disabled(isPlanning)
         }
+    }
+
+    @ViewBuilder
+    private var styledButton: some View {
+        if hasAnalyzedTemplate {
+            analyzeButton
+                .buttonStyle(.glass)
+        } else {
+            analyzeButton
+                .buttonStyle(.glassProminent)
+        }
+    }
+
+    private var analyzeButton: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                if isPlanning {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: hasAnalyzedTemplate ? "arrow.clockwise" : "wand.and.stars")
+                }
+
+                Text(actionTitle)
+                    .fontWeight(.semibold)
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private var actionTitle: String {
+        if isPlanning {
+            return "Analyzing Template"
+        }
+        return hasAnalyzedTemplate ? "Redo Analysis" : "Analyze Template"
     }
 }
 

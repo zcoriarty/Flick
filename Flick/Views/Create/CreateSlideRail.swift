@@ -39,7 +39,10 @@ private struct SlideRailItem: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .bottomLeading) {
-                GeneratedSlideImageView(asset: asset)
+                ZStack {
+                    GeneratedSlideImageView(asset: asset)
+                    SlideOverlayPreview(slide: slide)
+                }
                     .frame(width: 74, height: 132)
                     .clipShape(.rect(cornerRadius: 8))
 

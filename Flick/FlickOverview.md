@@ -1269,7 +1269,7 @@ Use:
 * Core Image
 * SwiftUI snapshotting where appropriate
 
-Generate 1080×1920 image assets by default.
+Generate 1024×1536 image assets by default.
 
 18.2 Video Rendering
 

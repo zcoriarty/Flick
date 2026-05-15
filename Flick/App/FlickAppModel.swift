@@ -32,6 +32,7 @@ final class FlickAppModel {
     var isPlanningSlideshow = false
     var isGeneratingSlideshowImages = false
     var isPublishingSlideshow = false
+    var manualPublishProgress: ManualPublishProgress?
 
     @ObservationIgnored private let repository: FlickRepository
     @ObservationIgnored private let credentialVault = CredentialVault()
@@ -449,6 +450,14 @@ final class FlickAppModel {
     }
 
     func generateMissingSlideImages(for draftID: UUID) async {
+        await generateSlideImages(for: draftID, replacingExisting: false)
+    }
+
+    func regenerateSlideImages(for draftID: UUID) async {
+        await generateSlideImages(for: draftID, replacingExisting: true)
+    }
+
+    private func generateSlideImages(for draftID: UUID, replacingExisting: Bool) async {
         guard !isGeneratingSlideshowImages else { return }
         isGeneratingSlideshowImages = true
         defer {
@@ -464,6 +473,7 @@ final class FlickAppModel {
             let slideIDs = overview.drafts[draftIndex].slides
                 .sorted { $0.index < $1.index }
                 .filter { slide in
+                    guard !replacingExisting else { return true }
                     guard let imageAssetID = slide.imageAssetID else { return true }
                     return assetsByID[imageAssetID]?.hasAvailableMediaLocation != true
                 }
@@ -473,7 +483,11 @@ final class FlickAppModel {
                 try await generateImage(for: slideID, in: draftID, instruction: nil, settings: .draft)
             }
 
-            createWorkflowMessage = slideIDs.isEmpty ? "All slides already have generated images." : "Generated \(slideIDs.count) slide images."
+            if replacingExisting {
+                createWorkflowMessage = slideIDs.isEmpty ? "No slides to regenerate." : "Regenerated \(slideIDs.count) slide images."
+            } else {
+                createWorkflowMessage = slideIDs.isEmpty ? "All slides already have generated images." : "Generated \(slideIDs.count) slide images."
+            }
             lastErrorMessage = nil
         } catch {
             lastErrorMessage = error.localizedDescription
@@ -501,6 +515,11 @@ final class FlickAppModel {
         }
     }
 
+    func beginManualPublishProgress(for draft: SlideshowDraft) {
+        manualPublishProgress = ManualPublishProgress.make(for: draft)
+        logPublish("Manual publish progress opened draftID=\(draft.id.uuidString) slideCount=\(draft.slides.count)")
+    }
+
     func publishManualSlideshow(draftID: UUID, settings: TikTokManualPublishSettings) async {
         guard !isPublishingSlideshow else { return }
         isPublishingSlideshow = true
@@ -514,13 +533,19 @@ final class FlickAppModel {
 
         do {
             let now = Date()
-            guard overview.drafts.contains(where: { $0.id == draftID }) else {
+            guard let draft = overview.drafts.first(where: { $0.id == draftID }) else {
                 throw SlideshowCreationError.missingDraft
             }
+            if manualPublishProgress == nil || manualPublishProgress?.isFinished == true {
+                beginManualPublishProgress(for: draft)
+            }
+            startPublishStep(ManualPublishProgressStepID.validate, detail: "Checking account, media, and TikTok options.")
             guard let account = publishingTikTokAccount() else {
                 throw ManualPublishError.missingTikTokAccount
             }
+            completePublishStep(ManualPublishProgressStepID.validate, detail: "Ready to publish with \(account.displayName).")
 
+            startPublishStep(ManualPublishProgressStepID.createJob, detail: "Recording this manual publish attempt.")
             var job = PublishingJob(
                 id: UUID(),
                 platform: .tiktok,
@@ -544,14 +569,15 @@ final class FlickAppModel {
             activeJobID = job.id
             overview.publishingJobs.insert(job, at: 0)
             try await repository.saveOverview(overview)
+            completePublishStep(ManualPublishProgressStepID.createJob, detail: "Publish job \(job.id.uuidString.prefix(8)) created.")
 
-            logger.info("Manual TikTok publish started draftID=\(draftID.uuidString, privacy: .public) jobID=\(job.id.uuidString, privacy: .public) mode=\(settings.publishMode.rawValue, privacy: .public)")
+            logPublish("Manual TikTok publish started draftID=\(draftID.uuidString) jobID=\(job.id.uuidString) mode=\(settings.publishMode.rawValue)")
             let renderedAssetIDs = try await renderImageSequenceForPublish(for: draftID)
 
             guard let refreshedDraftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) else {
                 throw SlideshowCreationError.missingDraft
             }
-            let draft = overview.drafts[refreshedDraftIndex]
+            let refreshedDraft = overview.drafts[refreshedDraftIndex]
             let renderedAssetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
             let imageURLs = renderedAssetIDs.compactMap { renderedAssetsByID[$0]?.publicURL }
             guard imageURLs.count == renderedAssetIDs.count, !imageURLs.isEmpty else {
@@ -562,6 +588,7 @@ final class FlickAppModel {
             job.status = .publishing
             job.updatedAt = Date()
             createWorkflowMessage = "Posting to TikTok..."
+            startPublishStep(ManualPublishProgressStepID.publishTikTok, detail: "Sending \(imageURLs.count) rendered images to TikTok.")
             let media = PreparedPlatformMedia(
                 mode: settings.publishMode,
                 imageURLs: imageURLs,
@@ -570,12 +597,16 @@ final class FlickAppModel {
             )
             let adapter = TikTokAdapter(configuration: configuration.tiktok)
             let result = try await adapter.publish(job, account: account, media: media, settings: settings)
+            completePublishStep(ManualPublishProgressStepID.publishTikTok, detail: "TikTok publish ID \(result.platformPostID).")
 
-            completePublishingJob(job.id, result: result, draft: draft)
+            startPublishStep(ManualPublishProgressStepID.recordResult, detail: "Saving the final publish status.")
+            completePublishingJob(job.id, result: result, draft: refreshedDraft)
             try await repository.saveOverview(overview)
+            completePublishStep(ManualPublishProgressStepID.recordResult, detail: "Publish status saved.")
+            finishManualPublishProgress()
             createWorkflowMessage = settings.postAsDraft ? "Sent to TikTok for completion." : "Published to TikTok."
             lastErrorMessage = nil
-            logger.info("Manual TikTok publish completed jobID=\(job.id.uuidString, privacy: .public) publishID=\(result.platformPostID, privacy: .public)")
+            logPublish("Manual TikTok publish completed jobID=\(job.id.uuidString) publishID=\(result.platformPostID)")
         } catch {
             if let activeJobID {
                 failPublishingJob(activeJobID, error: error)
@@ -583,7 +614,9 @@ final class FlickAppModel {
             }
             createWorkflowMessage = nil
             lastErrorMessage = error.localizedDescription
-            logger.error("Manual TikTok publish failed draftID=\(draftID.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            failCurrentPublishStep(error)
+            finishManualPublishProgress(errorMessage: error.localizedDescription)
+            logPublish("Manual TikTok publish failed draftID=\(draftID.uuidString) \(publishErrorDiagnostics(for: error))")
         }
     }
 
@@ -981,40 +1014,15 @@ private extension FlickAppModel {
         }
     }
 
-    func ensureFinalGeneratedImages(for draftID: UUID) async throws {
-        guard let draftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) else {
-            throw SlideshowCreationError.missingDraft
-        }
-
-        let assetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
-        let slideIDsNeedingFinal = overview.drafts[draftIndex].slides
-            .filter { slide in
-                guard let assetID = slide.imageAssetID, let asset = assetsByID[assetID] else {
-                    return true
-                }
-                guard asset.hasAvailableMediaLocation else {
-                    return true
-                }
-                return !SlideshowImageGenerationSettings.finalExport.isSatisfied(by: asset)
-            }
-            .map(\.id)
-
-        for slideID in slideIDsNeedingFinal {
-            try await generateImage(for: slideID, in: draftID, instruction: nil, settings: .finalExport)
-        }
-    }
-
     func renderImageSequenceForPublish(for draftID: UUID) async throws -> [UUID] {
-        createWorkflowMessage = "Updating completed slide images..."
-        try await ensureFinalGeneratedImages(for: draftID)
-
         guard let draftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) else {
             throw SlideshowCreationError.missingDraft
         }
 
-        createWorkflowMessage = "Rendering Flick text overlays..."
+        startPublishStep(ManualPublishProgressStepID.renderImages, detail: "Rendering the current edited slides.")
+        createWorkflowMessage = "Snapshotting edited slides..."
         let draft = overview.drafts[draftIndex]
-        logger.info("Rendering publish image sequence draftID=\(draftID.uuidString, privacy: .public) slideCount=\(draft.slides.count, privacy: .public)")
+        logPublish("Rendering publish image sequence draftID=\(draftID.uuidString) slideCount=\(draft.slides.count)")
         let renderedImages = try await TextOverlayRenderService(renderDirectory: configuration.renderDirectory)
             .renderImages(
                 from: draft,
@@ -1024,10 +1032,13 @@ private extension FlickAppModel {
                     height: SlideshowImageGenerationSettings.finalExport.height
                 )
             )
+        completePublishStep(ManualPublishProgressStepID.renderImages, detail: "Snapshot \(renderedImages.count) edited slides.")
 
         createWorkflowMessage = "Uploading rendered images..."
         var renderedAssetIDs: [UUID] = []
         for renderedImage in renderedImages {
+            let uploadStepID = ManualPublishProgressStepID.uploadSlide(renderedImage.slideID)
+            startPublishStep(uploadStepID, detail: "Uploading rendered image to Supabase.")
             let data = try Data(contentsOf: renderedImage.fileURL)
             let assetID = UUID()
             let path = renderedStoragePath(draftID: draftID, slideID: renderedImage.slideID, assetID: assetID)
@@ -1058,6 +1069,7 @@ private extension FlickAppModel {
             )
             overview.assets.insert(asset, at: 0)
             renderedAssetIDs.append(assetID)
+            completePublishStep(uploadStepID, detail: "Uploaded rendered image to Supabase.")
         }
 
         if let refreshedDraftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) {
@@ -1066,7 +1078,7 @@ private extension FlickAppModel {
         }
 
         try await repository.saveOverview(overview)
-        logger.info("Rendered publish image sequence draftID=\(draftID.uuidString, privacy: .public) renderedCount=\(renderedAssetIDs.count, privacy: .public)")
+        logPublish("Rendered publish image sequence draftID=\(draftID.uuidString) renderedCount=\(renderedAssetIDs.count)")
         return renderedAssetIDs
     }
 
@@ -1149,6 +1161,15 @@ private extension FlickAppModel {
             )
         }
 
+        if let error = error as? TikTokOAuthTokenError {
+            return PlatformFailure(
+                kind: .authExpired,
+                message: error.localizedDescription,
+                suggestedFix: suggestedFix(for: .authExpired),
+                rawResponse: error.diagnosticDescription
+            )
+        }
+
         return PlatformFailure(
             kind: .unknownServerError,
             message: error.localizedDescription,
@@ -1199,6 +1220,65 @@ private extension FlickAppModel {
         case .unknownServerError:
             "Check the platform response and retry after the service recovers."
         }
+    }
+
+    func startPublishStep(_ id: String, detail: String) {
+        updatePublishStep(id, state: .current, detail: detail)
+    }
+
+    func completePublishStep(_ id: String, detail: String) {
+        updatePublishStep(id, state: .completed, detail: detail)
+    }
+
+    func updatePublishStep(_ id: String, state: ManualPublishProgressStepState, detail: String) {
+        guard
+            var progress = manualPublishProgress,
+            let stepIndex = progress.steps.firstIndex(where: { $0.id == id })
+        else {
+            return
+        }
+
+        progress.steps[stepIndex].state = state
+        progress.steps[stepIndex].detail = detail
+        progress.steps[stepIndex].updatedAt = Date()
+        manualPublishProgress = progress
+        logPublish("\(progress.steps[stepIndex].title): \(state.rawValue) - \(detail)")
+    }
+
+    func failCurrentPublishStep(_ error: Error) {
+        guard var progress = manualPublishProgress else { return }
+        let stepIndex = progress.steps.firstIndex { $0.state == .current }
+            ?? progress.steps.firstIndex { $0.state == .pending }
+
+        guard let stepIndex else { return }
+        progress.steps[stepIndex].state = .failed
+        progress.steps[stepIndex].detail = error.localizedDescription
+        progress.steps[stepIndex].updatedAt = Date()
+        progress.errorMessage = error.localizedDescription
+        manualPublishProgress = progress
+        logPublish("\(progress.steps[stepIndex].title): failed - \(error.localizedDescription)")
+    }
+
+    func finishManualPublishProgress(errorMessage: String? = nil) {
+        guard var progress = manualPublishProgress else { return }
+        progress.finishedAt = Date()
+        progress.errorMessage = errorMessage
+        manualPublishProgress = progress
+    }
+
+    func logPublish(_ message: String) {
+        logger.info("[FlickPublish] \(message, privacy: .public)")
+        print("[FlickPublish] \(message)")
+    }
+
+    func publishErrorDiagnostics(for error: Error) -> String {
+        if let error = error as? TikTokPublishAPIError {
+            return "error=\(error.localizedDescription) details=\(error.diagnosticDescription)"
+        }
+        if let error = error as? TikTokOAuthTokenError {
+            return "error=\(error.localizedDescription) details=\(error.diagnosticDescription)"
+        }
+        return "error=\(error.localizedDescription)"
     }
 
     func applyGenerationFailure(_ error: Error, slideID: UUID, draftID: UUID) async {
@@ -1352,7 +1432,7 @@ private extension FlickAppModel {
         Template niche: \(template.niche).
         Creator profile: @\(template.profile).
         Template context: \(template.subtitle).
-        Preserve the template's pacing, composition rhythm, safe-area behavior, and style guide. Create a plan that can generate one clean vertical 9:16 background image per slide with Flick-rendered editable text.
+        Preserve the template's pacing, composition rhythm, safe-area behavior, and style guide. Create a plan that can generate one clean vertical portrait background image per slide with Flick-rendered editable text.
         """
     }
 }

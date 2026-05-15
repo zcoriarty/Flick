@@ -3,7 +3,7 @@
 //  Flick
 //
 
-enum TikTokAudience: CaseIterable, Identifiable, Hashable {
+enum TikTokAudience: String, CaseIterable, Identifiable, Hashable {
     case publicEveryone
     case friendsOnly
     case selfOnly
