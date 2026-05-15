@@ -148,6 +148,12 @@ struct CreateView: View {
                     selectAction: { draftID in
                         appModel.selectCreateDraft(id: draftID)
                         updateSelectedSlide(using: appModel)
+                    },
+                    deleteAction: { draftID in
+                        Task { @MainActor in
+                            await appModel.deleteCreateDraft(id: draftID)
+                            updateSelectedSlide(using: appModel)
+                        }
                     }
                 )
             case .slideEditor:

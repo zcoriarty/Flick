@@ -12,6 +12,7 @@ struct CreateDraftsSheet: View {
     var assetsByID: [UUID: MediaAsset]
     var selectedDraftID: UUID?
     var selectAction: (UUID) -> Void
+    var deleteAction: (UUID) -> Void
 
     private var sortedDrafts: [SlideshowDraft] {
         drafts.sorted { $0.updatedAt > $1.updatedAt }
@@ -41,6 +42,13 @@ struct CreateDraftsSheet: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    deleteAction(draft.id)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
                         }
                     }
                 }

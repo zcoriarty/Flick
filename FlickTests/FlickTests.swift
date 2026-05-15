@@ -113,6 +113,59 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(loadedAsset.publicURL, asset.publicURL)
     }
 
+    func testDeletingCreateDraftRemovesDraftSlidesAndDraftOwnedAssetsFromCoreData() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let persistenceController = PersistenceController(inMemory: true)
+        let context = persistenceController.container.viewContext
+        let repository = CoreDataFlickRepository(
+            context: context,
+            cloudAvailability: { false }
+        )
+        let generatedAsset = makeMediaAsset(
+            source: .generated,
+            localFilePath: "/tmp/flick-generated-\(UUID().uuidString).png",
+            now: now
+        )
+        let renderedAsset = makeMediaAsset(
+            source: .rendered,
+            localFilePath: "/tmp/flick-rendered-\(UUID().uuidString).png",
+            now: now
+        )
+        let uploadedAsset = makeMediaAsset(
+            source: .uploaded,
+            localFilePath: "/tmp/flick-uploaded-\(UUID().uuidString).png",
+            now: now
+        )
+        var draft = makeSlideshowDraft(
+            slides: [
+                makeSlide(imageAssetID: generatedAsset.id, generationStatus: .complete, now: now),
+                makeSlide(imageAssetID: uploadedAsset.id, generationStatus: .complete, now: now)
+            ],
+            now: now
+        )
+        draft.exportedImageAssetIDs = [renderedAsset.id]
+        var state = FlickEmptyState.make(now: now)
+        state.assets = [generatedAsset, renderedAsset, uploadedAsset]
+        state.drafts = [draft]
+
+        try await repository.saveOverview(state)
+
+        let model = FlickAppModel(repository: repository, configuration: .current)
+        await model.refresh()
+        model.selectCreateDraft(id: draft.id)
+        await model.deleteCreateDraft(id: draft.id)
+        let loaded = try await repository.loadOverview()
+
+        XCTAssertNil(model.activeCreateDraftID)
+        XCTAssertTrue(model.overview.drafts.isEmpty)
+        XCTAssertTrue(loaded.drafts.isEmpty)
+        XCTAssertEqual(Set(model.overview.assets.map(\.id)), [uploadedAsset.id])
+        XCTAssertEqual(Set(loaded.assets.map(\.id)), [uploadedAsset.id])
+        XCTAssertEqual(try managedObjectCount(entityName: "CDSlideshowDraft", in: context), 0)
+        XCTAssertEqual(try managedObjectCount(entityName: "CDSlide", in: context), 0)
+        XCTAssertEqual(try managedObjectCount(entityName: "CDAsset", in: context), 1)
+    }
+
     func testGeneratedAssetWithMissingLocalFileCanUsePublicURL() throws {
         let asset = makeMediaAsset(
             source: .generated,
@@ -488,6 +541,11 @@ private func makeMediaAsset(
         createdAt: now,
         updatedAt: now
     )
+}
+
+private func managedObjectCount(entityName: String, in context: NSManagedObjectContext) throws -> Int {
+    let request = NSFetchRequest<NSFetchRequestResult>(entityName: entityName)
+    return try context.count(for: request)
 }
 
 @MainActor

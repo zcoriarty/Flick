@@ -111,9 +111,51 @@ final class FlickAppModel {
         activeCreateDraftID = nil
     }
 
+    func deleteCreateDraft(id draftID: UUID) async {
+        guard
+            let draftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }),
+            overview.drafts[draftIndex].isAvailableInCreateDrafts
+        else {
+            return
+        }
+
+        let previousOverview = overview
+        let previousActiveCreateDraftID = activeCreateDraftID
+        let deletedDraft = overview.drafts.remove(at: draftIndex)
+
+        if activeCreateDraftID == draftID {
+            activeCreateDraftID = nil
+        }
+        removeDraftOwnedMediaAssets(referencedBy: deletedDraft)
+
+        do {
+            try await repository.saveOverview(overview)
+            lastErrorMessage = nil
+        } catch {
+            overview = previousOverview
+            activeCreateDraftID = previousActiveCreateDraftID
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
     private func clearActiveCreateDraftIfUnavailable() {
         guard activeCreateDraftID != nil, activeCreateDraft == nil else { return }
         activeCreateDraftID = nil
+    }
+
+    private func removeDraftOwnedMediaAssets(referencedBy deletedDraft: SlideshowDraft) {
+        let deletedAssetIDs = deletedDraft.referencedAssetIDs
+        guard !deletedAssetIDs.isEmpty else { return }
+
+        let retainedAssetIDs = overview.drafts.reduce(into: Set<UUID>()) { result, draft in
+            result.formUnion(draft.referencedAssetIDs)
+        }
+
+        overview.assets.removeAll { asset in
+            deletedAssetIDs.contains(asset.id)
+                && !retainedAssetIDs.contains(asset.id)
+                && asset.source != .uploaded
+        }
     }
 
     func toggleAutomationPaused() {
@@ -1087,6 +1129,12 @@ private extension FlickAppModel {
         Template context: \(template.subtitle).
         Preserve the template's pacing, composition rhythm, safe-area behavior, and style guide. Create a plan that can generate one clean vertical 9:16 background image per slide with Flick-rendered editable text.
         """
+    }
+}
+
+private extension SlideshowDraft {
+    var referencedAssetIDs: Set<UUID> {
+        Set(slides.compactMap(\.imageAssetID)).union(exportedImageAssetIDs)
     }
 }
 

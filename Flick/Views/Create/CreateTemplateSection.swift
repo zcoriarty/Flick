@@ -87,11 +87,11 @@ struct AnalyzeTemplateSection: View {
                 }
                 .frame(maxWidth: .infinity)
             }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 0, leading: -16, bottom: 0, trailing: -16))
             .buttonStyle(.glassProminent)
             .controlSize(.large)
             .disabled(isPlanning)
-            .listRowBackground(Color.clear)
-            .padding(.top, -12)
         }
     }
 }
