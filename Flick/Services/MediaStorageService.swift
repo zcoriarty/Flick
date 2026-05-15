@@ -54,6 +54,7 @@ struct SupabaseSessionStatus: Hashable {
     enum Mode: String, Hashable {
         case authenticated = "Authenticated"
         case serviceRole = "Service role"
+        case apiKey = "API key"
     }
 
     var mode: Mode
@@ -67,6 +68,8 @@ struct SupabaseSessionStatus: Hashable {
             didCreateNewSession ? "Created anonymous auth session" : "Using existing auth session"
         case .serviceRole:
             "Using service role key; auth session skipped"
+        case .apiKey:
+            "Using Supabase API key; auth session skipped"
         }
     }
 }
@@ -74,6 +77,7 @@ struct SupabaseSessionStatus: Hashable {
 struct SupabaseStorageSmokeTestResult: Hashable {
     var bucket: String
     var path: String
+    var createdBuckets: [String]
     var sessionStatus: SupabaseSessionStatus
     var objectExists: Bool
     var publicURL: URL
@@ -103,7 +107,8 @@ struct SupabaseStorageSmokeTestResult: Hashable {
         let publicAccess = publicURLAccessText.lowercased()
         let signedAccess = signedURLAccessText.lowercased()
         let cleanup = cleanupSucceeded ? "cleanup succeeded" : "cleanup needs attention"
-        return "Supabase smoke test \(outcome); public URL is \(publicAccess); signed URL is \(signedAccess); \(cleanup)."
+        let bucketSetup = createdBuckets.isEmpty ? "no buckets created" : "created buckets: \(createdBuckets.joined(separator: ", "))"
+        return "Supabase smoke test \(outcome); public URL is \(publicAccess); signed URL is \(signedAccess); \(cleanup); \(bucketSetup)."
     }
 
     private func isHTTPStatusSuccessful(_ statusCode: Int?) -> Bool {
@@ -148,6 +153,7 @@ struct SupabaseStorageService: MediaStorageProviding {
     func uploadAsset(_ asset: LocalMediaAsset, bucket: String, path: String) async throws -> RemoteMediaAsset {
         let client = try configuredClient()
         _ = try await ensureAuthenticatedSession()
+        _ = try await ensureBucketsExist([bucket])
 
         try await client.storage
             .from(bucket)
@@ -200,17 +206,21 @@ struct SupabaseStorageService: MediaStorageProviding {
             )
         }
 
-        do {
-            let session = try await client.auth.session
+        if let session = client.auth.currentSession, !session.isExpired {
             return sessionStatus(for: session, didCreateNewSession: false)
-        } catch {
-            let session = try await client.auth.signInAnonymously()
-            return sessionStatus(for: session, didCreateNewSession: true)
         }
+
+        return SupabaseSessionStatus(
+            mode: .apiKey,
+            userID: nil,
+            expiresAt: nil,
+            didCreateNewSession: false
+        )
     }
 
     func runSmokeTest(
         bucket: String,
+        requiredBuckets: [String] = [],
         path: String = "flick-smoke-tests/\(UUID().uuidString).txt",
         signedURLExpiresIn: TimeInterval = 600
     ) async throws -> SupabaseStorageSmokeTestResult {
@@ -224,6 +234,7 @@ struct SupabaseStorageService: MediaStorageProviding {
         )
 
         let sessionStatus = try await ensureAuthenticatedSession()
+        let createdBuckets = try await ensureBucketsExist(uniqueBuckets(requiredBuckets + [bucket]))
         _ = try await uploadAsset(asset, bucket: bucket, path: path)
         let objectExists = try await client.storage.from(bucket).exists(path: path)
         let publicURL = try publicURL(bucket: bucket, path: path)
@@ -242,6 +253,7 @@ struct SupabaseStorageService: MediaStorageProviding {
         return SupabaseStorageSmokeTestResult(
             bucket: bucket,
             path: path,
+            createdBuckets: createdBuckets,
             sessionStatus: sessionStatus,
             objectExists: objectExists,
             publicURL: publicURL,
@@ -262,6 +274,29 @@ struct SupabaseStorageService: MediaStorageProviding {
             throw MediaStorageError.missingSupabaseClient
         }
         return client
+    }
+
+    private func ensureBucketsExist(_ buckets: [String]) async throws -> [String] {
+        let client = try configuredClient()
+        let requestedBuckets = uniqueBuckets(buckets)
+        guard !requestedBuckets.isEmpty else { return [] }
+
+        let existingBucketIDs = Set(try await client.storage.listBuckets().map(\.id))
+        var createdBuckets: [String] = []
+
+        for bucket in requestedBuckets where !existingBucketIDs.contains(bucket) {
+            try await client.storage.createBucket(bucket, options: BucketOptions(public: true))
+            createdBuckets.append(bucket)
+        }
+
+        return createdBuckets
+    }
+
+    private func uniqueBuckets(_ buckets: [String]) -> [String] {
+        var seenBuckets = Set<String>()
+        return buckets
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seenBuckets.insert($0).inserted }
     }
 
     private func sessionStatus(for session: Session, didCreateNewSession: Bool) -> SupabaseSessionStatus {
@@ -298,14 +333,14 @@ private extension Dictionary where Key == String, Value == String {
     }
 
     func supabaseAPIKey() -> SupabaseAPIKey? {
+        if let value = nonEmptyValue("SUPABASE_SERVICE_ROLE_KEY") {
+            return (value, .serviceRole)
+        }
         if let value = nonEmptyValue("SUPABASE_PUBLISHABLE_KEY") {
             return (value, .publishable)
         }
         if let value = nonEmptyValue("SUPABASE_ANON_KEY") {
             return (value, .anon)
-        }
-        if let value = nonEmptyValue("SUPABASE_SERVICE_ROLE_KEY") {
-            return (value, .serviceRole)
         }
         return nil
     }

@@ -7,8 +7,6 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(FlickAppModel.self) private var appModel
-    @State private var credentialDrafts: [CredentialEditorDraft] = []
-    @State private var isClearCredentialsConfirmationPresented = false
 
     var body: some View {
         List {
@@ -26,75 +24,11 @@ struct SettingsView: View {
             }
             .sharedBackgroundVisibility(.hidden)
         }
-        .onAppear(perform: reloadCredentialDrafts)
     }
 
     private var credentialsSection: some View {
-        Section("Credentials") {
-            FlickSettingsRow(title: "Keychain credentials", systemImage: "lock.shield", iconColor: .blue) {
-                StatusBadge(title: "\(appModel.configuration.secureStoredCredentialKeys.count) stored", tint: .blue, systemImage: "key.fill")
-            }
-
-            if let credentialMessage = appModel.credentialMessage {
-                SettingsMessageRow(title: "Credential status", message: credentialMessage)
-            }
-
-            ForEach($credentialDrafts) { $draft in
-                CredentialEditorRow(
-                    draft: $draft,
-                    saveAction: {
-                        saveCredential(draft)
-                    },
-                    deleteAction: {
-                        deleteCredential(draft)
-                    }
-                )
-            }
-
-            Button("Clear stored credentials", role: .destructive) {
-                isClearCredentialsConfirmationPresented = true
-            }
-            .confirmationDialog("Clear stored credentials?", isPresented: $isClearCredentialsConfirmationPresented) {
-                Button("Clear stored", role: .destructive) {
-                    clearStoredCredentials()
-                }
-                Button("Cancel", role: .cancel) { }
-            } message: {
-                Text("This removes every credential Flick has stored in Keychain.")
-            }
-        }
-    }
-
-    private func clearStoredCredentials() {
-        if appModel.clearStoredCredentials() {
-            reloadCredentialDrafts()
-        }
-    }
-
-    private func saveCredential(_ draft: CredentialEditorDraft) {
-        if appModel.storeCredentialValue(draft.trimmedValue, for: draft.definition.key) {
-            reloadCredentialDrafts()
-        }
-    }
-
-    private func deleteCredential(_ draft: CredentialEditorDraft) {
-        if appModel.deleteStoredCredential(for: draft.definition.key) {
-            reloadCredentialDrafts()
-        }
-    }
-
-    private func reloadCredentialDrafts() {
-        let keychainValues = appModel.secureCredentialValues()
-
-        credentialDrafts = CredentialDefinition.supported.map { definition in
-            let storedValue = keychainValues[definition.key] ?? ""
-            return CredentialEditorDraft(
-                definition: definition,
-                value: storedValue,
-                originalValue: storedValue,
-                source: storedValue.isEmpty ? .missing : .secureStore,
-                isStoredSecurely: keychainValues[definition.key] != nil
-            )
+        Section {
+            CredentialsNavigationRow(storedCount: appModel.configuration.secureStoredCredentialKeys.count)
         }
     }
 
@@ -197,6 +131,36 @@ struct SettingsView: View {
     }
 }
 
+private struct CredentialsNavigationRow: View {
+    var storedCount: Int
+
+    var body: some View {
+        NavigationLink {
+            CredentialsView()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "lock.shield")
+                    .foregroundStyle(.blue)
+                    .frame(width: 24)
+
+                Text("Credentials")
+                    .foregroundStyle(.primary)
+
+                Spacer(minLength: 12)
+
+                StatusBadge(title: "\(storedCount) stored", tint: .blue, systemImage: "key.fill")
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 private struct DeviceRow: View {
     var device: FlickDevice
 
@@ -219,7 +183,7 @@ private struct DeviceRow: View {
     }
 }
 
-private struct SettingsMessageRow: View {
+struct SettingsMessageRow: View {
     var title: String
     var message: String
 
@@ -256,18 +220,17 @@ private struct SupabaseSmokeTestRow: View {
             }
 
             HStack(spacing: 10) {
-                StatusBadge(title: statusTitle, tint: statusTint, systemImage: statusSystemImage)
-                    .frame(maxWidth: .infinity)
-
-
                 Button(action: action) {
                     Label(isRunning ? "Testing" : "Run Test", systemImage: isRunning ? "clock" : "play.fill")
                 }
-                .frame(maxWidth: .infinity)
                 .buttonStyle(.glassProminent)
                 .foregroundStyle(Color.primary)
                 .disabled(isRunning)
+
+                StatusBadge(title: statusTitle, tint: statusTint, systemImage: statusSystemImage)
+                Spacer()
             }
+            .padding(.leading, 34)
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .contain)
@@ -301,6 +264,9 @@ private struct SupabaseSmokeTestDetailRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             SettingsMessageRow(title: "Session", message: sessionMessage)
+            if !result.createdBuckets.isEmpty {
+                SettingsMessageRow(title: "Buckets created", message: result.createdBuckets.joined(separator: ", "))
+            }
             SettingsMessageRow(title: "Object", message: "\(result.bucket)/\(result.path)")
             SettingsMessageRow(title: "Public URL", message: "\(result.publicURLAccessText): \(result.publicURL.absoluteString)")
             SettingsMessageRow(title: "Signed URL", message: "\(result.signedURLAccessText), expires \(result.signedURLExpiration.formatted(date: .abbreviated, time: .shortened))")

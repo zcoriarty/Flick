@@ -323,7 +323,8 @@ final class FlickAppModel {
 
         do {
             let result = try await SupabaseStorageService().runSmokeTest(
-                bucket: configuration.storageBuckets.generatedImages
+                bucket: configuration.storageBuckets.generatedImages,
+                requiredBuckets: configuration.storageBuckets.all
             )
             supabaseSmokeTestResult = result
             supabaseSmokeTestErrorMessage = nil
@@ -373,14 +374,14 @@ final class FlickAppModel {
     }
 
     private func supabaseStatusText() -> String {
+        if configuration.supabase.serviceRoleKeyPresent {
+            return "Service role key found locally"
+        }
         if configuration.supabase.publishableKeyPresent {
             return "Publishable key found locally"
         }
         if configuration.supabase.anonKeyPresent {
             return "Anon key found locally"
-        }
-        if configuration.supabase.serviceRoleKeyPresent {
-            return "Service role key found locally"
         }
         return "Supabase project credentials expected"
     }

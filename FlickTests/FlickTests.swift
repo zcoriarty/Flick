@@ -72,6 +72,32 @@ final class FlickTests: XCTestCase {
         )
     }
 
+    func testSupabaseStorageServicePrefersServiceRoleKeyWhenPresent() async throws {
+        let service = SupabaseStorageService(credentials: [
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_test",
+            "SUPABASE_SERVICE_ROLE_KEY": "service-role-key"
+        ])
+
+        let status = try await service.ensureAuthenticatedSession()
+
+        XCTAssertEqual(status.mode, .serviceRole)
+    }
+
+    func testStorageBucketsExposeEveryConfiguredBucket() {
+        let buckets = StorageBuckets()
+
+        XCTAssertEqual(
+            buckets.all,
+            [
+                buckets.generatedImages,
+                buckets.renderedVideos,
+                buckets.referenceImages,
+                buckets.thumbnails
+            ]
+        )
+    }
+
     func testTikTokAuthorizationParametersRequireUniversalLinkRedirect() throws {
         let configuration = TikTokConfiguration(values: [
             "TIKTOK_CLIENT_ID": "client-id",

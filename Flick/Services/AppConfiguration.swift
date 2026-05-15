@@ -114,6 +114,15 @@ struct StorageBuckets: Hashable {
     var renderedVideos = "flick-rendered-videos"
     var referenceImages = "flick-reference-images"
     var thumbnails = "flick-thumbnails"
+
+    var all: [String] {
+        [
+            generatedImages,
+            renderedVideos,
+            referenceImages,
+            thumbnails
+        ]
+    }
 }
 
 struct CredentialDefinition: Identifiable, Hashable {
