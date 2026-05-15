@@ -29,9 +29,9 @@ struct TemplateAnalysisService {
     private var instructions: String {
         """
         Convert the selected Flick slideshow template into a compact reusable style guide for AI-generated 16:9 social carousel images.
-        Capture visual style, polish, palette, lighting, safe-area patterns, subject placement, text density, pacing, slide roles, recurring motifs, what to reuse structurally, and what not to copy directly.
+        Capture visual style, polish, palette, lighting, recurring motifs, what to reuse structurally, and what not to copy directly.
         Do not copy people, exact products, logos, creators, captions, or readable text from the reference template.
-        Always include image generation rules that require no readable text, no captions, no logos, no watermarks, clean text-safe space, and slide-to-slide continuity.
+        Always include image generation rules that require no readable text, no captions, no logos, no watermarks, and slide-to-slide continuity.
         """
     }
 
@@ -47,7 +47,7 @@ struct TemplateAnalysisService {
                 - Product or medium: \(template.subtitle)
                 - Creator signature: \(template.creator.signature ?? "Unknown")
 
-                Analyze the attached slide images as style and pacing references only. Build a reusable guide for new content in the same structural rhythm.
+                Analyze the attached slide images as visual style references only. Build a reusable guide for new content in the same visual language.
                 """
             ]
         ]
@@ -55,7 +55,7 @@ struct TemplateAnalysisService {
         for slide in template.slides.prefix(12) {
             content.append([
                 "type": "input_text",
-                "text": "Reference slide \(slide.index). Use only composition, pacing, safe-area, lighting, and visual-style cues."
+                "text": "Reference slide \(slide.index). Use only composition, lighting, palette, motifs, and visual-style cues."
             ])
             content.append([
                 "type": "input_image",
@@ -86,14 +86,9 @@ struct TemplateAnalysisService {
             "visualTraits",
             "colorPalette",
             "lighting",
-            "safeAreaPatterns",
-            "subjectPlacement",
-            "textDensity",
-            "pacingAndSlideRoles",
             "recurringMotifs",
             "reuseStructurally",
             "avoidCopyingDirectly",
-            "compositionRules",
             "imageGenerationRules"
         ],
         "properties": [
@@ -101,23 +96,9 @@ struct TemplateAnalysisService {
             "visualTraits": stringArraySchema,
             "colorPalette": stringArraySchema,
             "lighting": ["type": "string"],
-            "safeAreaPatterns": stringArraySchema,
-            "subjectPlacement": ["type": "string"],
-            "textDensity": ["type": "string"],
-            "pacingAndSlideRoles": stringArraySchema,
             "recurringMotifs": stringArraySchema,
             "reuseStructurally": stringArraySchema,
             "avoidCopyingDirectly": stringArraySchema,
-            "compositionRules": [
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["safeTextArea", "subjectArea", "spacing"],
-                "properties": [
-                    "safeTextArea": ["type": "string"],
-                    "subjectArea": ["type": "string"],
-                    "spacing": ["type": "string"]
-                ]
-            ],
             "imageGenerationRules": stringArraySchema
         ]
     ]

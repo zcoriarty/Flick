@@ -57,7 +57,7 @@ struct CreatePlanSection: View {
                 CreatePlanTextSheet(
                     title: "Narrative Arc",
                     text: narrativeArcText,
-                    placeholder: "Hook -> Problem -> Proof -> Demo -> Benefit -> CTA"
+                    placeholder: "Opening -> Detail -> Proof -> Close"
                 )
             case .summary:
                 CreatePlanTextSheet(
@@ -244,14 +244,6 @@ private struct CreateStyleGuideSheet: View {
                     }
                 }
 
-                Section("Composition") {
-                    ForEach(StyleGuideField.compositionFields) { field in
-                        StyleGuideFieldRow(field: field, styleGuide: styleGuide) {
-                            editingField = field
-                        }
-                    }
-                }
-
                 Section("Rules") {
                     ForEach(StyleGuideField.ruleFields) { field in
                         StyleGuideFieldRow(field: field, styleGuide: styleGuide) {
@@ -392,16 +384,9 @@ private enum StyleGuideField: String, CaseIterable, Identifiable {
     case visualTraits
     case colorPalette
     case lighting
-    case safeAreaPatterns
-    case subjectPlacement
-    case textDensity
-    case pacingAndSlideRoles
     case recurringMotifs
     case reuseStructurally
     case avoidCopyingDirectly
-    case safeTextArea
-    case subjectArea
-    case spacing
     case imageGenerationRules
 
     var id: String { rawValue }
@@ -411,17 +396,7 @@ private enum StyleGuideField: String, CaseIterable, Identifiable {
         .visualTraits,
         .colorPalette,
         .lighting,
-        .safeAreaPatterns,
-        .subjectPlacement,
-        .textDensity,
-        .pacingAndSlideRoles,
         .recurringMotifs
-    ]
-
-    static let compositionFields: [StyleGuideField] = [
-        .safeTextArea,
-        .subjectArea,
-        .spacing
     ]
 
     static let ruleFields: [StyleGuideField] = [
@@ -436,16 +411,9 @@ private enum StyleGuideField: String, CaseIterable, Identifiable {
         case .visualTraits: "Visual traits"
         case .colorPalette: "Color palette"
         case .lighting: "Lighting"
-        case .safeAreaPatterns: "Safe areas"
-        case .subjectPlacement: "Subject placement"
-        case .textDensity: "Text density"
-        case .pacingAndSlideRoles: "Pacing"
         case .recurringMotifs: "Motifs"
         case .reuseStructurally: "Reuse structurally"
         case .avoidCopyingDirectly: "Avoid copying"
-        case .safeTextArea: "Default safe text area"
-        case .subjectArea: "Default subject area"
-        case .spacing: "Spacing"
         case .imageGenerationRules: "Image rules"
         }
     }
@@ -456,14 +424,9 @@ private enum StyleGuideField: String, CaseIterable, Identifiable {
         case .visualTraits: "eye"
         case .colorPalette: "paintpalette"
         case .lighting: "sun.max"
-        case .safeAreaPatterns, .safeTextArea: "rectangle.dashed"
-        case .subjectPlacement, .subjectArea: "person.crop.rectangle"
-        case .textDensity: "textformat.size"
-        case .pacingAndSlideRoles: "arrow.triangle.branch"
         case .recurringMotifs: "circle.hexagongrid"
         case .reuseStructurally: "rectangle.stack"
         case .avoidCopyingDirectly: "hand.raised"
-        case .spacing: "arrow.left.and.right"
         case .imageGenerationRules: "photo.badge.checkmark"
         }
     }
@@ -476,8 +439,6 @@ private enum StyleGuideField: String, CaseIterable, Identifiable {
         switch self {
         case .visualTraits,
              .colorPalette,
-             .safeAreaPatterns,
-             .pacingAndSlideRoles,
              .recurringMotifs,
              .reuseStructurally,
              .avoidCopyingDirectly,
@@ -501,16 +462,9 @@ private enum StyleGuideField: String, CaseIterable, Identifiable {
         case .visualTraits: guide.visualTraits.joined(separator: "\n")
         case .colorPalette: guide.colorPalette.joined(separator: "\n")
         case .lighting: guide.lighting
-        case .safeAreaPatterns: guide.safeAreaPatterns.joined(separator: "\n")
-        case .subjectPlacement: guide.subjectPlacement
-        case .textDensity: guide.textDensity
-        case .pacingAndSlideRoles: guide.pacingAndSlideRoles.joined(separator: "\n")
         case .recurringMotifs: guide.recurringMotifs.joined(separator: "\n")
         case .reuseStructurally: guide.reuseStructurally.joined(separator: "\n")
         case .avoidCopyingDirectly: guide.avoidCopyingDirectly.joined(separator: "\n")
-        case .safeTextArea: guide.compositionRules.safeTextArea
-        case .subjectArea: guide.compositionRules.subjectArea
-        case .spacing: guide.compositionRules.spacing
         case .imageGenerationRules: guide.imageGenerationRules.joined(separator: "\n")
         }
     }
@@ -525,26 +479,12 @@ private enum StyleGuideField: String, CaseIterable, Identifiable {
             guide.colorPalette = lines(from: value)
         case .lighting:
             guide.lighting = value
-        case .safeAreaPatterns:
-            guide.safeAreaPatterns = lines(from: value)
-        case .subjectPlacement:
-            guide.subjectPlacement = value
-        case .textDensity:
-            guide.textDensity = value
-        case .pacingAndSlideRoles:
-            guide.pacingAndSlideRoles = lines(from: value)
         case .recurringMotifs:
             guide.recurringMotifs = lines(from: value)
         case .reuseStructurally:
             guide.reuseStructurally = lines(from: value)
         case .avoidCopyingDirectly:
             guide.avoidCopyingDirectly = lines(from: value)
-        case .safeTextArea:
-            guide.compositionRules.safeTextArea = value
-        case .subjectArea:
-            guide.compositionRules.subjectArea = value
-        case .spacing:
-            guide.compositionRules.spacing = value
         case .imageGenerationRules:
             guide.imageGenerationRules = lines(from: value)
         }

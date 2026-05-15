@@ -134,7 +134,7 @@ private func renderPNGDataWithUIKit(background: CGImage, slide: Slide, width: In
 }
 
 private func drawOverlayTextUIKit(slide: Slide, canvasSize: CGSize) {
-    let text = slide.exportOverlayText
+    let text = slide.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
 
     let overlayRect = overlayContainerRect(for: slide.textPosition, canvasSize: canvasSize)
@@ -145,29 +145,17 @@ private func drawOverlayTextUIKit(slide: Slide, canvasSize: CGSize) {
     paragraph.lineBreakMode = .byWordWrapping
     paragraph.lineSpacing = 8
 
-    let headlineFont = UIFont.systemFont(ofSize: canvasSize.height * 0.058, weight: UIFont.Weight(slide.textStyle.weight))
-    let bodyFont = UIFont.systemFont(ofSize: canvasSize.height * 0.032, weight: .semibold)
-    let ctaFont = UIFont.systemFont(ofSize: canvasSize.height * 0.036, weight: .bold)
+    let headlineFont = UIFont.flickFont(
+        name: slide.textStyle.fontName,
+        size: canvasSize.height * 0.058,
+        weight: UIFont.Weight(slide.textStyle.weight)
+    )
     let foreground = UIColor(hex: slide.textStyle.foregroundHex)
 
     attributedText.append(NSAttributedString(
-        string: slide.overlayText,
+        string: text,
         attributes: [.font: headlineFont, .foregroundColor: foreground, .paragraphStyle: paragraph]
     ))
-    if !slide.supportingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        attributedText.append(NSAttributedString(string: "\n\n"))
-        attributedText.append(NSAttributedString(
-            string: slide.supportingText,
-            attributes: [.font: bodyFont, .foregroundColor: foreground.withAlphaComponent(0.92), .paragraphStyle: paragraph]
-        ))
-    }
-    if !slide.ctaText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        attributedText.append(NSAttributedString(string: "\n\n"))
-        attributedText.append(NSAttributedString(
-            string: slide.ctaText,
-            attributes: [.font: ctaFont, .foregroundColor: foreground, .paragraphStyle: paragraph]
-        ))
-    }
 
     let boundingSize = attributedText.boundingRect(
         with: textRect.size,
@@ -208,7 +196,7 @@ private func renderPNGDataWithAppKit(background: CGImage, slide: Slide, width: I
 }
 
 private func drawOverlayTextAppKit(slide: Slide, canvasSize: CGSize) {
-    let text = slide.exportOverlayText
+    let text = slide.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
 
     let overlayRect = overlayContainerRect(for: slide.textPosition, canvasSize: canvasSize)
@@ -220,28 +208,12 @@ private func drawOverlayTextAppKit(slide: Slide, canvasSize: CGSize) {
     paragraph.lineSpacing = 8
 
     let headlineFont = NSFont.systemFont(ofSize: canvasSize.height * 0.058, weight: NSFont.Weight(slide.textStyle.weight))
-    let bodyFont = NSFont.systemFont(ofSize: canvasSize.height * 0.032, weight: .semibold)
-    let ctaFont = NSFont.systemFont(ofSize: canvasSize.height * 0.036, weight: .bold)
     let foreground = NSColor(hex: slide.textStyle.foregroundHex)
 
     attributedText.append(NSAttributedString(
-        string: slide.overlayText,
+        string: text,
         attributes: [.font: headlineFont, .foregroundColor: foreground, .paragraphStyle: paragraph]
     ))
-    if !slide.supportingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        attributedText.append(NSAttributedString(string: "\n\n"))
-        attributedText.append(NSAttributedString(
-            string: slide.supportingText,
-            attributes: [.font: bodyFont, .foregroundColor: foreground.withAlphaComponent(0.92), .paragraphStyle: paragraph]
-        ))
-    }
-    if !slide.ctaText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        attributedText.append(NSAttributedString(string: "\n\n"))
-        attributedText.append(NSAttributedString(
-            string: slide.ctaText,
-            attributes: [.font: ctaFont, .foregroundColor: foreground, .paragraphStyle: paragraph]
-        ))
-    }
 
     let boundingSize = attributedText.boundingRect(
         with: textRect.size,
@@ -307,15 +279,6 @@ private func alignedTextRect(for textSize: CGSize, in rect: CGRect, position: Te
     return CGRect(x: x, y: y, width: width, height: height)
 }
 
-private extension Slide {
-    var exportOverlayText: String {
-        [overlayText, supportingText, ctaText]
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n")
-    }
-}
-
 private extension NSTextAlignment {
     init(_ value: String) {
         switch value.lowercased() {
@@ -340,6 +303,31 @@ private extension UIFont.Weight {
         case "black", "heavy": self = .black
         default: self = .bold
         }
+    }
+}
+
+private extension UIFont {
+    static func flickFont(name: String, size: CGFloat, weight: UIFont.Weight) -> UIFont {
+        let baseFont = UIFont.systemFont(ofSize: size, weight: weight)
+        let design: UIFontDescriptor.SystemDesign?
+        switch name.lowercased() {
+        case "system rounded", "rounded":
+            design = .rounded
+        case "serif":
+            design = .serif
+        case "monospaced", "monospace":
+            design = .monospaced
+        default:
+            design = nil
+        }
+
+        guard
+            let design,
+            let descriptor = baseFont.fontDescriptor.withDesign(design)
+        else {
+            return baseFont
+        }
+        return UIFont(descriptor: descriptor, size: size)
     }
 }
 

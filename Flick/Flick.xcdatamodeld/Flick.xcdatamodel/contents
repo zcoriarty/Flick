@@ -125,27 +125,19 @@
     </entity>
     <entity name="CDSlide" representedClassName="CDSlide" syncable="YES" codeGenerationType="class">
         <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
-        <attribute name="ctaText" optional="YES" attributeType="String"/>
         <attribute name="draftID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="duration" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
         <attribute name="generationErrorMessage" optional="YES" attributeType="String"/>
         <attribute name="generationStatus" optional="YES" attributeType="String"/>
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="imageAssetID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="index" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
-        <attribute name="mainSubjectArea" optional="YES" attributeType="String"/>
-        <attribute name="overlayText" optional="YES" attributeType="String"/>
         <attribute name="prompt" optional="YES" attributeType="String"/>
         <attribute name="promptVersion" optional="YES" attributeType="Integer 64" defaultValueString="1" usesScalarValueType="YES"/>
-        <attribute name="role" optional="YES" attributeType="String"/>
         <attribute name="selectedVisualSummary" optional="YES" attributeType="String"/>
-        <attribute name="supportingText" optional="YES" attributeType="String"/>
+        <attribute name="text" optional="YES" attributeType="String"/>
         <attribute name="textPosition" optional="YES" attributeType="String"/>
-        <attribute name="textSafeArea" optional="YES" attributeType="String"/>
         <attribute name="textStyleJSON" optional="YES" attributeType="String"/>
-        <attribute name="transition" optional="YES" attributeType="String"/>
         <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
-        <attribute name="visualGoal" optional="YES" attributeType="String"/>
     </entity>
     <entity name="CDSlideshowDraft" representedClassName="CDSlideshowDraft" syncable="YES" codeGenerationType="class">
         <attribute name="audience" optional="YES" attributeType="String"/>

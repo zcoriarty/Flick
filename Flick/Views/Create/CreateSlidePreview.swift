@@ -37,25 +37,11 @@ struct SlideOverlayPreview: View {
 
     private var overlayContent: some View {
         VStack(alignment: stackAlignment, spacing: 6) {
-            if !slide.overlayText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(slide.overlayText)
-                    .font(.system(size: 24, weight: .black, design: .rounded))
+            if !slide.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(slide.text)
+                    .font(.system(size: 24, weight: slide.textStyle.swiftUIFontWeight, design: slide.textStyle.swiftUIFontDesign))
                     .minimumScaleFactor(0.55)
                     .lineLimit(4)
-            }
-
-            if !slide.supportingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(slide.supportingText)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .minimumScaleFactor(0.7)
-                    .lineLimit(3)
-            }
-
-            if !slide.ctaText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(slide.ctaText)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .minimumScaleFactor(0.7)
-                    .lineLimit(2)
             }
         }
         .multilineTextAlignment(textAlignment)
@@ -114,6 +100,36 @@ struct SlideOverlayPreview: View {
             CGRect(x: size.width * 0.16, y: size.height * 0.2, width: size.width * 0.68, height: size.height * 0.6)
         case .bottom:
             CGRect(x: 0, y: size.height * 0.58, width: size.width, height: size.height * 0.42)
+        }
+    }
+}
+
+private extension SlideTextStyle {
+    var swiftUIFontDesign: Font.Design {
+        switch fontName.lowercased() {
+        case "system rounded", "rounded":
+            .rounded
+        case "serif":
+            .serif
+        case "monospaced", "monospace":
+            .monospaced
+        default:
+            .default
+        }
+    }
+
+    var swiftUIFontWeight: Font.Weight {
+        switch weight.lowercased() {
+        case "regular":
+            .regular
+        case "medium":
+            .medium
+        case "semibold":
+            .semibold
+        case "black", "heavy":
+            .black
+        default:
+            .bold
         }
     }
 }

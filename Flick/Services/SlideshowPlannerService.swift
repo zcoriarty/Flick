@@ -34,7 +34,6 @@ struct SlideshowPlannerService {
 
                         Create a complete slideshow plan. Generate exactly \(template.slideCount) planned slides and exactly one image prompt per slide.
                         Flick will render all text separately, so image prompts must forbid readable text, captions, logos, watermarks, fake UI text, and gibberish.
-                        Use Flick slide roles only: hook, problem, proof, demo, benefit, cta.
                         """
                     ]
                 ]
@@ -77,20 +76,15 @@ struct SlideshowPlannerService {
                         \(styleGuide.promptSummary)
 
                         Slide \(slide.index + 1):
-                        - Role: \(slide.role.rawValue)
-                        - Overlay text rendered by Flick: \(slide.overlayText)
-                        - Supporting text rendered by Flick: \(slide.supportingText)
-                        - CTA text rendered by Flick: \(slide.ctaText)
-                        - Current visual goal: \(slide.visualGoal)
-                        - Text-safe area: \(slide.textSafeArea)
-                        - Main subject area: \(slide.mainSubjectArea)
+                        - Text rendered by Flick: \(slide.text)
+                        - Text overlay position: \(slide.textPosition.rawValue)
                         - Previous selected slide summary: \(previousVisualSummary)
                         - Current image prompt: \(slide.prompt)
 
                         User edit instruction:
                         \(instruction)
 
-                        Return an updated visual goal, a single final image prompt, and a short expected visual summary.
+                        Return a single final image prompt and a short expected visual summary.
                         """
                     ]
                 ]
@@ -118,9 +112,7 @@ struct SlideshowPlannerService {
                         Keep it under 24 words. Describe visible subject, composition, color, lighting, motif, and open text area.
                         Do not evaluate quality or mention whether text/logos are present.
 
-                        Slide role: \(slide.role.rawValue)
-                        Slide visual goal: \(slide.visualGoal)
-                        Text-safe area: \(slide.textSafeArea)
+                        Text overlay position: \(slide.textPosition.rawValue)
                         """
                     ],
                     [
@@ -148,14 +140,14 @@ struct SlideshowPlannerService {
         Use the existing Flick template as style and pacing reference only.
         Do not create image variants or candidate grids.
         Every slide must have editable Flick-rendered overlay text and exactly one 16:9 image prompt.
-        The generated images are backgrounds and must leave clean low-detail safe areas for text overlays.
+        The generated images are backgrounds and must leave clean low-detail room for text overlays.
         """
     }
 
     private var promptRewriteInstructions: String {
         """
         Rewrite a single slide image prompt for gpt-image-2.
-        Preserve the selected Flick template style guide, slideshow continuity, current safe area, and user edit instruction.
+        Preserve the selected Flick template style guide, slideshow continuity, current text overlay position, and user edit instruction.
         The output prompt must request one 16:9 horizontal social slideshow image and must forbid readable text, captions, logos, watermarks, fake UI text, and gibberish.
         Do not propose variants.
         """
@@ -166,9 +158,7 @@ struct SlideshowPlannerService {
         "items": ["type": "string"]
     ]
 
-    private static let slideRoleEnum = ["hook", "problem", "proof", "demo", "benefit", "cta"]
     private static let textPositionEnum = ["left", "right", "top", "center", "bottom", "split"]
-    private static let transitionEnum = ["none", "dissolve", "push", "scale"]
 
     private static let planSchema: [String: Any] = [
         "type": "object",
@@ -206,29 +196,15 @@ struct SlideshowPlannerService {
                     "additionalProperties": false,
                     "required": [
                         "index",
-                        "role",
-                        "overlayText",
-                        "supportingText",
-                        "ctaText",
-                        "visualGoal",
+                        "text",
                         "textPosition",
-                        "textSafeArea",
-                        "mainSubjectArea",
-                        "transition",
                         "imagePrompt",
                         "selectedVisualSummary"
                     ],
                     "properties": [
                         "index": ["type": "integer"],
-                        "role": ["type": "string", "enum": slideRoleEnum],
-                        "overlayText": ["type": "string"],
-                        "supportingText": ["type": "string"],
-                        "ctaText": ["type": "string"],
-                        "visualGoal": ["type": "string"],
+                        "text": ["type": "string"],
                         "textPosition": ["type": "string", "enum": textPositionEnum],
-                        "textSafeArea": ["type": "string"],
-                        "mainSubjectArea": ["type": "string"],
-                        "transition": ["type": "string", "enum": transitionEnum],
                         "imagePrompt": ["type": "string"],
                         "selectedVisualSummary": ["type": "string"]
                     ]
@@ -240,10 +216,9 @@ struct SlideshowPlannerService {
     private static let promptRewriteSchema: [String: Any] = [
         "type": "object",
         "additionalProperties": false,
-        "required": ["imagePrompt", "visualGoal", "selectedVisualSummary"],
+        "required": ["imagePrompt", "selectedVisualSummary"],
         "properties": [
             "imagePrompt": ["type": "string"],
-            "visualGoal": ["type": "string"],
             "selectedVisualSummary": ["type": "string"]
         ]
     ]
@@ -272,12 +247,6 @@ enum SlideshowPromptBuilder {
         """
         Create a 16:9 horizontal social slideshow image for slide \(slide.index + 1).
 
-        Slide role:
-        \(slide.role.rawValue)
-
-        Visual goal:
-        \(slide.visualGoal)
-
         Template style:
         \(styleGuide.promptSummary)
 
@@ -285,8 +254,7 @@ enum SlideshowPromptBuilder {
         \(previousVisualSummary.isEmpty ? "This is the first slide; establish the motif cleanly." : previousVisualSummary)
 
         Composition:
-        - Leave \(slide.textSafeArea.isEmpty ? slide.textPosition.defaultSafeArea : slide.textSafeArea) clean and low-detail for Flick overlay text.
-        - Main subject area: \(slide.mainSubjectArea.isEmpty ? slide.textPosition.defaultSubjectArea : slide.mainSubjectArea).
+        - Keep the \(slide.textPosition.rawValue) overlay region clean and low-detail for Flick-rendered text.
         - Use the recurring motif: \(draft.globalVisualMotif).
         - Match the template lighting, palette, spacing, and polish.
 

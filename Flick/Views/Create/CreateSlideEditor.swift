@@ -4,6 +4,9 @@
 //
 
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct CreateSlideEditor: View {
     @Binding var draft: SlideshowDraft
@@ -235,45 +238,60 @@ private struct CreateSlideTextEditor: View {
     var body: some View {
         Section("Text") {
             CreateTextEditorRow(
-                title: "Headline",
+                title: "Text",
                 systemImage: "textformat.size",
-                text: $slide.overlayText,
-                placeholder: "Main overlay text Flick renders on top.",
-                minHeight: 82
-            )
-
-            CreateTextEditorRow(
-                title: "Supporting",
-                systemImage: "text.alignleft",
-                text: $slide.supportingText,
-                placeholder: "Optional supporting line.",
-                minHeight: 58
-            )
-
-            CreateTextEditorRow(
-                title: "CTA",
-                systemImage: "arrow.right.circle",
-                text: $slide.ctaText,
-                placeholder: "Optional CTA.",
-                minHeight: 50
+                text: $slide.text,
+                placeholder: "Overlay text Flick renders on top.",
+                minHeight: 120
             )
         }
 
         Section("Style") {
-            TextField(
-                "Font preset",
-                text: Binding(
-                    get: { slide.textStyle.fontPreset ?? "" },
-                    set: { slide.textStyle.fontPreset = $0 }
-                )
+            CreateSlideStyleMenuRow(
+                title: "Font",
+                systemImage: "textformat",
+                value: CreateSlideFontFamily(rawValue: slide.textStyle.fontName)?.title ?? slide.textStyle.fontName
+            ) {
+                ForEach(CreateSlideFontFamily.allCases) { fontFamily in
+                    Button {
+                        slide.textStyle.fontName = fontFamily.rawValue
+                    } label: {
+                        CreateMenuOptionLabel(
+                            title: fontFamily.title,
+                            isSelected: slide.textStyle.fontName == fontFamily.rawValue
+                        )
+                    }
+                }
+            }
+
+            CreateSlideStyleMenuRow(
+                title: "Weight",
+                systemImage: "bold",
+                value: CreateSlideFontWeight(rawValue: slide.textStyle.weight)?.title ?? slide.textStyle.weight
+            ) {
+                ForEach(CreateSlideFontWeight.allCases) { fontWeight in
+                    Button {
+                        slide.textStyle.weight = fontWeight.rawValue
+                    } label: {
+                        CreateMenuOptionLabel(
+                            title: fontWeight.title,
+                            isSelected: slide.textStyle.weight == fontWeight.rawValue
+                        )
+                    }
+                }
+            }
+
+            CreateSlideColorPickerRow(
+                title: "Text color",
+                systemImage: "paintbrush",
+                hex: $slide.textStyle.foregroundHex
             )
 
-            HStack(spacing: 12) {
-                TextField("Text color", text: $slide.textStyle.foregroundHex)
-                    .textInputAutocapitalization(.never)
-                TextField("Backdrop color", text: $slide.textStyle.backgroundHex)
-                    .textInputAutocapitalization(.never)
-            }
+            CreateSlideColorPickerRow(
+                title: "Backdrop color",
+                systemImage: "rectangle.fill",
+                hex: $slide.textStyle.backgroundHex
+            )
 
             Picker("Alignment", selection: $slide.textStyle.alignment) {
                 Text("Left").tag("left")
@@ -282,21 +300,7 @@ private struct CreateSlideTextEditor: View {
             }
             .pickerStyle(.segmented)
 
-            CreateSlideLayoutMenuRow(
-                title: "Role",
-                systemImage: "tag",
-                value: slide.role.displayName
-            ) {
-                ForEach(SlideRole.allCases) { role in
-                    Button {
-                        slide.role = role
-                    } label: {
-                        CreateMenuOptionLabel(title: role.displayName, isSelected: slide.role == role)
-                    }
-                }
-            }
-
-            CreateSlideLayoutMenuRow(
+            CreateSlideStyleMenuRow(
                 title: "Text position",
                 systemImage: "text.alignleft",
                 value: slide.textPosition.displayName
@@ -308,22 +312,6 @@ private struct CreateSlideTextEditor: View {
                         CreateMenuOptionLabel(title: position.displayName, isSelected: slide.textPosition == position)
                     }
                 }
-            }
-
-            TextField("Text-safe area", text: $slide.textSafeArea, axis: .vertical)
-                .lineLimit(1...2)
-                .textInputAutocapitalization(.never)
-
-            TextField("Subject area", text: $slide.mainSubjectArea, axis: .vertical)
-                .lineLimit(1...2)
-                .textInputAutocapitalization(.never)
-        }
-        .onChange(of: slide.textPosition) { _, newValue in
-            if slide.textSafeArea.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                slide.textSafeArea = newValue.defaultSafeArea
-            }
-            if slide.mainSubjectArea.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                slide.mainSubjectArea = newValue.defaultSubjectArea
             }
         }
     }
@@ -408,7 +396,28 @@ private struct CreateSlideImageEditor: View {
     }
 }
 
-private struct CreateSlideLayoutMenuRow<MenuContent: View>: View {
+private enum CreateSlideFontFamily: String, CaseIterable, Identifiable {
+    case system = "System"
+    case rounded = "System Rounded"
+    case serif = "Serif"
+    case monospaced = "Monospaced"
+
+    var id: String { rawValue }
+    var title: String { rawValue }
+}
+
+private enum CreateSlideFontWeight: String, CaseIterable, Identifiable {
+    case regular = "Regular"
+    case medium = "Medium"
+    case semibold = "Semibold"
+    case bold = "Bold"
+    case black = "Black"
+
+    var id: String { rawValue }
+    var title: String { rawValue }
+}
+
+private struct CreateSlideStyleMenuRow<MenuContent: View>: View {
     var title: String
     var systemImage: String
     var value: String
@@ -439,6 +448,33 @@ private struct CreateSlideLayoutMenuRow<MenuContent: View>: View {
     }
 }
 
+private struct CreateSlideColorPickerRow: View {
+    var title: String
+    var systemImage: String
+    @Binding var hex: String
+
+    var body: some View {
+        ColorPicker(
+            selection: Binding(
+                get: { Color(hex: hex) },
+                set: { hex = $0.flickHexString }
+            ),
+            supportsOpacity: false
+        ) {
+            FlickSettingsRow(
+                title: title,
+                systemImage: systemImage,
+                iconColor: .indigo
+            ) {
+                Text(hex.uppercased())
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityValue(hex.uppercased())
+    }
+}
+
 private struct CreateMenuOptionLabel: View {
     var title: String
     var isSelected: Bool
@@ -449,6 +485,29 @@ private struct CreateMenuOptionLabel: View {
         } else {
             Text(title)
         }
+    }
+}
+
+private extension Color {
+    var flickHexString: String {
+        #if canImport(UIKit)
+        let uiColor = UIColor(self)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard uiColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+            return "#FFFFFF"
+        }
+        return String(
+            format: "#%02X%02X%02X",
+            Int(red * 255),
+            Int(green * 255),
+            Int(blue * 255)
+        )
+        #else
+        return "#FFFFFF"
+        #endif
     }
 }
 

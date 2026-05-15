@@ -265,23 +265,15 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(slide.id, forKey: SlideKey.id)
         object.setValue(draftID, forKey: SlideKey.draftID)
         object.setValue(slide.index, forKey: SlideKey.index)
-        object.setValue(slide.role.rawValue, forKey: SlideKey.role)
         object.setValue(slide.imageAssetID, forKey: SlideKey.imageAssetID)
         object.setValue(slide.prompt, forKey: SlideKey.prompt)
-        object.setValue(slide.overlayText, forKey: SlideKey.overlayText)
-        object.setValue(slide.supportingText, forKey: SlideKey.supportingText)
-        object.setValue(slide.ctaText, forKey: SlideKey.ctaText)
-        object.setValue(slide.visualGoal, forKey: SlideKey.visualGoal)
+        object.setValue(slide.text, forKey: SlideKey.text)
         object.setValue(slide.textPosition.rawValue, forKey: SlideKey.textPosition)
-        object.setValue(slide.textSafeArea, forKey: SlideKey.textSafeArea)
-        object.setValue(slide.mainSubjectArea, forKey: SlideKey.mainSubjectArea)
         object.setValue(slide.textStyle, asJSONForKey: SlideKey.textStyleJSON)
         object.setValue(slide.selectedVisualSummary, forKey: SlideKey.selectedVisualSummary)
         object.setValue(slide.generationStatus.rawValue, forKey: SlideKey.generationStatus)
         object.setValue(slide.generationErrorMessage, forKey: SlideKey.generationErrorMessage)
         object.setValue(slide.promptVersion, forKey: SlideKey.promptVersion)
-        object.setValue(slide.duration, forKey: SlideKey.duration)
-        object.setValue(slide.transition.rawValue, forKey: SlideKey.transition)
         object.setValue(slide.createdAt, forKey: SlideKey.createdAt)
         object.setValue(slide.updatedAt, forKey: SlideKey.updatedAt)
     }
@@ -359,27 +351,19 @@ private enum DraftKey {
 
 private enum SlideKey {
     static let createdAt = "createdAt"
-    static let ctaText = "ctaText"
     static let draftID = "draftID"
-    static let duration = "duration"
     static let generationErrorMessage = "generationErrorMessage"
     static let generationStatus = "generationStatus"
     static let id = "id"
     static let imageAssetID = "imageAssetID"
     static let index = "index"
-    static let mainSubjectArea = "mainSubjectArea"
-    static let overlayText = "overlayText"
     static let prompt = "prompt"
     static let promptVersion = "promptVersion"
-    static let role = "role"
     static let selectedVisualSummary = "selectedVisualSummary"
-    static let supportingText = "supportingText"
+    static let text = "text"
     static let textPosition = "textPosition"
-    static let textSafeArea = "textSafeArea"
     static let textStyleJSON = "textStyleJSON"
-    static let transition = "transition"
     static let updatedAt = "updatedAt"
-    static let visualGoal = "visualGoal"
 }
 
 private extension MediaAsset {
@@ -485,13 +469,9 @@ private extension Slide {
     init?(managedObject: NSManagedObject) {
         guard
             let id = managedObject.value(forKey: SlideKey.id) as? UUID,
-            let roleRawValue = managedObject.value(forKey: SlideKey.role) as? String,
-            let role = SlideRole(rawValue: roleRawValue),
             let textPositionRawValue = managedObject.value(forKey: SlideKey.textPosition) as? String,
             let textPosition = TextPosition(rawValue: textPositionRawValue),
-            let textStyle = managedObject.decodedJSON(SlideTextStyle.self, forKey: SlideKey.textStyleJSON),
-            let transitionRawValue = managedObject.value(forKey: SlideKey.transition) as? String,
-            let transition = TransitionStyle(rawValue: transitionRawValue)
+            let textStyle = managedObject.decodedJSON(SlideTextStyle.self, forKey: SlideKey.textStyleJSON)
         else {
             return nil
         }
@@ -500,23 +480,15 @@ private extension Slide {
         self.init(
             id: id,
             index: managedObject.integerValue(forKey: SlideKey.index),
-            role: role,
             imageAssetID: managedObject.value(forKey: SlideKey.imageAssetID) as? UUID,
             prompt: managedObject.value(forKey: SlideKey.prompt) as? String ?? "",
-            overlayText: managedObject.value(forKey: SlideKey.overlayText) as? String ?? "",
-            supportingText: managedObject.value(forKey: SlideKey.supportingText) as? String ?? "",
-            ctaText: managedObject.value(forKey: SlideKey.ctaText) as? String ?? "",
-            visualGoal: managedObject.value(forKey: SlideKey.visualGoal) as? String ?? "",
+            text: managedObject.value(forKey: SlideKey.text) as? String ?? "",
             textPosition: textPosition,
-            textSafeArea: managedObject.value(forKey: SlideKey.textSafeArea) as? String ?? textPosition.defaultSafeArea,
-            mainSubjectArea: managedObject.value(forKey: SlideKey.mainSubjectArea) as? String ?? textPosition.defaultSubjectArea,
             textStyle: textStyle,
             selectedVisualSummary: managedObject.value(forKey: SlideKey.selectedVisualSummary) as? String ?? "",
             generationStatus: statusRawValue.flatMap(SlideGenerationStatus.init(rawValue:)) ?? .notStarted,
             generationErrorMessage: managedObject.value(forKey: SlideKey.generationErrorMessage) as? String,
             promptVersion: max(1, managedObject.integerValue(forKey: SlideKey.promptVersion)),
-            duration: managedObject.doubleValue(forKey: SlideKey.duration) ?? 1.5,
-            transition: transition,
             createdAt: managedObject.value(forKey: SlideKey.createdAt) as? Date ?? Date(),
             updatedAt: managedObject.value(forKey: SlideKey.updatedAt) as? Date ?? Date()
         )

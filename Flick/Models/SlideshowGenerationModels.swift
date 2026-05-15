@@ -10,14 +10,9 @@ struct TemplateStyleGuide: Codable, Hashable {
     var visualTraits: [String]
     var colorPalette: [String]
     var lighting: String
-    var safeAreaPatterns: [String]
-    var subjectPlacement: String
-    var textDensity: String
-    var pacingAndSlideRoles: [String]
     var recurringMotifs: [String]
     var reuseStructurally: [String]
     var avoidCopyingDirectly: [String]
-    var compositionRules: TemplateCompositionRules
     var imageGenerationRules: [String]
 
     static var empty: TemplateStyleGuide {
@@ -26,27 +21,12 @@ struct TemplateStyleGuide: Codable, Hashable {
             visualTraits: [],
             colorPalette: [],
             lighting: "",
-            safeAreaPatterns: [],
-            subjectPlacement: "",
-            textDensity: "",
-            pacingAndSlideRoles: [],
             recurringMotifs: [],
             reuseStructurally: [],
             avoidCopyingDirectly: [],
-            compositionRules: TemplateCompositionRules(
-                safeTextArea: "",
-                subjectArea: "",
-                spacing: ""
-            ),
             imageGenerationRules: []
         )
     }
-}
-
-struct TemplateCompositionRules: Codable, Hashable {
-    var safeTextArea: String
-    var subjectArea: String
-    var spacing: String
 }
 
 struct PlannedSlideshow: Codable, Hashable {
@@ -66,22 +46,14 @@ struct PlannedSlideshow: Codable, Hashable {
 
 struct PlannedSlide: Codable, Hashable {
     var index: Int
-    var role: SlideRole
-    var overlayText: String
-    var supportingText: String
-    var ctaText: String
-    var visualGoal: String
+    var text: String
     var textPosition: TextPosition
-    var textSafeArea: String
-    var mainSubjectArea: String
-    var transition: TransitionStyle
     var imagePrompt: String
     var selectedVisualSummary: String
 }
 
 struct SlidePromptRewrite: Codable, Hashable {
     var imagePrompt: String
-    var visualGoal: String
     var selectedVisualSummary: String
 }
 
@@ -124,8 +96,6 @@ extension TemplateStyleGuide {
             traits.isEmpty ? nil : "Visual traits: \(traits)",
             palette.isEmpty ? nil : "Palette: \(palette)",
             lighting.isEmpty ? nil : "Lighting: \(lighting)",
-            compositionRules.safeTextArea.isEmpty ? nil : "Safe area: \(compositionRules.safeTextArea)",
-            compositionRules.subjectArea.isEmpty ? nil : "Subject area: \(compositionRules.subjectArea)",
             rules.isEmpty ? nil : "Rules: \(rules)"
         ]
         .compactMap(\.self)
@@ -152,19 +122,6 @@ extension TemplateStyleGuide {
     }
 }
 
-extension SlideRole {
-    var displayName: String {
-        switch self {
-        case .hook: "Hook"
-        case .problem: "Problem"
-        case .proof: "Proof"
-        case .demo: "Demo"
-        case .benefit: "Benefit"
-        case .cta: "CTA"
-        }
-    }
-}
-
 extension SlideGenerationStatus {
     var displayName: String {
         switch self {
@@ -185,28 +142,6 @@ extension TextPosition {
         case .center: "Center"
         case .bottom: "Bottom"
         case .split: "Split"
-        }
-    }
-
-    var defaultSafeArea: String {
-        switch self {
-        case .left: "left 40%"
-        case .right: "right 40%"
-        case .top: "top 35%"
-        case .center: "center 50%"
-        case .bottom: "bottom 35%"
-        case .split: "left 45%"
-        }
-    }
-
-    var defaultSubjectArea: String {
-        switch self {
-        case .left: "right 60%"
-        case .right: "left 60%"
-        case .top: "lower 65%"
-        case .center: "outer edges"
-        case .bottom: "upper 65%"
-        case .split: "right 55%"
         }
     }
 }

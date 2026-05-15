@@ -123,17 +123,6 @@ enum SlideshowDraftStatus: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
-enum SlideRole: String, CaseIterable, Codable, Identifiable {
-    case hook
-    case problem
-    case proof
-    case demo
-    case benefit
-    case cta
-
-    var id: String { rawValue }
-}
-
 enum SlideGenerationStatus: String, CaseIterable, Codable, Identifiable {
     case notStarted = "not_started"
     case generating
@@ -150,15 +139,6 @@ enum TextPosition: String, CaseIterable, Codable, Identifiable {
     case center
     case bottom
     case split
-
-    var id: String { rawValue }
-}
-
-enum TransitionStyle: String, CaseIterable, Codable, Identifiable {
-    case none
-    case dissolve
-    case push
-    case scale
 
     var id: String { rawValue }
 }
@@ -335,74 +315,49 @@ struct SlideTextStyle: Codable, Hashable {
     var foregroundHex: String
     var backgroundHex: String
     var alignment: String
-    var fontPreset: String? = nil
 }
 
 struct Slide: Identifiable, Codable, Hashable {
     var id: UUID
     var index: Int
-    var role: SlideRole
     var imageAssetID: UUID?
     var prompt: String
-    var overlayText: String
-    var supportingText: String
-    var ctaText: String
-    var visualGoal: String
+    var text: String
     var textPosition: TextPosition
-    var textSafeArea: String
-    var mainSubjectArea: String
     var textStyle: SlideTextStyle
     var selectedVisualSummary: String
     var generationStatus: SlideGenerationStatus
     var generationErrorMessage: String?
     var promptVersion: Int
-    var duration: TimeInterval
-    var transition: TransitionStyle
     var createdAt: Date
     var updatedAt: Date
 
     init(
         id: UUID,
         index: Int,
-        role: SlideRole,
         imageAssetID: UUID?,
         prompt: String,
-        overlayText: String,
-        supportingText: String = "",
-        ctaText: String = "",
-        visualGoal: String = "",
+        text: String,
         textPosition: TextPosition,
-        textSafeArea: String = "",
-        mainSubjectArea: String = "",
         textStyle: SlideTextStyle,
         selectedVisualSummary: String = "",
         generationStatus: SlideGenerationStatus = .notStarted,
         generationErrorMessage: String? = nil,
         promptVersion: Int = 1,
-        duration: TimeInterval,
-        transition: TransitionStyle,
         createdAt: Date,
         updatedAt: Date
     ) {
         self.id = id
         self.index = index
-        self.role = role
         self.imageAssetID = imageAssetID
         self.prompt = prompt
-        self.overlayText = overlayText
-        self.supportingText = supportingText
-        self.ctaText = ctaText
-        self.visualGoal = visualGoal
+        self.text = text
         self.textPosition = textPosition
-        self.textSafeArea = textSafeArea
-        self.mainSubjectArea = mainSubjectArea
         self.textStyle = textStyle
         self.selectedVisualSummary = selectedVisualSummary
         self.generationStatus = generationStatus
         self.generationErrorMessage = generationErrorMessage
         self.promptVersion = promptVersion
-        self.duration = duration
-        self.transition = transition
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -410,23 +365,15 @@ struct Slide: Identifiable, Codable, Hashable {
     private enum CodingKeys: String, CodingKey {
         case id
         case index
-        case role
         case imageAssetID
         case prompt
-        case overlayText
-        case supportingText
-        case ctaText
-        case visualGoal
+        case text
         case textPosition
-        case textSafeArea
-        case mainSubjectArea
         case textStyle
         case selectedVisualSummary
         case generationStatus
         case generationErrorMessage
         case promptVersion
-        case duration
-        case transition
         case createdAt
         case updatedAt
     }
@@ -435,23 +382,15 @@ struct Slide: Identifiable, Codable, Hashable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         index = try container.decode(Int.self, forKey: .index)
-        role = try container.decode(SlideRole.self, forKey: .role)
         imageAssetID = try container.decodeIfPresent(UUID.self, forKey: .imageAssetID)
         prompt = try container.decode(String.self, forKey: .prompt)
-        overlayText = try container.decode(String.self, forKey: .overlayText)
-        supportingText = try container.decodeIfPresent(String.self, forKey: .supportingText) ?? ""
-        ctaText = try container.decodeIfPresent(String.self, forKey: .ctaText) ?? ""
-        visualGoal = try container.decodeIfPresent(String.self, forKey: .visualGoal) ?? ""
+        text = try container.decode(String.self, forKey: .text)
         textPosition = try container.decode(TextPosition.self, forKey: .textPosition)
-        textSafeArea = try container.decodeIfPresent(String.self, forKey: .textSafeArea) ?? ""
-        mainSubjectArea = try container.decodeIfPresent(String.self, forKey: .mainSubjectArea) ?? ""
         textStyle = try container.decode(SlideTextStyle.self, forKey: .textStyle)
         selectedVisualSummary = try container.decodeIfPresent(String.self, forKey: .selectedVisualSummary) ?? ""
         generationStatus = try container.decodeIfPresent(SlideGenerationStatus.self, forKey: .generationStatus) ?? .notStarted
         generationErrorMessage = try container.decodeIfPresent(String.self, forKey: .generationErrorMessage)
         promptVersion = try container.decodeIfPresent(Int.self, forKey: .promptVersion) ?? 1
-        duration = try container.decode(TimeInterval.self, forKey: .duration)
-        transition = try container.decode(TransitionStyle.self, forKey: .transition)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
     }

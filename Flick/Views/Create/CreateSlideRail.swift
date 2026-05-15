@@ -53,7 +53,7 @@ private struct SlideRailItem: View {
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(slide.role.displayName)
+                Text("Slide \(slide.index + 1)")
                     .font(.caption.weight(.semibold))
                     .lineLimit(1)
                 HStack(spacing: 5) {

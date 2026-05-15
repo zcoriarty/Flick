@@ -193,10 +193,9 @@ final class FlickAppModel {
             return Slide(
                 id: UUID(),
                 index: offset,
-                role: SlideRole.templateRole(at: offset, total: template.slides.count),
                 imageAssetID: asset.id,
                 prompt: "Use slide \(sourceSlide.index) from @\(template.profile) as the visual reference.",
-                overlayText: SlideRole.templateRole(at: offset, total: template.slides.count).templateOverlayText(index: offset),
+                text: "Slide \(offset + 1)",
                 textPosition: .center,
                 textStyle: SlideTextStyle(
                     fontName: "System Rounded",
@@ -205,8 +204,6 @@ final class FlickAppModel {
                     backgroundHex: "#111111",
                     alignment: "center"
                 ),
-                duration: 1.5,
-                transition: offset == 0 ? .none : .push,
                 createdAt: now,
                 updatedAt: now
             )
@@ -400,7 +397,6 @@ final class FlickAppModel {
             )
 
             let now = Date()
-            overview.drafts[draftIndex].slides[slideIndex].visualGoal = rewrite.visualGoal
             overview.drafts[draftIndex].slides[slideIndex].prompt = rewrite.imagePrompt
             overview.drafts[draftIndex].slides[slideIndex].selectedVisualSummary = rewrite.selectedVisualSummary
             overview.drafts[draftIndex].slides[slideIndex].promptVersion += 1
@@ -755,30 +751,21 @@ private extension FlickAppModel {
                 Slide(
                     id: UUID(),
                     index: offset,
-                    role: plannedSlide.role,
                     imageAssetID: nil,
                     prompt: plannedSlide.imagePrompt,
-                    overlayText: plannedSlide.overlayText,
-                    supportingText: plannedSlide.supportingText,
-                    ctaText: plannedSlide.ctaText,
-                    visualGoal: plannedSlide.visualGoal,
+                    text: plannedSlide.text,
                     textPosition: plannedSlide.textPosition,
-                    textSafeArea: plannedSlide.textSafeArea.isEmpty ? plannedSlide.textPosition.defaultSafeArea : plannedSlide.textSafeArea,
-                    mainSubjectArea: plannedSlide.mainSubjectArea.isEmpty ? plannedSlide.textPosition.defaultSubjectArea : plannedSlide.mainSubjectArea,
                     textStyle: SlideTextStyle(
                         fontName: "System Rounded",
                         weight: "Black",
                         foregroundHex: "#FFFFFF",
                         backgroundHex: "#111111",
-                        alignment: plannedSlide.textPosition == .right ? "right" : "left",
-                        fontPreset: "Bold social overlay"
+                        alignment: plannedSlide.textPosition == .right ? "right" : "left"
                     ),
                     selectedVisualSummary: plannedSlide.selectedVisualSummary,
                     generationStatus: .notStarted,
                     generationErrorMessage: nil,
                     promptVersion: 1,
-                    duration: 1.5,
-                    transition: plannedSlide.transition,
                     createdAt: now,
                     updatedAt: now
                 )
@@ -844,7 +831,6 @@ private extension FlickAppModel {
                     previousVisualSummary: previousSummary,
                     instruction: instruction
                 )
-                slide.visualGoal = rewrite.visualGoal
                 slide.prompt = rewrite.imagePrompt
                 slide.selectedVisualSummary = rewrite.selectedVisualSummary
                 slide.promptVersion += 1
@@ -906,7 +892,6 @@ private extension FlickAppModel {
                 let refreshedSlideIndex = overview.drafts[refreshedDraftIndex].slides.firstIndex(where: { $0.id == slideID })
             {
                 overview.drafts[refreshedDraftIndex].slides[refreshedSlideIndex].prompt = slide.prompt
-                overview.drafts[refreshedDraftIndex].slides[refreshedSlideIndex].visualGoal = slide.visualGoal
                 overview.drafts[refreshedDraftIndex].slides[refreshedSlideIndex].imageAssetID = assetID
                 overview.drafts[refreshedDraftIndex].slides[refreshedSlideIndex].generationStatus = .complete
                 overview.drafts[refreshedDraftIndex].slides[refreshedSlideIndex].generationErrorMessage = nil
@@ -1114,31 +1099,6 @@ private extension FlickAppModel {
         Template context: \(template.subtitle).
         Preserve the template's pacing, composition rhythm, safe-area behavior, and style guide. Create a plan that can generate one clean 16:9 background image per slide with Flick-rendered editable text.
         """
-    }
-}
-
-private extension SlideRole {
-    static func templateRole(at index: Int, total: Int) -> SlideRole {
-        if index == 0 { return .hook }
-        if index == total - 1 { return .cta }
-
-        switch index % 4 {
-        case 1: return .problem
-        case 2: return .proof
-        case 3: return .demo
-        default: return .benefit
-        }
-    }
-
-    func templateOverlayText(index: Int) -> String {
-        switch self {
-        case .hook: "Hook"
-        case .problem: "Problem"
-        case .proof: "Proof"
-        case .demo: "Demo"
-        case .benefit: "Benefit"
-        case .cta: "CTA"
-        }
     }
 }
 
