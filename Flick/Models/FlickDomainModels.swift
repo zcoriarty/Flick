@@ -312,17 +312,20 @@ struct MediaAsset: Identifiable, Codable, Hashable {
 struct SlideTextStyle: Codable, Hashable {
     var fontName: String
     var weight: String
+    var sizeScale: Double
     var foregroundHex: String
     var outlineColorHex: String
 
     init(
         fontName: String,
         weight: String,
+        sizeScale: Double = 1,
         foregroundHex: String,
         outlineColorHex: String = "#000000"
     ) {
         self.fontName = fontName
         self.weight = weight
+        self.sizeScale = sizeScale
         self.foregroundHex = foregroundHex
         self.outlineColorHex = outlineColorHex
     }
@@ -330,6 +333,7 @@ struct SlideTextStyle: Codable, Hashable {
     private enum CodingKeys: String, CodingKey {
         case fontName
         case weight
+        case sizeScale
         case foregroundHex
         case outlineColorHex
     }
@@ -338,6 +342,8 @@ struct SlideTextStyle: Codable, Hashable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         fontName = try container.decode(String.self, forKey: .fontName)
         weight = try container.decode(String.self, forKey: .weight)
+        let decodedSizeScale = try container.decodeIfPresent(Double.self, forKey: .sizeScale) ?? 1
+        sizeScale = min(max(decodedSizeScale, 0.7), 1.5)
         foregroundHex = try container.decode(String.self, forKey: .foregroundHex)
         outlineColorHex = try container.decodeIfPresent(String.self, forKey: .outlineColorHex) ?? "#000000"
     }

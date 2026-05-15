@@ -298,6 +298,10 @@ private struct CreateSlideTextEditor: View {
                     }
                 }
 
+                CreateSlideSizeSliderRow(
+                    value: $slide.textStyle.sizeScale
+                )
+
                 CreateSlideColorPickerRow(
                     title: "Text color",
                     systemImage: "paintbrush",
@@ -525,6 +529,32 @@ private struct CreateSlideColorPickerRow: View {
             }
         }
         .accessibilityValue(hex.uppercased())
+    }
+}
+
+private struct CreateSlideSizeSliderRow: View {
+    @Binding var value: Double
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            FlickSettingsRow(
+                title: "Size",
+                systemImage: "textformat.size",
+                iconColor: .indigo
+            ) {
+                Text(formattedValue)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+
+            Slider(value: $value, in: 0.7...1.5, step: 0.05)
+                .accessibilityLabel("Text size")
+                .accessibilityValue(formattedValue)
+        }
+    }
+
+    private var formattedValue: String {
+        "\(Int((value * 100).rounded()))%"
     }
 }
 

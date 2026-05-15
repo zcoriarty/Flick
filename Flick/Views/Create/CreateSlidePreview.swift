@@ -17,6 +17,7 @@ struct CreateSlidePreviewCanvas: View {
 
                 SlideOverlayPreview(slide: slide)
                     .frame(width: proxy.size.width, height: proxy.size.height)
+                    .id(slide.overlayPreviewID)
             }
             .clipShape(.rect(cornerRadius: 10))
         }
@@ -38,12 +39,11 @@ struct SlideOverlayPreview: View {
     private var overlayContent: some View {
         VStack(alignment: stackAlignment, spacing: 6) {
             if !slide.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(slide.text)
-                    .font(.system(size: 24, weight: slide.textStyle.swiftUIFontWeight, design: slide.textStyle.swiftUIFontDesign))
-                    .minimumScaleFactor(0.55)
-                    .lineLimit(4)
-                    .foregroundStyle(Color(hex: slide.textStyle.foregroundHex))
-                    .textOutline(Color(hex: slide.textStyle.outlineColorHex))
+                OutlinedSlideText(
+                    text: slide.text,
+                    textStyle: slide.textStyle,
+                    textAlignment: textAlignment
+                )
             }
         }
         .multilineTextAlignment(textAlignment)
@@ -104,17 +104,118 @@ struct SlideOverlayPreview: View {
     }
 }
 
-private extension View {
-    func textOutline(_ color: Color) -> some View {
-        self
-            .shadow(color: color, radius: 0, x: -1, y: -1)
-            .shadow(color: color, radius: 0, x: 0, y: -1)
-            .shadow(color: color, radius: 0, x: 1, y: -1)
-            .shadow(color: color, radius: 0, x: -1, y: 0)
-            .shadow(color: color, radius: 0, x: 1, y: 0)
-            .shadow(color: color, radius: 0, x: -1, y: 1)
-            .shadow(color: color, radius: 0, x: 0, y: 1)
-            .shadow(color: color, radius: 0, x: 1, y: 1)
+private struct OutlinedSlideText: View {
+    private let symbolID = "slide-text-stroke"
+
+    var text: String
+    var textStyle: SlideTextStyle
+    var textAlignment: TextAlignment
+
+    var body: some View {
+        baseText
+            .foregroundStyle(Color(hex: textStyle.foregroundHex))
+            .padding(strokeWidth * 2)
+            .background {
+                GeometryReader { proxy in
+                    Color(hex: textStyle.outlineColorHex)
+                        .mask {
+                            strokeMask(in: proxy.size)
+                        }
+                }
+            }
+            .id(renderID)
+    }
+
+    private var baseText: some View {
+        Text(text)
+            .font(.system(
+                size: fontSize,
+                weight: textStyle.swiftUIFontWeight,
+                design: textStyle.swiftUIFontDesign
+            ))
+            .minimumScaleFactor(0.55)
+            .lineLimit(4)
+            .multilineTextAlignment(textAlignment)
+    }
+
+    private var fontSize: CGFloat {
+        CGFloat(24 * textStyle.sizeScale)
+    }
+
+    private var strokeWidth: CGFloat {
+        CGFloat(1.45 * textStyle.sizeScale)
+    }
+
+    private var textFrameAlignment: Alignment {
+        switch textAlignment {
+        case .leading:
+            .leading
+        case .trailing:
+            .trailing
+        case .center:
+            .center
+        }
+    }
+
+    private var renderID: String {
+        [
+            text,
+            textStyle.fontName,
+            textStyle.weight,
+            String(format: "%.2f", textStyle.sizeScale),
+            textStyle.foregroundHex,
+            textStyle.outlineColorHex,
+            textAlignment.renderID
+        ].joined(separator: "|")
+    }
+
+    private func strokeMask(in size: CGSize) -> some View {
+        Canvas { context, size in
+            context.addFilter(.alphaThreshold(min: 0.01))
+            if let resolvedView = context.resolveSymbol(id: symbolID) {
+                context.draw(
+                    resolvedView,
+                    at: CGPoint(x: size.width / 2, y: size.height / 2)
+                )
+            }
+        } symbols: {
+            baseText
+                .foregroundStyle(.white)
+                .frame(
+                    width: max(0, size.width - strokeWidth * 4),
+                    height: max(0, size.height - strokeWidth * 4),
+                    alignment: textFrameAlignment
+                )
+                .blur(radius: strokeWidth)
+                .tag(symbolID)
+        }
+    }
+}
+
+private extension Slide {
+    var overlayPreviewID: String {
+        [
+            text,
+            textPosition.rawValue,
+            textStyle.fontName,
+            textStyle.weight,
+            String(format: "%.2f", textStyle.sizeScale),
+            textStyle.foregroundHex,
+            textStyle.outlineColorHex
+        ].joined(separator: "|")
+    }
+}
+
+private extension TextAlignment {
+    var renderID: String {
+        switch self {
+        case .leading:
+            "leading"
+        case .trailing:
+            "trailing"
+        case .center:
+            "center"
+        }
     }
 }
 

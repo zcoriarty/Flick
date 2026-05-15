@@ -147,7 +147,7 @@ private func drawOverlayTextUIKit(slide: Slide, canvasSize: CGSize) {
 
     let headlineFont = UIFont.flickFont(
         name: slide.textStyle.fontName,
-        size: canvasSize.height * 0.058,
+        size: canvasSize.height * 0.058 * slide.textStyle.sizeScale,
         weight: UIFont.Weight(slide.textStyle.weight)
     )
     let foreground = UIColor(hex: slide.textStyle.foregroundHex)
@@ -160,7 +160,7 @@ private func drawOverlayTextUIKit(slide: Slide, canvasSize: CGSize) {
             .foregroundColor: foreground,
             .paragraphStyle: paragraph,
             .strokeColor: outline,
-            .strokeWidth: -3.5
+            .strokeWidth: -3.0
         ]
     ))
 
@@ -210,7 +210,7 @@ private func drawOverlayTextAppKit(slide: Slide, canvasSize: CGSize) {
     paragraph.lineBreakMode = .byWordWrapping
     paragraph.lineSpacing = 8
 
-    let headlineFont = NSFont.systemFont(ofSize: canvasSize.height * 0.058, weight: NSFont.Weight(slide.textStyle.weight))
+    let headlineFont = NSFont.systemFont(ofSize: canvasSize.height * 0.058 * slide.textStyle.sizeScale, weight: NSFont.Weight(slide.textStyle.weight))
     let foreground = NSColor(hex: slide.textStyle.foregroundHex)
     let outline = NSColor(hex: slide.textStyle.outlineColorHex)
 
@@ -221,7 +221,7 @@ private func drawOverlayTextAppKit(slide: Slide, canvasSize: CGSize) {
             .foregroundColor: foreground,
             .paragraphStyle: paragraph,
             .strokeColor: outline,
-            .strokeWidth: -3.5
+            .strokeWidth: -3.0
         ]
     ))
 
