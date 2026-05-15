@@ -100,6 +100,19 @@ struct SettingsView: View {
 
     private var storageSection: some View {
         Section("Supabase storage") {
+            SupabaseSmokeTestRow(
+                isRunning: appModel.isSupabaseSmokeTestRunning,
+                result: appModel.supabaseSmokeTestResult,
+                errorMessage: appModel.supabaseSmokeTestErrorMessage,
+                action: runSupabaseSmokeTest
+            )
+
+            if let result = appModel.supabaseSmokeTestResult {
+                SupabaseSmokeTestDetailRow(result: result)
+            } else if let errorMessage = appModel.supabaseSmokeTestErrorMessage {
+                SettingsMessageRow(title: "Supabase test failed", message: errorMessage)
+            }
+
             FlickSettingsValueRow(
                 title: "Generated images",
                 systemImage: "photo",
@@ -128,6 +141,12 @@ struct SettingsView: View {
                 value: appModel.configuration.storageBuckets.thumbnails,
                 valueLineLimit: nil
             )
+        }
+    }
+
+    private func runSupabaseSmokeTest() {
+        Task {
+            await appModel.runSupabaseSmokeTest()
         }
     }
 
@@ -214,5 +233,97 @@ private struct SettingsMessageRow: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+private struct SupabaseSmokeTestRow: View {
+    var isRunning: Bool
+    var result: SupabaseStorageSmokeTestResult?
+    var errorMessage: String?
+    var action: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Image(systemName: "checkmark.seal")
+                    .foregroundStyle(statusTint)
+                    .frame(width: 24)
+
+                Text("Supabase Smoke Test")
+                    .foregroundStyle(.primary)
+
+                Spacer()
+            }
+
+            HStack(spacing: 10) {
+                StatusBadge(title: statusTitle, tint: statusTint, systemImage: statusSystemImage)
+                    .frame(maxWidth: .infinity)
+
+
+                Button(action: action) {
+                    Label(isRunning ? "Testing" : "Run Test", systemImage: isRunning ? "clock" : "play.fill")
+                }
+                .frame(maxWidth: .infinity)
+                .buttonStyle(.glassProminent)
+                .foregroundStyle(Color.primary)
+                .disabled(isRunning)
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var statusTitle: String {
+        if isRunning { return "Testing" }
+        if errorMessage != nil { return "Fail" }
+        guard let result else { return "Idle" }
+        return result.isSuccessful ? "Pass" : "Check"
+    }
+
+    private var statusTint: Color {
+        if isRunning { return .blue }
+        if errorMessage != nil { return .red }
+        guard let result else { return .secondary }
+        return result.isSuccessful ? .green : .orange
+    }
+
+    private var statusSystemImage: String {
+        if isRunning { return "clock" }
+        if errorMessage != nil { return "xmark.circle.fill" }
+        guard let result else { return "circle" }
+        return result.isSuccessful ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+    }
+}
+
+private struct SupabaseSmokeTestDetailRow: View {
+    var result: SupabaseStorageSmokeTestResult
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SettingsMessageRow(title: "Session", message: sessionMessage)
+            SettingsMessageRow(title: "Object", message: "\(result.bucket)/\(result.path)")
+            SettingsMessageRow(title: "Public URL", message: "\(result.publicURLAccessText): \(result.publicURL.absoluteString)")
+            SettingsMessageRow(title: "Signed URL", message: "\(result.signedURLAccessText), expires \(result.signedURLExpiration.formatted(date: .abbreviated, time: .shortened))")
+
+            if !result.cleanupSucceeded {
+                SettingsMessageRow(
+                    title: "Cleanup",
+                    message: result.cleanupError ?? "The smoke-test object could not be removed."
+                )
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var sessionMessage: String {
+        var components = [result.sessionStatus.displayText]
+        if let userID = result.sessionStatus.userID {
+            components.append(userID.uuidString)
+        }
+        if let expiresAt = result.sessionStatus.expiresAt {
+            components.append("expires \(expiresAt.formatted(date: .abbreviated, time: .shortened))")
+        }
+        return components.joined(separator: " - ")
     }
 }

@@ -18,6 +18,9 @@ final class FlickAppModel {
     var credentialMessage: String?
     var accountConnectionMessage: String?
     var connectingPlatform: SocialPlatform?
+    var isSupabaseSmokeTestRunning = false
+    var supabaseSmokeTestResult: SupabaseStorageSmokeTestResult?
+    var supabaseSmokeTestErrorMessage: String?
 
     @ObservationIgnored private let repository: FlickRepository
     @ObservationIgnored private let credentialVault = CredentialVault()
@@ -305,6 +308,35 @@ final class FlickAppModel {
         }
     }
 
+    func runSupabaseSmokeTest() async {
+        guard !isSupabaseSmokeTestRunning else { return }
+        reloadCredentialConfiguration()
+        isSupabaseSmokeTestRunning = true
+        supabaseSmokeTestResult = nil
+        supabaseSmokeTestErrorMessage = nil
+        credentialMessage = "Testing Supabase Storage..."
+        lastErrorMessage = nil
+
+        defer {
+            isSupabaseSmokeTestRunning = false
+        }
+
+        do {
+            let result = try await SupabaseStorageService().runSmokeTest(
+                bucket: configuration.storageBuckets.generatedImages
+            )
+            supabaseSmokeTestResult = result
+            supabaseSmokeTestErrorMessage = nil
+            credentialMessage = result.summary
+            lastErrorMessage = nil
+        } catch {
+            let message = error.localizedDescription
+            supabaseSmokeTestErrorMessage = message
+            credentialMessage = "Supabase smoke test failed."
+            lastErrorMessage = message
+        }
+    }
+
     private func applyAuthorizedAccounts() {
         let authorizedAccounts = loginKitAccountStore.loadAccounts()
         overview.accounts = authorizedAccounts
@@ -322,8 +354,8 @@ final class FlickAppModel {
             ),
             APIHealthStatus(
                 serviceName: "Supabase Storage",
-                isConfigured: statuses.containsPresent("Supabase URL") && statuses.containsPresent("Supabase anon key"),
-                statusText: statuses.containsPresent("Supabase service role key") ? "Anon key found; service role stays local only" : "Anon project credentials expected",
+                isConfigured: configuration.supabase.url != nil && configuration.supabase.apiKeyPresent,
+                statusText: supabaseStatusText(),
                 lastCheckedAt: Date()
             ),
             APIHealthStatus(
@@ -338,6 +370,19 @@ final class FlickAppModel {
     private func reloadCredentialConfiguration() {
         configuration = .current
         applyCredentialHealth()
+    }
+
+    private func supabaseStatusText() -> String {
+        if configuration.supabase.publishableKeyPresent {
+            return "Publishable key found locally"
+        }
+        if configuration.supabase.anonKeyPresent {
+            return "Anon key found locally"
+        }
+        if configuration.supabase.serviceRoleKeyPresent {
+            return "Service role key found locally"
+        }
+        return "Supabase project credentials expected"
     }
 }
 

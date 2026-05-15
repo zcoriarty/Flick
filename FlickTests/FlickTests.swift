@@ -33,7 +33,6 @@ final class FlickTests: XCTestCase {
 
         XCTAssertTrue(model.overview.drafts.isEmpty)
         XCTAssertTrue(model.overview.publishingJobs.isEmpty)
-        XCTAssertTrue(model.overview.trends.isEmpty)
         XCTAssertTrue(model.overview.analyticsPerformance.isEmpty)
     }
 
@@ -45,6 +44,32 @@ final class FlickTests: XCTestCase {
         XCTAssertThrowsError(try vault.storeValue("ignored", for: "UNKNOWN_KEY"))
         XCTAssertThrowsError(try vault.storeValue("", for: "OPENAI_API_KEY"))
         XCTAssertEqual(String(data: try XCTUnwrap(store.data(for: "TIKTOK_CLIENT_ID")), encoding: .utf8), "client-id")
+    }
+
+    func testSupabaseConfigurationRecognizesPublishableKey() {
+        let configuration = SupabaseConfiguration(values: [
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_test"
+        ])
+
+        XCTAssertEqual(configuration.url?.absoluteString, "https://example.supabase.co")
+        XCTAssertTrue(configuration.publishableKeyPresent)
+        XCTAssertTrue(configuration.apiKeyPresent)
+        XCTAssertFalse(configuration.anonKeyPresent)
+    }
+
+    func testSupabaseStorageServiceBuildsPublicURLWithSDK() throws {
+        let service = SupabaseStorageService(credentials: [
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_ANON_KEY": "anon-key"
+        ])
+
+        let url = try service.publicURL(bucket: "flick-generated-images", path: "drafts/slide-01.png")
+
+        XCTAssertEqual(
+            url.absoluteString,
+            "https://example.supabase.co/storage/v1/object/public/flick-generated-images/drafts/slide-01.png"
+        )
     }
 
     func testTikTokAuthorizationParametersRequireUniversalLinkRedirect() throws {

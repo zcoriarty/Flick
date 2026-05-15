@@ -49,12 +49,18 @@ struct AppConfiguration: Hashable {
 
 struct SupabaseConfiguration: Hashable {
     var url: URL?
+    var publishableKeyPresent: Bool
     var anonKeyPresent: Bool
     var serviceRoleKeyPresent: Bool
     var postgresURLPresent: Bool
 
+    var apiKeyPresent: Bool {
+        publishableKeyPresent || anonKeyPresent || serviceRoleKeyPresent
+    }
+
     init(values: [String: String]) {
         url = values.nonEmptyURL("SUPABASE_URL")
+        publishableKeyPresent = values.hasNonEmptyValue("SUPABASE_PUBLISHABLE_KEY")
         anonKeyPresent = values.hasNonEmptyValue("SUPABASE_ANON_KEY")
         serviceRoleKeyPresent = values.hasNonEmptyValue("SUPABASE_SERVICE_ROLE_KEY")
         postgresURLPresent = values.hasNonEmptyValue("POSTGRES_URL")
@@ -128,6 +134,7 @@ struct CredentialDefinition: Identifiable, Hashable {
         CredentialDefinition(key: "POSTGRES_USER", name: "Postgres user"),
         CredentialDefinition(key: "SUPABASE_ANON_KEY", name: "Supabase anon key"),
         CredentialDefinition(key: "SUPABASE_JWT_SECRET", name: "Supabase JWT secret"),
+        CredentialDefinition(key: "SUPABASE_PUBLISHABLE_KEY", name: "Supabase publishable key"),
         CredentialDefinition(key: "SUPABASE_SERVICE_ROLE_KEY", name: "Supabase service role key"),
         CredentialDefinition(key: "SUPABASE_URL", name: "Supabase URL"),
         CredentialDefinition(key: "TIKTOK_CLIENT_ID", name: "TikTok client ID"),
