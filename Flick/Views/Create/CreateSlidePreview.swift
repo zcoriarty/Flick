@@ -42,12 +42,12 @@ struct SlideOverlayPreview: View {
                     .font(.system(size: 24, weight: slide.textStyle.swiftUIFontWeight, design: slide.textStyle.swiftUIFontDesign))
                     .minimumScaleFactor(0.55)
                     .lineLimit(4)
+                    .foregroundStyle(Color(hex: slide.textStyle.foregroundHex))
+                    .textOutline(Color(hex: slide.textStyle.outlineColorHex))
             }
         }
         .multilineTextAlignment(textAlignment)
-        .foregroundStyle(Color(hex: slide.textStyle.foregroundHex))
         .padding(14)
-        .background(Color(hex: slide.textStyle.backgroundHex).opacity(0.38), in: .rect(cornerRadius: 8))
         .padding(10)
     }
 
@@ -101,6 +101,20 @@ struct SlideOverlayPreview: View {
         case .bottom:
             CGRect(x: 0, y: size.height * 0.58, width: size.width, height: size.height * 0.42)
         }
+    }
+}
+
+private extension View {
+    func textOutline(_ color: Color) -> some View {
+        self
+            .shadow(color: color, radius: 0, x: -1, y: -1)
+            .shadow(color: color, radius: 0, x: 0, y: -1)
+            .shadow(color: color, radius: 0, x: 1, y: -1)
+            .shadow(color: color, radius: 0, x: -1, y: 0)
+            .shadow(color: color, radius: 0, x: 1, y: 0)
+            .shadow(color: color, radius: 0, x: -1, y: 1)
+            .shadow(color: color, radius: 0, x: 0, y: 1)
+            .shadow(color: color, radius: 0, x: 1, y: 1)
     }
 }
 

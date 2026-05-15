@@ -313,8 +313,34 @@ struct SlideTextStyle: Codable, Hashable {
     var fontName: String
     var weight: String
     var foregroundHex: String
-    var backgroundHex: String
-    var alignment: String
+    var outlineColorHex: String
+
+    init(
+        fontName: String,
+        weight: String,
+        foregroundHex: String,
+        outlineColorHex: String = "#000000"
+    ) {
+        self.fontName = fontName
+        self.weight = weight
+        self.foregroundHex = foregroundHex
+        self.outlineColorHex = outlineColorHex
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case fontName
+        case weight
+        case foregroundHex
+        case outlineColorHex
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        fontName = try container.decode(String.self, forKey: .fontName)
+        weight = try container.decode(String.self, forKey: .weight)
+        foregroundHex = try container.decode(String.self, forKey: .foregroundHex)
+        outlineColorHex = try container.decodeIfPresent(String.self, forKey: .outlineColorHex) ?? "#000000"
+    }
 }
 
 struct Slide: Identifiable, Codable, Hashable {

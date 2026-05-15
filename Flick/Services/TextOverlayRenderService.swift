@@ -141,7 +141,7 @@ private func drawOverlayTextUIKit(slide: Slide, canvasSize: CGSize) {
     let textRect = overlayRect.insetBy(dx: canvasSize.width * 0.035, dy: canvasSize.height * 0.04)
     let attributedText = NSMutableAttributedString()
     let paragraph = NSMutableParagraphStyle()
-    paragraph.alignment = NSTextAlignment(slide.textStyle.alignment)
+    paragraph.alignment = NSTextAlignment(slide.textPosition)
     paragraph.lineBreakMode = .byWordWrapping
     paragraph.lineSpacing = 8
 
@@ -151,10 +151,17 @@ private func drawOverlayTextUIKit(slide: Slide, canvasSize: CGSize) {
         weight: UIFont.Weight(slide.textStyle.weight)
     )
     let foreground = UIColor(hex: slide.textStyle.foregroundHex)
+    let outline = UIColor(hex: slide.textStyle.outlineColorHex)
 
     attributedText.append(NSAttributedString(
         string: text,
-        attributes: [.font: headlineFont, .foregroundColor: foreground, .paragraphStyle: paragraph]
+        attributes: [
+            .font: headlineFont,
+            .foregroundColor: foreground,
+            .paragraphStyle: paragraph,
+            .strokeColor: outline,
+            .strokeWidth: -3.5
+        ]
     ))
 
     let boundingSize = attributedText.boundingRect(
@@ -163,10 +170,6 @@ private func drawOverlayTextUIKit(slide: Slide, canvasSize: CGSize) {
         context: nil
     ).integral.size
     let drawRect = alignedTextRect(for: boundingSize, in: textRect, position: slide.textPosition)
-    let backgroundColor = UIColor(hex: slide.textStyle.backgroundHex).withAlphaComponent(0.38)
-    let backgroundRect = drawRect.insetBy(dx: -canvasSize.width * 0.018, dy: -canvasSize.height * 0.018)
-    backgroundColor.setFill()
-    UIBezierPath(roundedRect: backgroundRect, cornerRadius: 22).fill()
     attributedText.draw(with: drawRect, options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
 }
 #endif
@@ -203,16 +206,23 @@ private func drawOverlayTextAppKit(slide: Slide, canvasSize: CGSize) {
     let textRect = overlayRect.insetBy(dx: canvasSize.width * 0.035, dy: canvasSize.height * 0.04)
     let attributedText = NSMutableAttributedString()
     let paragraph = NSMutableParagraphStyle()
-    paragraph.alignment = NSTextAlignment(slide.textStyle.alignment)
+    paragraph.alignment = NSTextAlignment(slide.textPosition)
     paragraph.lineBreakMode = .byWordWrapping
     paragraph.lineSpacing = 8
 
     let headlineFont = NSFont.systemFont(ofSize: canvasSize.height * 0.058, weight: NSFont.Weight(slide.textStyle.weight))
     let foreground = NSColor(hex: slide.textStyle.foregroundHex)
+    let outline = NSColor(hex: slide.textStyle.outlineColorHex)
 
     attributedText.append(NSAttributedString(
         string: text,
-        attributes: [.font: headlineFont, .foregroundColor: foreground, .paragraphStyle: paragraph]
+        attributes: [
+            .font: headlineFont,
+            .foregroundColor: foreground,
+            .paragraphStyle: paragraph,
+            .strokeColor: outline,
+            .strokeWidth: -3.5
+        ]
     ))
 
     let boundingSize = attributedText.boundingRect(
@@ -220,9 +230,6 @@ private func drawOverlayTextAppKit(slide: Slide, canvasSize: CGSize) {
         options: [.usesLineFragmentOrigin, .usesFontLeading]
     ).integral.size
     let drawRect = alignedTextRect(for: boundingSize, in: textRect, position: slide.textPosition)
-    let backgroundColor = NSColor(hex: slide.textStyle.backgroundHex).withAlphaComponent(0.38)
-    backgroundColor.setFill()
-    NSBezierPath(roundedRect: drawRect.insetBy(dx: -canvasSize.width * 0.018, dy: -canvasSize.height * 0.018), xRadius: 22, yRadius: 22).fill()
     attributedText.draw(with: drawRect, options: [.usesLineFragmentOrigin, .usesFontLeading])
 }
 #endif
@@ -280,13 +287,13 @@ private func alignedTextRect(for textSize: CGSize, in rect: CGRect, position: Te
 }
 
 private extension NSTextAlignment {
-    init(_ value: String) {
-        switch value.lowercased() {
-        case "left", "leading":
+    init(_ position: TextPosition) {
+        switch position {
+        case .left, .split:
             self = .left
-        case "right", "trailing":
+        case .right:
             self = .right
-        default:
+        case .top, .center, .bottom:
             self = .center
         }
     }

@@ -234,86 +234,120 @@ private enum CreateSlideEditorTab: String, CaseIterable, Identifiable {
 
 private struct CreateSlideTextEditor: View {
     @Binding var slide: Slide
+    @State private var draftText: String
+
+    init(slide: Binding<Slide>) {
+        self._slide = slide
+        self._draftText = State(initialValue: slide.wrappedValue.text)
+    }
 
     var body: some View {
-        Section("Text") {
-            CreateTextEditorRow(
-                title: "Text",
-                systemImage: "textformat.size",
-                text: $slide.text,
-                placeholder: "Overlay text Flick renders on top.",
-                minHeight: 120
-            )
+        Group {
+            Section("Text") {
+                CreateTextEditorRow(
+                    title: "Text",
+                    systemImage: "textformat.size",
+                    text: $draftText,
+                    placeholder: "Overlay text Flick renders on top.",
+                    minHeight: 120
+                )
+
+                if hasPendingTextChange {
+                    Button {
+                        slide.text = draftText
+                    } label: {
+                        Text("Update Text")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.glassProminent)
+                }
+            }
+
+            Section("Style") {
+                CreateSlideStyleMenuRow(
+                    title: "Font",
+                    systemImage: "textformat",
+                    value: CreateSlideFontFamily(rawValue: slide.textStyle.fontName)?.title ?? slide.textStyle.fontName
+                ) {
+                    ForEach(CreateSlideFontFamily.allCases) { fontFamily in
+                        Button {
+                            slide.textStyle.fontName = fontFamily.rawValue
+                        } label: {
+                            CreateMenuOptionLabel(
+                                title: fontFamily.title,
+                                isSelected: slide.textStyle.fontName == fontFamily.rawValue
+                            )
+                        }
+                    }
+                }
+
+                CreateSlideStyleMenuRow(
+                    title: "Weight",
+                    systemImage: "bold",
+                    value: CreateSlideFontWeight(rawValue: slide.textStyle.weight)?.title ?? slide.textStyle.weight
+                ) {
+                    ForEach(CreateSlideFontWeight.allCases) { fontWeight in
+                        Button {
+                            slide.textStyle.weight = fontWeight.rawValue
+                        } label: {
+                            CreateMenuOptionLabel(
+                                title: fontWeight.title,
+                                isSelected: slide.textStyle.weight == fontWeight.rawValue
+                            )
+                        }
+                    }
+                }
+
+                CreateSlideColorPickerRow(
+                    title: "Text color",
+                    systemImage: "paintbrush",
+                    hex: $slide.textStyle.foregroundHex
+                )
+
+                CreateSlideStyleMenuRow(
+                    title: "Border",
+                    systemImage: "square",
+                    value: CreateSlideTextBorder.value(for: slide.textStyle.outlineColorHex).title
+                ) {
+                    ForEach(CreateSlideTextBorder.allCases) { border in
+                        Button {
+                            slide.textStyle.outlineColorHex = border.rawValue
+                        } label: {
+                            CreateMenuOptionLabel(
+                                title: border.title,
+                                isSelected: CreateSlideTextBorder.value(for: slide.textStyle.outlineColorHex) == border
+                            )
+                        }
+                    }
+                }
+
+                CreateSlideStyleMenuRow(
+                    title: "Text position",
+                    systemImage: "text.alignleft",
+                    value: slide.textPosition.displayName
+                ) {
+                    ForEach(TextPosition.allCases) { position in
+                        Button {
+                            slide.textPosition = position
+                        } label: {
+                            CreateMenuOptionLabel(title: position.displayName, isSelected: slide.textPosition == position)
+                        }
+                    }
+                }
+            }
         }
-
-        Section("Style") {
-            CreateSlideStyleMenuRow(
-                title: "Font",
-                systemImage: "textformat",
-                value: CreateSlideFontFamily(rawValue: slide.textStyle.fontName)?.title ?? slide.textStyle.fontName
-            ) {
-                ForEach(CreateSlideFontFamily.allCases) { fontFamily in
-                    Button {
-                        slide.textStyle.fontName = fontFamily.rawValue
-                    } label: {
-                        CreateMenuOptionLabel(
-                            title: fontFamily.title,
-                            isSelected: slide.textStyle.fontName == fontFamily.rawValue
-                        )
-                    }
-                }
-            }
-
-            CreateSlideStyleMenuRow(
-                title: "Weight",
-                systemImage: "bold",
-                value: CreateSlideFontWeight(rawValue: slide.textStyle.weight)?.title ?? slide.textStyle.weight
-            ) {
-                ForEach(CreateSlideFontWeight.allCases) { fontWeight in
-                    Button {
-                        slide.textStyle.weight = fontWeight.rawValue
-                    } label: {
-                        CreateMenuOptionLabel(
-                            title: fontWeight.title,
-                            isSelected: slide.textStyle.weight == fontWeight.rawValue
-                        )
-                    }
-                }
-            }
-
-            CreateSlideColorPickerRow(
-                title: "Text color",
-                systemImage: "paintbrush",
-                hex: $slide.textStyle.foregroundHex
-            )
-
-            CreateSlideColorPickerRow(
-                title: "Backdrop color",
-                systemImage: "rectangle.fill",
-                hex: $slide.textStyle.backgroundHex
-            )
-
-            Picker("Alignment", selection: $slide.textStyle.alignment) {
-                Text("Left").tag("left")
-                Text("Center").tag("center")
-                Text("Right").tag("right")
-            }
-            .pickerStyle(.segmented)
-
-            CreateSlideStyleMenuRow(
-                title: "Text position",
-                systemImage: "text.alignleft",
-                value: slide.textPosition.displayName
-            ) {
-                ForEach(TextPosition.allCases) { position in
-                    Button {
-                        slide.textPosition = position
-                    } label: {
-                        CreateMenuOptionLabel(title: position.displayName, isSelected: slide.textPosition == position)
-                    }
-                }
+        .onChange(of: slide.id) { _, _ in
+            draftText = slide.text
+        }
+        .onChange(of: slide.text) { oldValue, newValue in
+            if draftText == oldValue {
+                draftText = newValue
             }
         }
+    }
+
+    private var hasPendingTextChange: Bool {
+        draftText != slide.text
     }
 }
 
@@ -415,6 +449,25 @@ private enum CreateSlideFontWeight: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
     var title: String { rawValue }
+}
+
+private enum CreateSlideTextBorder: String, CaseIterable, Identifiable {
+    case black = "#000000"
+    case white = "#FFFFFF"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .black: "Black"
+        case .white: "White"
+        }
+    }
+
+    static func value(for hex: String) -> CreateSlideTextBorder {
+        let normalizedHex = hex.uppercased()
+        return allCases.first { $0.rawValue == normalizedHex } ?? .black
+    }
 }
 
 private struct CreateSlideStyleMenuRow<MenuContent: View>: View {

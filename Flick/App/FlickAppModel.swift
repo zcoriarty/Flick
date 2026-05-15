@@ -200,9 +200,7 @@ final class FlickAppModel {
                 textStyle: SlideTextStyle(
                     fontName: "System Rounded",
                     weight: "Black",
-                    foregroundHex: "#FFFFFF",
-                    backgroundHex: "#111111",
-                    alignment: "center"
+                    foregroundHex: "#FFFFFF"
                 ),
                 createdAt: now,
                 updatedAt: now
@@ -758,9 +756,7 @@ private extension FlickAppModel {
                     textStyle: SlideTextStyle(
                         fontName: "System Rounded",
                         weight: "Black",
-                        foregroundHex: "#FFFFFF",
-                        backgroundHex: "#111111",
-                        alignment: plannedSlide.textPosition == .right ? "right" : "left"
+                        foregroundHex: "#FFFFFF"
                     ),
                     selectedVisualSummary: plannedSlide.selectedVisualSummary,
                     generationStatus: .notStarted,
