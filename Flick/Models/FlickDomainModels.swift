@@ -317,15 +317,15 @@ struct SlideTextStyle: Codable, Hashable {
     var outlineColorHex: String
 
     init(
-        fontName: String,
-        weight: String,
-        sizeScale: Double = 1,
-        foregroundHex: String,
+        fontName: String = "System",
+        weight: String = "Semibold",
+        sizeScale: Double = 0.7,
+        foregroundHex: String = "#FFFFFF",
         outlineColorHex: String = "#000000"
     ) {
         self.fontName = fontName
         self.weight = weight
-        self.sizeScale = sizeScale
+        self.sizeScale = min(max(sizeScale, 0.7), 1.5)
         self.foregroundHex = foregroundHex
         self.outlineColorHex = outlineColorHex
     }
@@ -340,11 +340,11 @@ struct SlideTextStyle: Codable, Hashable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        fontName = try container.decode(String.self, forKey: .fontName)
-        weight = try container.decode(String.self, forKey: .weight)
-        let decodedSizeScale = try container.decodeIfPresent(Double.self, forKey: .sizeScale) ?? 1
+        fontName = try container.decodeIfPresent(String.self, forKey: .fontName) ?? "System"
+        weight = try container.decodeIfPresent(String.self, forKey: .weight) ?? "Semibold"
+        let decodedSizeScale = try container.decodeIfPresent(Double.self, forKey: .sizeScale) ?? 0.7
         sizeScale = min(max(decodedSizeScale, 0.7), 1.5)
-        foregroundHex = try container.decode(String.self, forKey: .foregroundHex)
+        foregroundHex = try container.decodeIfPresent(String.self, forKey: .foregroundHex) ?? "#FFFFFF"
         outlineColorHex = try container.decodeIfPresent(String.self, forKey: .outlineColorHex) ?? "#000000"
     }
 }

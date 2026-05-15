@@ -197,11 +197,7 @@ final class FlickAppModel {
                 prompt: "Use slide \(sourceSlide.index) from @\(template.profile) as the visual reference.",
                 text: "Slide \(offset + 1)",
                 textPosition: .center,
-                textStyle: SlideTextStyle(
-                    fontName: "System Rounded",
-                    weight: "Black",
-                    foregroundHex: "#FFFFFF"
-                ),
+                textStyle: SlideTextStyle(),
                 createdAt: now,
                 updatedAt: now
             )
@@ -752,12 +748,8 @@ private extension FlickAppModel {
                     imageAssetID: nil,
                     prompt: plannedSlide.imagePrompt,
                     text: plannedSlide.text,
-                    textPosition: plannedSlide.textPosition,
-                    textStyle: SlideTextStyle(
-                        fontName: "System Rounded",
-                        weight: "Black",
-                        foregroundHex: "#FFFFFF"
-                    ),
+                    textPosition: .center,
+                    textStyle: SlideTextStyle(),
                     selectedVisualSummary: plannedSlide.selectedVisualSummary,
                     generationStatus: .notStarted,
                     generationErrorMessage: nil,

@@ -138,7 +138,7 @@ private func drawOverlayTextUIKit(slide: Slide, canvasSize: CGSize) {
     guard !text.isEmpty else { return }
 
     let overlayRect = overlayContainerRect(for: slide.textPosition, canvasSize: canvasSize)
-    let textRect = overlayRect.insetBy(dx: canvasSize.width * 0.035, dy: canvasSize.height * 0.04)
+    let textRect = overlayRect.insetBy(dx: 0, dy: canvasSize.height * 0.04)
     let attributedText = NSMutableAttributedString()
     let paragraph = NSMutableParagraphStyle()
     paragraph.alignment = NSTextAlignment(slide.textPosition)
@@ -203,7 +203,7 @@ private func drawOverlayTextAppKit(slide: Slide, canvasSize: CGSize) {
     guard !text.isEmpty else { return }
 
     let overlayRect = overlayContainerRect(for: slide.textPosition, canvasSize: canvasSize)
-    let textRect = overlayRect.insetBy(dx: canvasSize.width * 0.035, dy: canvasSize.height * 0.04)
+    let textRect = overlayRect.insetBy(dx: 0, dy: canvasSize.height * 0.04)
     let attributedText = NSMutableAttributedString()
     let paragraph = NSMutableParagraphStyle()
     paragraph.alignment = NSTextAlignment(slide.textPosition)
@@ -246,17 +246,29 @@ private func aspectFillRect(imageSize: CGSize, canvasSize: CGSize) -> CGRect {
 }
 
 private func overlayContainerRect(for position: TextPosition, canvasSize: CGSize) -> CGRect {
-    switch position {
+    let horizontalMargin: CGFloat = min(32, canvasSize.width / 2)
+    let centeredWidth = max(0, canvasSize.width - horizontalMargin * 2)
+    return switch position {
     case .left, .split:
-        CGRect(x: 0, y: 0, width: canvasSize.width * 0.45, height: canvasSize.height)
+        CGRect(
+            x: horizontalMargin,
+            y: 0,
+            width: max(0, canvasSize.width * 0.45 - horizontalMargin),
+            height: canvasSize.height
+        )
     case .right:
-        CGRect(x: canvasSize.width * 0.55, y: 0, width: canvasSize.width * 0.45, height: canvasSize.height)
+        CGRect(
+            x: canvasSize.width * 0.55,
+            y: 0,
+            width: max(0, canvasSize.width * 0.45 - horizontalMargin),
+            height: canvasSize.height
+        )
     case .top:
-        CGRect(x: 0, y: 0, width: canvasSize.width, height: canvasSize.height * 0.38)
+        CGRect(x: horizontalMargin, y: 0, width: centeredWidth, height: canvasSize.height * 0.38)
     case .center:
-        CGRect(x: canvasSize.width * 0.18, y: canvasSize.height * 0.2, width: canvasSize.width * 0.64, height: canvasSize.height * 0.6)
+        CGRect(x: horizontalMargin, y: canvasSize.height * 0.2, width: centeredWidth, height: canvasSize.height * 0.6)
     case .bottom:
-        CGRect(x: 0, y: canvasSize.height * 0.62, width: canvasSize.width, height: canvasSize.height * 0.38)
+        CGRect(x: horizontalMargin, y: canvasSize.height * 0.62, width: centeredWidth, height: canvasSize.height * 0.38)
     }
 }
 

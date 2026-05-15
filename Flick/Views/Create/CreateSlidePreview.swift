@@ -47,8 +47,7 @@ struct SlideOverlayPreview: View {
             }
         }
         .multilineTextAlignment(textAlignment)
-        .padding(14)
-        .padding(10)
+        .padding(.vertical, 24)
     }
 
     private var stackAlignment: HorizontalAlignment {
@@ -89,17 +88,29 @@ struct SlideOverlayPreview: View {
     }
 
     private func overlayFrame(in size: CGSize) -> CGRect {
-        switch slide.textPosition {
+        let horizontalMargin: CGFloat = min(32, size.width / 2)
+        let centeredWidth = max(0, size.width - horizontalMargin * 2)
+        return switch slide.textPosition {
         case .left, .split:
-            CGRect(x: 0, y: 0, width: size.width * 0.45, height: size.height)
+            CGRect(
+                x: horizontalMargin,
+                y: 0,
+                width: max(0, size.width * 0.45 - horizontalMargin),
+                height: size.height
+            )
         case .right:
-            CGRect(x: size.width * 0.55, y: 0, width: size.width * 0.45, height: size.height)
+            CGRect(
+                x: size.width * 0.55,
+                y: 0,
+                width: max(0, size.width * 0.45 - horizontalMargin),
+                height: size.height
+            )
         case .top:
-            CGRect(x: 0, y: 0, width: size.width, height: size.height * 0.42)
+            CGRect(x: horizontalMargin, y: 0, width: centeredWidth, height: size.height * 0.42)
         case .center:
-            CGRect(x: size.width * 0.16, y: size.height * 0.2, width: size.width * 0.68, height: size.height * 0.6)
+            CGRect(x: horizontalMargin, y: size.height * 0.2, width: centeredWidth, height: size.height * 0.6)
         case .bottom:
-            CGRect(x: 0, y: size.height * 0.58, width: size.width, height: size.height * 0.42)
+            CGRect(x: horizontalMargin, y: size.height * 0.58, width: centeredWidth, height: size.height * 0.42)
         }
     }
 }

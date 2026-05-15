@@ -34,6 +34,7 @@ struct SlideshowPlannerService {
 
                         Create a complete slideshow plan. Generate exactly \(template.slideCount) planned slides and exactly one image prompt per slide.
                         Flick will render all text separately, so image prompts must forbid readable text, captions, logos, watermarks, fake UI text, and gibberish.
+                        Set each slide's textPosition to center and keep the centered text area low-detail.
                         """
                     ]
                 ]
