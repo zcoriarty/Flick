@@ -23,6 +23,7 @@ struct CreateView: View {
     @State private var selectedTemplate: ExampleSlideshowTemplate?
     @State private var presentedSheet: CreateSheet?
     @State private var selectedSlideID: UUID?
+    @State private var isAutonomous = false
     @State private var postTime = Date()
     @State private var selectedWeekdays: Set<CreateWeekday> = [CreateWeekday.current]
     @State private var selectedSongs: [SelectedSong] = []
@@ -37,9 +38,7 @@ struct CreateView: View {
     @State private var promotesBrandedContent = false
 
     private var tiktokAccountName: String? {
-        appModel.overview.accounts
-            .first { $0.platform == .tiktok && $0.authorizationSource == .loginKit }?
-            .displayName
+        publishingTikTokAccount(in: appModel)?.displayName
     }
 
     var body: some View {
@@ -47,6 +46,8 @@ struct CreateView: View {
         let currentDraftID = activeDraftID(in: appModel)
 
         List {
+            CreateAutomationModeSection(isAutonomous: $isAutonomous)
+
             CreateTemplateSection(
                 loadState: templateLoadState,
                 selectedTemplate: selectedTemplate,
@@ -77,10 +78,12 @@ struct CreateView: View {
                 }
             }
 
-            CreateCadenceSection(
-                postTime: $postTime,
-                selectedWeekdays: $selectedWeekdays
-            )
+            if isAutonomous {
+                CreateCadenceSection(
+                    postTime: $postTime,
+                    selectedWeekdays: $selectedWeekdays
+                )
+            }
 
             CreateSongSection(
                 selectedSongs: $selectedSongs,
@@ -112,6 +115,20 @@ struct CreateView: View {
                 draftsButton
             }
             #endif
+            ToolbarItem(placement: .confirmationAction) {
+                if shouldShowPublishButton(in: appModel) {
+                    Button {
+                        publishManualPost(using: appModel)
+                    } label: {
+                        if appModel.isPublishingSlideshow {
+                            ProgressView()
+                        } else {
+                            Text("Publish")
+                        }
+                    }
+                    .disabled(appModel.isPublishingSlideshow)
+                }
+            }
         }
         .task {
             if case .loading = templateLoadState {
@@ -243,6 +260,66 @@ struct CreateView: View {
         }
     }
 
+    private func shouldShowPublishButton(in appModel: FlickAppModel) -> Bool {
+        guard !isAutonomous else { return false }
+        guard let draft = appModel.activeCreateDraft else { return false }
+        let assetsByID = Dictionary(uniqueKeysWithValues: appModel.overview.assets.map { ($0.id, $0) })
+        return draft.hasCompletedCreateImages(assetsByID: assetsByID)
+            && publishingTikTokAccount(in: appModel) != nil
+            && publishSettings(for: draft) != nil
+    }
+
+    private func publishManualPost(using appModel: FlickAppModel) {
+        guard let draft = appModel.activeCreateDraft, let settings = publishSettings(for: draft) else { return }
+        Task {
+            await appModel.publishManualSlideshow(draftID: draft.id, settings: settings)
+        }
+    }
+
+    private func publishSettings(for draft: SlideshowDraft) -> TikTokManualPublishSettings? {
+        let title = postTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return nil }
+        guard postAsDraft || selectedVisibility != nil else { return nil }
+        guard !disclosesVideoContent || promotesYourBrand || promotesBrandedContent else { return nil }
+
+        return TikTokManualPublishSettings(
+            title: title,
+            description: publishDescription(for: draft),
+            postAsDraft: postAsDraft,
+            privacyLevel: selectedVisibility?.privacyLevel ?? .selfOnly,
+            allowComment: allowComment,
+            allowDuet: allowDuet,
+            allowStitch: allowStitch,
+            disclosesVideoContent: disclosesVideoContent,
+            promotesYourBrand: promotesYourBrand,
+            promotesBrandedContent: promotesBrandedContent
+        )
+    }
+
+    private func publishDescription(for draft: SlideshowDraft) -> String {
+        let caption = draft.caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hashtags = draft.hashtags
+            .map { hashtag in
+                let cleanValue = hashtag.trimmingCharacters(in: CharacterSet(charactersIn: "# "))
+                return cleanValue.isEmpty ? "" : "#\(cleanValue)"
+            }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+
+        return [caption, hashtags]
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
+    }
+
+    private func publishingTikTokAccount(in appModel: FlickAppModel) -> ConnectedAccount? {
+        appModel.overview.accounts.first { account in
+            account.platform == .tiktok
+                && account.authorizationSource == .loginKit
+                && account.status == .connected
+                && account.isPublishingEnabled
+        }
+    }
+
     private func activeDraftID(in appModel: FlickAppModel) -> UUID? {
         appModel.activeCreateDraft?.id
     }
@@ -289,15 +366,6 @@ private struct CreateDraftWorkflowSections: View {
                 )
             }
 
-            CreateSlideRail(
-                slides: draft.slides,
-                assetsByID: assetsByID,
-                openAction: { slideID in
-                    selectedSlideID = slideID
-                    openEditorAction()
-                }
-            )
-
             CreateGenerationControls(
                 draft: draft,
                 assetsByID: assetsByID,
@@ -310,16 +378,16 @@ private struct CreateDraftWorkflowSections: View {
                 }
             )
 
-            CreateExportSection(
-                draft: draft,
-                assetsByID: assetsByID,
-                isExporting: appModel.isExportingSlideshow,
-                exportAction: {
-                    Task {
-                        await appModel.exportImageSequence(for: draft.id)
+            if draft.hasCompletedCreateImages(assetsByID: assetsByID) {
+                CreateSlideRail(
+                    slides: draft.slides,
+                    assetsByID: assetsByID,
+                    openAction: { slideID in
+                        selectedSlideID = slideID
+                        openEditorAction()
                     }
-                }
-            )
+                )
+            }
         }
     }
 

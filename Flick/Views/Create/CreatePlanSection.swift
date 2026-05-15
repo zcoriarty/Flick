@@ -171,7 +171,7 @@ private struct CreatePlanBriefingSheet: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
+            ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     CreatePlainSheetTextField(placeholder: "Title", text: $draft.title)
                     CreatePlainSheetTextField(placeholder: "Topic", text: $draft.topic)

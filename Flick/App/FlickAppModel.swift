@@ -6,6 +6,7 @@
 import Foundation
 import CoreData
 import Observation
+import OSLog
 import UniformTypeIdentifiers
 
 enum MoveDirection {
@@ -30,7 +31,7 @@ final class FlickAppModel {
     var createWorkflowMessage: String?
     var isPlanningSlideshow = false
     var isGeneratingSlideshowImages = false
-    var isExportingSlideshow = false
+    var isPublishingSlideshow = false
 
     @ObservationIgnored private let repository: FlickRepository
     @ObservationIgnored private let credentialVault = CredentialVault()
@@ -38,6 +39,7 @@ final class FlickAppModel {
     @ObservationIgnored private let tiktokLoginKitClient = TikTokLoginKitClient()
     @ObservationIgnored private let localMediaLibrary = LocalMediaLibrary(directoryName: "ProductMedia")
     @ObservationIgnored private let generatedImageLibrary = LocalMediaLibrary(directoryName: "GeneratedImages")
+    @ObservationIgnored private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.orion.Flick", category: "Publishing")
 
     init(repository: FlickRepository, configuration: AppConfiguration) {
         self.repository = repository
@@ -499,77 +501,89 @@ final class FlickAppModel {
         }
     }
 
-    func exportImageSequence(for draftID: UUID) async {
-        guard !isExportingSlideshow else { return }
-        isExportingSlideshow = true
-        createWorkflowMessage = "Preparing high-resolution slide images..."
+    func publishManualSlideshow(draftID: UUID, settings: TikTokManualPublishSettings) async {
+        guard !isPublishingSlideshow else { return }
+        isPublishingSlideshow = true
+        createWorkflowMessage = "Preparing publish images..."
         lastErrorMessage = nil
+        var activeJobID: UUID?
 
         defer {
-            isExportingSlideshow = false
+            isPublishingSlideshow = false
         }
 
         do {
-            try await ensureFinalGeneratedImages(for: draftID)
-
-            guard let draftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) else {
+            let now = Date()
+            guard overview.drafts.contains(where: { $0.id == draftID }) else {
                 throw SlideshowCreationError.missingDraft
             }
-
-            createWorkflowMessage = "Rendering Flick text overlays..."
-            let draft = overview.drafts[draftIndex]
-            let renderedImages = try await TextOverlayRenderService(renderDirectory: configuration.renderDirectory)
-                .renderImages(
-                    from: draft,
-                    assets: overview.assets,
-                    options: ImageRenderOptions(width: SlideshowImageGenerationSettings.finalExport.width, height: SlideshowImageGenerationSettings.finalExport.height)
-                )
-
-            var renderedAssetIDs: [UUID] = []
-            for renderedImage in renderedImages {
-                let data = try Data(contentsOf: renderedImage.fileURL)
-                let assetID = UUID()
-                let path = renderedStoragePath(draftID: draftID, slideID: renderedImage.slideID, assetID: assetID)
-                let remote = try await SupabaseStorageService(credentials: credentialVault.loadValues())
-                    .uploadAsset(
-                        LocalMediaAsset(id: assetID, data: data, contentType: "image/png", fileExtension: "png"),
-                        bucket: configuration.storageBuckets.renderedVideos,
-                        path: path
-                    )
-
-                let asset = MediaAsset(
-                    id: assetID,
-                    mediaType: .image,
-                    source: .rendered,
-                    localFilePath: renderedImage.fileURL.path,
-                    storageBucket: remote.storageBucket,
-                    storagePath: remote.storagePath,
-                    publicURL: remote.publicURL,
-                    signedURLExpiration: remote.signedURLExpiration,
-                    width: renderedImage.width,
-                    height: renderedImage.height,
-                    duration: nil,
-                    fileSize: fileSize(at: renderedImage.fileURL),
-                    checksum: nil,
-                    trendTags: [],
-                    createdAt: Date(),
-                    updatedAt: Date()
-                )
-                overview.assets.insert(asset, at: 0)
-                renderedAssetIDs.append(assetID)
+            guard let account = publishingTikTokAccount() else {
+                throw ManualPublishError.missingTikTokAccount
             }
 
-            if let refreshedDraftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) {
-                overview.drafts[refreshedDraftIndex].exportedImageAssetIDs = renderedAssetIDs
-                overview.drafts[refreshedDraftIndex].updatedAt = Date()
-            }
-
+            var job = PublishingJob(
+                id: UUID(),
+                platform: .tiktok,
+                accountID: account.id,
+                draftID: draftID,
+                scheduledAt: now,
+                status: .rendering,
+                publishMode: settings.publishMode,
+                requiresApproval: false,
+                approvedAt: now,
+                approvedByDeviceID: overview.devices.first?.id,
+                workerDeviceID: overview.devices.first?.id,
+                workerLeaseExpiresAt: nil,
+                attemptCount: 1,
+                lastAttemptAt: now,
+                lastError: nil,
+                platformPublishID: nil,
+                createdAt: now,
+                updatedAt: now
+            )
+            activeJobID = job.id
+            overview.publishingJobs.insert(job, at: 0)
             try await repository.saveOverview(overview)
-            createWorkflowMessage = "Exported \(renderedAssetIDs.count) rendered images."
+
+            logger.info("Manual TikTok publish started draftID=\(draftID.uuidString, privacy: .public) jobID=\(job.id.uuidString, privacy: .public) mode=\(settings.publishMode.rawValue, privacy: .public)")
+            let renderedAssetIDs = try await renderImageSequenceForPublish(for: draftID)
+
+            guard let refreshedDraftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) else {
+                throw SlideshowCreationError.missingDraft
+            }
+            let draft = overview.drafts[refreshedDraftIndex]
+            let renderedAssetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
+            let imageURLs = renderedAssetIDs.compactMap { renderedAssetsByID[$0]?.publicURL }
+            guard imageURLs.count == renderedAssetIDs.count, !imageURLs.isEmpty else {
+                throw ManualPublishError.missingPublishableImageURLs
+            }
+
+            updatePublishingJob(job.id, status: .publishing)
+            job.status = .publishing
+            job.updatedAt = Date()
+            createWorkflowMessage = "Posting to TikTok..."
+            let media = PreparedPlatformMedia(
+                mode: settings.publishMode,
+                imageURLs: imageURLs,
+                videoURL: nil,
+                warnings: []
+            )
+            let adapter = TikTokAdapter(configuration: configuration.tiktok)
+            let result = try await adapter.publish(job, account: account, media: media, settings: settings)
+
+            completePublishingJob(job.id, result: result, draft: draft)
+            try await repository.saveOverview(overview)
+            createWorkflowMessage = settings.postAsDraft ? "Sent to TikTok for completion." : "Published to TikTok."
             lastErrorMessage = nil
+            logger.info("Manual TikTok publish completed jobID=\(job.id.uuidString, privacy: .public) publishID=\(result.platformPostID, privacy: .public)")
         } catch {
+            if let activeJobID {
+                failPublishingJob(activeJobID, error: error)
+                try? await repository.saveOverview(overview)
+            }
             createWorkflowMessage = nil
             lastErrorMessage = error.localizedDescription
+            logger.error("Manual TikTok publish failed draftID=\(draftID.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -769,6 +783,20 @@ enum SlideshowCreationError: LocalizedError {
             "Create or repair the template style guide before generating images."
         case let .planSlideCountMismatch(expected, actual):
             "The slideshow plan returned \(actual) slides, but the selected template requires \(expected)."
+        }
+    }
+}
+
+enum ManualPublishError: LocalizedError {
+    case missingTikTokAccount
+    case missingPublishableImageURLs
+
+    var errorDescription: String? {
+        switch self {
+        case .missingTikTokAccount:
+            "Connect a TikTok account with publishing access before publishing."
+        case .missingPublishableImageURLs:
+            "Rendered slide images need public URLs before TikTok can publish them."
         }
     }
 }
@@ -973,6 +1001,203 @@ private extension FlickAppModel {
 
         for slideID in slideIDsNeedingFinal {
             try await generateImage(for: slideID, in: draftID, instruction: nil, settings: .finalExport)
+        }
+    }
+
+    func renderImageSequenceForPublish(for draftID: UUID) async throws -> [UUID] {
+        createWorkflowMessage = "Updating completed slide images..."
+        try await ensureFinalGeneratedImages(for: draftID)
+
+        guard let draftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) else {
+            throw SlideshowCreationError.missingDraft
+        }
+
+        createWorkflowMessage = "Rendering Flick text overlays..."
+        let draft = overview.drafts[draftIndex]
+        logger.info("Rendering publish image sequence draftID=\(draftID.uuidString, privacy: .public) slideCount=\(draft.slides.count, privacy: .public)")
+        let renderedImages = try await TextOverlayRenderService(renderDirectory: configuration.renderDirectory)
+            .renderImages(
+                from: draft,
+                assets: overview.assets,
+                options: ImageRenderOptions(
+                    width: SlideshowImageGenerationSettings.finalExport.width,
+                    height: SlideshowImageGenerationSettings.finalExport.height
+                )
+            )
+
+        createWorkflowMessage = "Uploading rendered images..."
+        var renderedAssetIDs: [UUID] = []
+        for renderedImage in renderedImages {
+            let data = try Data(contentsOf: renderedImage.fileURL)
+            let assetID = UUID()
+            let path = renderedStoragePath(draftID: draftID, slideID: renderedImage.slideID, assetID: assetID)
+            let remote = try await SupabaseStorageService(credentials: credentialVault.loadValues())
+                .uploadAsset(
+                    LocalMediaAsset(id: assetID, data: data, contentType: "image/png", fileExtension: "png"),
+                    bucket: configuration.storageBuckets.renderedVideos,
+                    path: path
+                )
+
+            let asset = MediaAsset(
+                id: assetID,
+                mediaType: .image,
+                source: .rendered,
+                localFilePath: renderedImage.fileURL.path,
+                storageBucket: remote.storageBucket,
+                storagePath: remote.storagePath,
+                publicURL: remote.publicURL,
+                signedURLExpiration: remote.signedURLExpiration,
+                width: renderedImage.width,
+                height: renderedImage.height,
+                duration: nil,
+                fileSize: fileSize(at: renderedImage.fileURL),
+                checksum: nil,
+                trendTags: [],
+                createdAt: Date(),
+                updatedAt: Date()
+            )
+            overview.assets.insert(asset, at: 0)
+            renderedAssetIDs.append(assetID)
+        }
+
+        if let refreshedDraftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) {
+            overview.drafts[refreshedDraftIndex].exportedImageAssetIDs = renderedAssetIDs
+            overview.drafts[refreshedDraftIndex].updatedAt = Date()
+        }
+
+        try await repository.saveOverview(overview)
+        logger.info("Rendered publish image sequence draftID=\(draftID.uuidString, privacy: .public) renderedCount=\(renderedAssetIDs.count, privacy: .public)")
+        return renderedAssetIDs
+    }
+
+    func publishingTikTokAccount() -> ConnectedAccount? {
+        overview.accounts.first { account in
+            account.platform == .tiktok
+                && account.authorizationSource == .loginKit
+                && account.status == .connected
+                && account.isPublishingEnabled
+        }
+    }
+
+    func updatePublishingJob(_ jobID: UUID, status: PublishingJobStatus) {
+        guard let jobIndex = overview.publishingJobs.firstIndex(where: { $0.id == jobID }) else { return }
+        overview.publishingJobs[jobIndex].status = status
+        overview.publishingJobs[jobIndex].updatedAt = Date()
+    }
+
+    func completePublishingJob(_ jobID: UUID, result: PublishResult, draft: SlideshowDraft) {
+        let now = Date()
+        let accountID = overview.publishingJobs.first(where: { $0.id == jobID })?.accountID ?? UUID()
+        if let jobIndex = overview.publishingJobs.firstIndex(where: { $0.id == jobID }) {
+            overview.publishingJobs[jobIndex].status = .published
+            overview.publishingJobs[jobIndex].platformPublishID = result.platformPostID
+            overview.publishingJobs[jobIndex].lastError = nil
+            overview.publishingJobs[jobIndex].updatedAt = now
+        }
+
+        if let draftIndex = overview.drafts.firstIndex(where: { $0.id == draft.id }) {
+            overview.drafts[draftIndex].status = .published
+            overview.drafts[draftIndex].updatedAt = now
+        }
+
+        overview.publishedPosts.insert(
+            PublishedPost(
+                id: UUID(),
+                platform: result.platform,
+                accountID: accountID,
+                platformPostID: result.platformPostID,
+                platformURL: result.platformURL,
+                publishedAt: result.publishedAt,
+                draftID: draft.id,
+                campaignID: draft.campaignID,
+                templateID: draft.templateID,
+                trendTags: [],
+                caption: draft.caption,
+                createdAt: now,
+                updatedAt: now
+            ),
+            at: 0
+        )
+    }
+
+    func failPublishingJob(_ jobID: UUID, error: Error) {
+        guard let jobIndex = overview.publishingJobs.firstIndex(where: { $0.id == jobID }) else { return }
+        overview.publishingJobs[jobIndex].status = .failed
+        overview.publishingJobs[jobIndex].lastError = platformFailure(from: error)
+        overview.publishingJobs[jobIndex].lastAttemptAt = Date()
+        overview.publishingJobs[jobIndex].updatedAt = Date()
+    }
+
+    func platformFailure(from error: Error) -> PlatformFailure {
+        if let error = error as? TikTokPublishAPIError {
+            let kind = platformFailureKind(forTikTokCode: error.code)
+            return PlatformFailure(
+                kind: kind,
+                message: error.errorDescription ?? "TikTok publishing failed.",
+                suggestedFix: suggestedFix(for: kind),
+                rawResponse: error.rawResponse
+            )
+        }
+
+        if let error = error as? PlatformAdapterError {
+            let kind: PlatformErrorKind = error == .missingAccountToken ? .authExpired : .unknownServerError
+            return PlatformFailure(
+                kind: kind,
+                message: error.localizedDescription,
+                suggestedFix: suggestedFix(for: kind),
+                rawResponse: nil
+            )
+        }
+
+        return PlatformFailure(
+            kind: .unknownServerError,
+            message: error.localizedDescription,
+            suggestedFix: suggestedFix(for: .unknownServerError),
+            rawResponse: nil
+        )
+    }
+
+    func platformFailureKind(forTikTokCode code: String) -> PlatformErrorKind {
+        switch code {
+        case "access_token_invalid":
+            .authExpired
+        case "scope_not_authorized":
+            .missingScope
+        case "rate_limit_exceeded":
+            .rateLimit
+        case "url_ownership_unverified":
+            .urlOwnershipUnverified
+        case "privacy_level_option_mismatch", "invalid_param":
+            .invalidPrivacySetting
+        case "unaudited_client_can_only_post_to_private_accounts":
+            .unauditedClient
+        case "spam_risk_too_many_posts", "spam_risk_user_banned_from_posting", "spam_risk_too_many_pending_share", "reached_active_user_cap", "app_version_check_failed":
+            .platformProcessingFailed
+        default:
+            .unknownServerError
+        }
+    }
+
+    func suggestedFix(for kind: PlatformErrorKind) -> String {
+        switch kind {
+        case .authExpired:
+            "Reconnect the TikTok account and try again."
+        case .missingScope:
+            "Reconnect TikTok with the required publishing scope."
+        case .rateLimit:
+            "Wait for the TikTok rate limit window to reset."
+        case .mediaURLInaccessible:
+            "Verify the rendered image URLs are publicly reachable."
+        case .urlOwnershipUnverified:
+            "Verify the Supabase media URL prefix or custom domain in TikTok."
+        case .invalidPrivacySetting:
+            "Refresh TikTok creator info and choose a supported visibility option."
+        case .unauditedClient:
+            "Use private visibility while the TikTok client is unaudited, or complete app audit."
+        case .platformProcessingFailed:
+            "Check the TikTok account and app status, then retry."
+        case .unknownServerError:
+            "Check the platform response and retry after the service recovers."
         }
     }
 

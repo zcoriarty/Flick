@@ -13,21 +13,11 @@ struct CreateGenerationControls: View {
     var generateMissingAction: () -> Void
 
     private var completeCount: Int {
-        draft.slides.filter { slide in
-            guard let imageAssetID = slide.imageAssetID else { return false }
-            guard let asset = assetsByID[imageAssetID] else { return false }
-            return asset.hasAvailableMediaLocation
-                && SlideshowImageGenerationSettings.draft.isSatisfied(by: asset)
-                && slide.generationStatus == .complete
-        }.count
+        draft.createGeneratedImageCount(assetsByID: assetsByID)
     }
 
     private var missingCount: Int {
-        draft.slides.filter { slide in
-            guard let imageAssetID = slide.imageAssetID else { return true }
-            guard let asset = assetsByID[imageAssetID], asset.hasAvailableMediaLocation else { return true }
-            return !SlideshowImageGenerationSettings.draft.isSatisfied(by: asset)
-        }.count
+        draft.createMissingImageCount(assetsByID: assetsByID)
     }
 
     private var actionTitle: String {
@@ -49,6 +39,14 @@ struct CreateGenerationControls: View {
                 value: "\(completeCount) of \(draft.slides.count)"
             )
 
+            if let message, !message.isEmpty {
+                Text(message)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+        }
+
+        if isGenerating || missingCount > 0 {
             Button(action: generateMissingAction) {
                 HStack(spacing: 10) {
                     if isGenerating {
@@ -59,17 +57,14 @@ struct CreateGenerationControls: View {
 
                     Text(actionTitle)
                         .fontWeight(.semibold)
-
-                    Spacer()
                 }
+                .frame(maxWidth: .infinity)
             }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 0, leading: -16, bottom: 0, trailing: -16))
+            .buttonStyle(.glassProminent)
+            .controlSize(.large)
             .disabled(isGenerating || draft.slides.isEmpty || missingCount == 0)
-
-            if let message, !message.isEmpty {
-                Text(message)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
         }
     }
 }

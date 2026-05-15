@@ -18,13 +18,8 @@ struct DashboardView: View {
                         .font(.system(.body, weight: .semibold))
                 }
                 .sharedBackgroundVisibility(.hidden)
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Generate batch", systemImage: "wand.and.sparkles") {
-                        appModel.selectedSection = .create
-                    }
-                    .buttonStyle(.glassProminent)
-                }
-                ToolbarItem(placement: .primaryAction) {
+                
+                ToolbarItem(placement: .secondaryAction) {
                     Button("Refresh", systemImage: "arrow.clockwise") {
                         Task { await appModel.refresh() }
                     }

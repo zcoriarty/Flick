@@ -15,7 +15,11 @@ struct CreateTikTokSettingsSection: View {
     var action: () -> Void
 
     private var settingsSummary: String {
-        let destination = postAsDraft ? "Draft" : "Direct post"
+        if postAsDraft {
+            return "Draft upload"
+        }
+
+        let destination = "Direct post"
         guard let selectedVisibility else { return "\(destination), select visibility" }
 
         let disclosure = disclosureSummary
