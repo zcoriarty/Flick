@@ -584,6 +584,12 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
     }
 }
 
+extension SlideshowDraft {
+    var isAvailableInCreateDrafts: Bool {
+        status != .published && status != .archived
+    }
+}
+
 struct PublishingJob: Identifiable, Codable, Hashable {
     var id: UUID
     var platform: SocialPlatform

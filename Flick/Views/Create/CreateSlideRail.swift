@@ -90,8 +90,8 @@ struct GeneratedSlideImageView: View {
 
     var body: some View {
         Group {
-            if let filePath = asset?.localFilePath {
-                LocalAssetImage(fileURL: URL(fileURLWithPath: filePath), contentMode: contentMode)
+            if let fileURL = asset?.localFileURL {
+                LocalAssetImage(fileURL: fileURL, contentMode: contentMode)
             } else if let publicURL = asset?.publicURL {
                 AsyncImage(url: publicURL) { phase in
                     switch phase {

@@ -3,6 +3,7 @@
 //  FlickTests
 //
 
+import CoreData
 import XCTest
 @testable import Flick
 
@@ -34,6 +35,119 @@ final class FlickTests: XCTestCase {
         XCTAssertTrue(model.overview.drafts.isEmpty)
         XCTAssertTrue(model.overview.publishingJobs.isEmpty)
         XCTAssertTrue(model.overview.analyticsPerformance.isEmpty)
+    }
+
+    func testCreateFlowDoesNotAutoSelectPersistedDraftOnRefresh() async {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let draft = makeSlideshowDraft(now: now)
+        var state = FlickEmptyState.make(now: now)
+        state.drafts = [draft]
+
+        let model = FlickAppModel(
+            repository: InMemoryFlickRepository(state: state),
+            configuration: .current
+        )
+
+        await model.refresh()
+
+        XCTAssertNil(model.activeCreateDraftID)
+        XCTAssertNil(model.activeCreateDraft)
+        XCTAssertEqual(model.createDrafts.map(\.id), [draft.id])
+
+        model.selectCreateDraft(id: draft.id)
+
+        XCTAssertEqual(model.activeCreateDraftID, draft.id)
+        XCTAssertEqual(model.activeCreateDraft?.id, draft.id)
+    }
+
+    func testCreateDraftsExcludePostedAndArchivedDrafts() async {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let draft = makeSlideshowDraft(now: now)
+        var published = makeSlideshowDraft(now: now)
+        published.status = .published
+        var archived = makeSlideshowDraft(now: now)
+        archived.status = .archived
+
+        var state = FlickEmptyState.make(now: now)
+        state.drafts = [published, draft, archived]
+
+        let model = FlickAppModel(
+            repository: InMemoryFlickRepository(state: state),
+            configuration: .current
+        )
+
+        await model.refresh()
+
+        XCTAssertEqual(model.createDrafts.map(\.id), [draft.id])
+    }
+
+    func testCoreDataRoundTripsGeneratedSlideImageAsset() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let persistenceController = PersistenceController(inMemory: true)
+        let repository = CoreDataFlickRepository(
+            context: persistenceController.container.viewContext,
+            cloudAvailability: { false }
+        )
+        let asset = makeMediaAsset(
+            source: .generated,
+            localFilePath: "/tmp/flick-generated-\(UUID().uuidString).png",
+            publicURL: URL(string: "https://example.com/generated-slide.png"),
+            now: now
+        )
+        let slide = makeSlide(imageAssetID: asset.id, generationStatus: .complete, now: now)
+        let draft = makeSlideshowDraft(slides: [slide], now: now)
+        var state = FlickEmptyState.make(now: now)
+        state.assets = [asset]
+        state.drafts = [draft]
+
+        try await repository.saveOverview(state)
+        let loaded = try await repository.loadOverview()
+        let loadedDraft = try XCTUnwrap(loaded.drafts.first)
+        let loadedSlide = try XCTUnwrap(loadedDraft.slides.first)
+        let loadedAsset = try XCTUnwrap(loaded.assets.first)
+
+        XCTAssertEqual(loadedSlide.imageAssetID, asset.id)
+        XCTAssertEqual(loadedSlide.generationStatus, .complete)
+        XCTAssertEqual(loadedAsset.id, asset.id)
+        XCTAssertEqual(loadedAsset.source, .generated)
+        XCTAssertEqual(loadedAsset.publicURL, asset.publicURL)
+    }
+
+    func testGeneratedAssetWithMissingLocalFileCanUsePublicURL() throws {
+        let asset = makeMediaAsset(
+            source: .generated,
+            localFilePath: "/tmp/flick-missing-\(UUID().uuidString).png",
+            publicURL: try XCTUnwrap(URL(string: "https://example.com/generated-slide.png"))
+        )
+
+        XCTAssertNil(asset.localFileURL)
+        XCTAssertTrue(asset.hasAvailableMediaLocation)
+    }
+
+    func testRefreshRepairsFailedStatusWhenGeneratedImageExists() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let asset = makeMediaAsset(
+            source: .generated,
+            localFilePath: "/tmp/flick-missing-\(UUID().uuidString).png",
+            publicURL: try XCTUnwrap(URL(string: "https://example.com/generated-slide.png")),
+            now: now
+        )
+        var slide = makeSlide(imageAssetID: asset.id, generationStatus: .failed, now: now)
+        slide.generationErrorMessage = "Summary failed after image upload."
+        let draft = makeSlideshowDraft(slides: [slide], now: now)
+        var state = FlickEmptyState.make(now: now)
+        state.assets = [asset]
+        state.drafts = [draft]
+
+        let repository = InMemoryFlickRepository(state: state)
+        let model = FlickAppModel(repository: repository, configuration: .current)
+
+        await model.refresh()
+
+        let repairedSlide = try XCTUnwrap(model.overview.drafts.first?.slides.first)
+        XCTAssertEqual(repairedSlide.generationStatus, .complete)
+        XCTAssertNil(repairedSlide.generationErrorMessage)
+        XCTAssertEqual(repository.state.drafts.first?.slides.first?.generationStatus, .complete)
     }
 
     func testCredentialVaultStoresOnlySupportedNonEmptyValues() throws {
@@ -258,6 +372,123 @@ private func makePublishingJob(status: PublishingJobStatus = .queued) -> Publish
         createdAt: now,
         updatedAt: now
     )
+}
+
+private func makeSlideshowDraft(
+    id: UUID = UUID(),
+    slides: [Slide]? = nil,
+    now: Date = Date()
+) -> SlideshowDraft {
+    SlideshowDraft(
+        id: id,
+        title: "Launch Carousel",
+        campaignID: nil,
+        templateID: nil,
+        brief: "Launch brief",
+        topic: "Product launch",
+        audience: "Creators",
+        goal: "Increase installs",
+        tone: "Direct",
+        narrativeArc: ["Hook", "Proof"],
+        globalVisualMotif: "Clean product frames",
+        planSummary: "Two-slide launch story",
+        slides: slides ?? [makeSlide(now: now)],
+        caption: "Try Flick",
+        hashtags: ["flick"],
+        targetPlatforms: [.tiktok],
+        status: .draft,
+        exportedImageAssetIDs: [],
+        createdAt: now,
+        updatedAt: now
+    )
+}
+
+private func makeSlide(
+    id: UUID = UUID(),
+    imageAssetID: UUID? = nil,
+    generationStatus: SlideGenerationStatus = .notStarted,
+    now: Date = Date()
+) -> Slide {
+    Slide(
+        id: id,
+        index: 0,
+        role: .hook,
+        imageAssetID: imageAssetID,
+        prompt: "A polished app screenshot on a phone.",
+        overlayText: "Grow faster",
+        supportingText: "Create better posts",
+        ctaText: "Start today",
+        visualGoal: "Hero product shot",
+        textPosition: .left,
+        textSafeArea: TextPosition.left.defaultSafeArea,
+        mainSubjectArea: TextPosition.left.defaultSubjectArea,
+        textStyle: SlideTextStyle(
+            fontName: "System Rounded",
+            weight: "Black",
+            foregroundHex: "#FFFFFF",
+            backgroundHex: "#111111",
+            alignment: "left"
+        ),
+        selectedVisualSummary: "Phone with dashboard",
+        generationStatus: generationStatus,
+        duration: 1.5,
+        transition: .none,
+        createdAt: now,
+        updatedAt: now
+    )
+}
+
+private func makeMediaAsset(
+    id: UUID = UUID(),
+    source: AssetSource = .generated,
+    localFilePath: String? = nil,
+    publicURL: URL? = nil,
+    now: Date = Date()
+) -> MediaAsset {
+    MediaAsset(
+        id: id,
+        mediaType: .image,
+        source: source,
+        localFilePath: localFilePath,
+        storageBucket: "flick-generated-images",
+        storagePath: "generated-slides/\(id.uuidString).png",
+        publicURL: publicURL,
+        signedURLExpiration: nil,
+        width: 1536,
+        height: 864,
+        duration: nil,
+        fileSize: 1024,
+        checksum: nil,
+        trendTags: [],
+        createdAt: now,
+        updatedAt: now
+    )
+}
+
+@MainActor
+private final class InMemoryFlickRepository: FlickRepository {
+    var state: FlickOverviewState
+
+    init(state: FlickOverviewState) {
+        self.state = state
+    }
+
+    func loadOverview() async throws -> FlickOverviewState {
+        state
+    }
+
+    func saveOverview(_ state: FlickOverviewState) async throws {
+        self.state = state
+    }
+
+    func upsertAsset(_ asset: MediaAsset) async throws {
+        state.assets.removeAll { $0.id == asset.id }
+        state.assets.insert(asset, at: 0)
+    }
+
+    func deleteAsset(id: UUID) async throws {
+        state.assets.removeAll { $0.id == id }
+    }
 }
 
 @MainActor

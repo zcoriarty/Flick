@@ -17,4 +17,6 @@ Flick is an iOS app. Treat this repository as an iOS 26+ codebase and prefer cur
 - Keep code that is only for one view close to that view. If a helper, subview, formatter, or computed property should not be reused elsewhere, keep it in that view's file and mark it `private`.
 - Do not create custom view modifiers unless they remove meaningful duplication, improve readability across multiple call sites, or match an existing project pattern. Prefer direct SwiftUI composition for one-off styling.
 - Preserve the existing app architecture and naming conventions. Avoid broad refactors unless they are necessary for the requested change.
+- Delete dead code when a change makes it obsolete. Do not leave unused types, helpers, views, assets, or code paths behind when they are no longer needed.
 - Add focused tests when changing logic, persistence, scheduling, services, or other behavior where regressions are likely. UI-only changes should be verified in the simulator when practical.
+- When running the app in the simulator, find and use the simulator that is already running. Do not create duplicate simulator instances or new simulator devices unless the user explicitly asks for one.

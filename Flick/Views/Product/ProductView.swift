@@ -396,10 +396,6 @@ private extension PhotosPickerItem {
 }
 
 private extension MediaAsset {
-    var localFileURL: URL? {
-        localFilePath.map { URL(fileURLWithPath: $0) }
-    }
-
     var productDimensions: String {
         guard width > 0, height > 0 else { return "Not set" }
         return "\(width.formatted()) x \(height.formatted())"

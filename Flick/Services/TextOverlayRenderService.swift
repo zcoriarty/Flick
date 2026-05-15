@@ -61,8 +61,8 @@ struct TextOverlayRenderService {
 
     private func loadCGImage(for asset: MediaAsset) async throws -> CGImage {
         let data: Data
-        if let localFilePath = asset.localFilePath {
-            data = try Data(contentsOf: URL(fileURLWithPath: localFilePath))
+        if let localFileURL = asset.localFileURL {
+            data = try Data(contentsOf: localFileURL)
         } else if let publicURL = asset.publicURL {
             data = try await urlSession.data(from: publicURL).0
         } else {

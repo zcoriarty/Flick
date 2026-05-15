@@ -76,16 +76,44 @@ final class FlickAppModel {
         }
     }
 
+    var createDrafts: [SlideshowDraft] {
+        overview.drafts.filter(\.isAvailableInCreateDrafts)
+    }
+
+    var activeCreateDraft: SlideshowDraft? {
+        guard let activeCreateDraftID else { return nil }
+        return createDrafts.first { $0.id == activeCreateDraftID }
+    }
+
     func refresh() async {
         do {
             overview = try await repository.loadOverview()
             configuration = .current
             applyAuthorizedAccounts()
             applyCredentialHealth()
+            clearActiveCreateDraftIfUnavailable()
+            if reconcileCompletedSlideImages() {
+                try await repository.saveOverview(overview)
+            }
             lastErrorMessage = nil
         } catch {
             lastErrorMessage = error.localizedDescription
         }
+    }
+
+    func selectCreateDraft(id: UUID) {
+        guard createDrafts.contains(where: { $0.id == id }) else { return }
+        activeCreateDraftID = id
+        selectedSection = .create
+    }
+
+    func clearActiveCreateDraft() {
+        activeCreateDraftID = nil
+    }
+
+    private func clearActiveCreateDraftIfUnavailable() {
+        guard activeCreateDraftID != nil, activeCreateDraft == nil else { return }
+        activeCreateDraftID = nil
     }
 
     func toggleAutomationPaused() {
@@ -131,6 +159,7 @@ final class FlickAppModel {
         copy.createdAt = Date()
         copy.updatedAt = Date()
         overview.drafts.insert(copy, at: 0)
+        activeCreateDraftID = copy.id
         selectedSection = .create
     }
 
@@ -213,6 +242,7 @@ final class FlickAppModel {
         overview.assets.append(contentsOf: mediaAssets)
         overview.templates.insert(creativeTemplate, at: 0)
         overview.drafts.insert(draft, at: 0)
+        activeCreateDraftID = draft.id
         selectedSection = .create
     }
 
@@ -401,7 +431,7 @@ final class FlickAppModel {
                 .sorted { $0.index < $1.index }
                 .filter { slide in
                     guard let imageAssetID = slide.imageAssetID else { return true }
-                    return assetsByID[imageAssetID] == nil
+                    return assetsByID[imageAssetID]?.hasAvailableMediaLocation != true
                 }
                 .map(\.id)
 
@@ -800,13 +830,14 @@ private extension FlickAppModel {
 
         do {
             let openAIClient = OpenAIClient(credentials: credentialVault.loadValues())
+            let slideshowPlanner = SlideshowPlannerService(client: openAIClient)
             var draft = overview.drafts[draftIndex]
             var slide = draft.slides[slideIndex]
             let styleGuide = try styleGuide(for: draft)
             let previousSummary = previousVisualSummary(before: slideIndex, in: draft)
 
             if let instruction, !instruction.isEmpty {
-                let rewrite = try await SlideshowPlannerService(client: openAIClient).rewritePrompt(
+                let rewrite = try await slideshowPlanner.rewritePrompt(
                     draft: draft,
                     slide: slide,
                     styleGuide: styleGuide,
@@ -850,12 +881,6 @@ private extension FlickAppModel {
                     path: path
                 )
 
-            let summary = try await SlideshowPlannerService(client: openAIClient).summarizeGeneratedImage(
-                data: generatedImage.data,
-                contentType: generatedImage.contentType,
-                slide: slide
-            )
-
             let asset = MediaAsset(
                 id: assetID,
                 mediaType: .image,
@@ -883,7 +908,6 @@ private extension FlickAppModel {
                 overview.drafts[refreshedDraftIndex].slides[refreshedSlideIndex].prompt = slide.prompt
                 overview.drafts[refreshedDraftIndex].slides[refreshedSlideIndex].visualGoal = slide.visualGoal
                 overview.drafts[refreshedDraftIndex].slides[refreshedSlideIndex].imageAssetID = assetID
-                overview.drafts[refreshedDraftIndex].slides[refreshedSlideIndex].selectedVisualSummary = summary
                 overview.drafts[refreshedDraftIndex].slides[refreshedSlideIndex].generationStatus = .complete
                 overview.drafts[refreshedDraftIndex].slides[refreshedSlideIndex].generationErrorMessage = nil
                 overview.drafts[refreshedDraftIndex].slides[refreshedSlideIndex].updatedAt = Date()
@@ -891,17 +915,25 @@ private extension FlickAppModel {
             }
 
             try await repository.saveOverview(overview)
-        } catch {
+
+            let summary = (try? await slideshowPlanner.summarizeGeneratedImage(
+                data: generatedImage.data,
+                contentType: generatedImage.contentType,
+                slide: slide
+            )) ?? slide.selectedVisualSummary
+
             if
+                !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                 let refreshedDraftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }),
                 let refreshedSlideIndex = overview.drafts[refreshedDraftIndex].slides.firstIndex(where: { $0.id == slideID })
             {
-                overview.drafts[refreshedDraftIndex].slides[refreshedSlideIndex].generationStatus = .failed
-                overview.drafts[refreshedDraftIndex].slides[refreshedSlideIndex].generationErrorMessage = error.localizedDescription
+                overview.drafts[refreshedDraftIndex].slides[refreshedSlideIndex].selectedVisualSummary = summary
                 overview.drafts[refreshedDraftIndex].slides[refreshedSlideIndex].updatedAt = Date()
                 overview.drafts[refreshedDraftIndex].updatedAt = Date()
-                try? await repository.saveOverview(overview)
+                try await repository.saveOverview(overview)
             }
+        } catch {
+            await applyGenerationFailure(error, slideID: slideID, draftID: draftID)
             throw error
         }
     }
@@ -917,6 +949,9 @@ private extension FlickAppModel {
                 guard let assetID = slide.imageAssetID, let asset = assetsByID[assetID] else {
                     return true
                 }
+                guard asset.hasAvailableMediaLocation else {
+                    return true
+                }
                 return asset.width < SlideshowImageGenerationSettings.finalExport.width || asset.height < SlideshowImageGenerationSettings.finalExport.height
             }
             .map(\.id)
@@ -924,6 +959,80 @@ private extension FlickAppModel {
         for slideID in slideIDsNeedingFinal {
             try await generateImage(for: slideID, in: draftID, instruction: nil, settings: .finalExport)
         }
+    }
+
+    func applyGenerationFailure(_ error: Error, slideID: UUID, draftID: UUID) async {
+        guard
+            let draftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }),
+            let slideIndex = overview.drafts[draftIndex].slides.firstIndex(where: { $0.id == slideID })
+        else {
+            return
+        }
+
+        let now = Date()
+        let slide = overview.drafts[draftIndex].slides[slideIndex]
+        let assetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
+
+        if slideHasAvailableGeneratedImage(slide, assetsByID: assetsByID) {
+            overview.drafts[draftIndex].slides[slideIndex].generationStatus = .complete
+            overview.drafts[draftIndex].slides[slideIndex].generationErrorMessage = nil
+        } else {
+            overview.drafts[draftIndex].slides[slideIndex].generationStatus = .failed
+            overview.drafts[draftIndex].slides[slideIndex].generationErrorMessage = error.localizedDescription
+        }
+
+        overview.drafts[draftIndex].slides[slideIndex].updatedAt = now
+        overview.drafts[draftIndex].updatedAt = now
+        try? await repository.saveOverview(overview)
+    }
+
+    @discardableResult
+    func reconcileCompletedSlideImages(now: Date = Date()) -> Bool {
+        let assetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
+        var didChange = false
+
+        for draftIndex in overview.drafts.indices {
+            var didChangeDraft = false
+
+            for slideIndex in overview.drafts[draftIndex].slides.indices {
+                let slide = overview.drafts[draftIndex].slides[slideIndex]
+                let hasGeneratedImage = slideHasAvailableGeneratedImage(slide, assetsByID: assetsByID)
+
+                if hasGeneratedImage {
+                    if slide.generationStatus != .complete || slide.generationErrorMessage != nil {
+                        overview.drafts[draftIndex].slides[slideIndex].generationStatus = .complete
+                        overview.drafts[draftIndex].slides[slideIndex].generationErrorMessage = nil
+                        overview.drafts[draftIndex].slides[slideIndex].updatedAt = now
+                        didChange = true
+                        didChangeDraft = true
+                    }
+                } else if slide.generationStatus == .generating || slide.generationStatus == .complete {
+                    overview.drafts[draftIndex].slides[slideIndex].generationStatus = .notStarted
+                    overview.drafts[draftIndex].slides[slideIndex].generationErrorMessage = nil
+                    overview.drafts[draftIndex].slides[slideIndex].updatedAt = now
+                    didChange = true
+                    didChangeDraft = true
+                }
+            }
+
+            if didChangeDraft {
+                overview.drafts[draftIndex].updatedAt = now
+            }
+        }
+
+        return didChange
+    }
+
+    func slideHasAvailableGeneratedImage(_ slide: Slide, assetsByID: [UUID: MediaAsset]) -> Bool {
+        guard
+            let assetID = slide.imageAssetID,
+            let asset = assetsByID[assetID],
+            asset.source == .generated
+        else {
+            return false
+        }
+
+        return asset.hasAvailableMediaLocation
     }
 
     func styleGuide(for draft: SlideshowDraft) throws -> TemplateStyleGuide {

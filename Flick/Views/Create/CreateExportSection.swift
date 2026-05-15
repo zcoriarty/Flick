@@ -14,7 +14,7 @@ struct CreateExportSection: View {
     private var isReady: Bool {
         draft.slides.allSatisfy { slide in
             guard let imageAssetID = slide.imageAssetID else { return false }
-            return assetsByID[imageAssetID] != nil && slide.generationStatus == .complete
+            return assetsByID[imageAssetID]?.hasAvailableMediaLocation == true && slide.generationStatus == .complete
         }
     }
 

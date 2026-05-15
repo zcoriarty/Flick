@@ -15,14 +15,14 @@ struct CreateGenerationControls: View {
     private var completeCount: Int {
         draft.slides.filter { slide in
             guard let imageAssetID = slide.imageAssetID else { return false }
-            return assetsByID[imageAssetID] != nil && slide.generationStatus == .complete
+            return assetsByID[imageAssetID]?.hasAvailableMediaLocation == true && slide.generationStatus == .complete
         }.count
     }
 
     private var missingCount: Int {
         draft.slides.filter { slide in
             guard let imageAssetID = slide.imageAssetID else { return true }
-            return assetsByID[imageAssetID] == nil
+            return assetsByID[imageAssetID]?.hasAvailableMediaLocation != true
         }.count
     }
 

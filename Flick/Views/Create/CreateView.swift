@@ -12,6 +12,7 @@ struct CreateView: View {
     @State private var templateLoadState: CreateTemplateLoadState = .loading
     @State private var selectedTemplate: ExampleSlideshowTemplate?
     @State private var isTemplatePickerPresented = false
+    @State private var isDraftsPresented = false
     @State private var selectedSlideID: UUID?
     @State private var postTime = Date()
     @State private var selectedWeekdays: Set<CreateWeekday> = [CreateWeekday.current]
@@ -62,7 +63,7 @@ struct CreateView: View {
                 Section("Slideshow") {
                     CreateMessageRow(
                         title: "No slideshow plan yet",
-                        message: "Select a template and analyze it to start editing slides."
+                        message: "Select a template and analyze it to start editing slides, or open Drafts to resume an unposted draft."
                     )
                 }
             }
@@ -92,6 +93,17 @@ struct CreateView: View {
         .dismissKeyboardOnTap()
         .navigationTitle("Create")
         .toolbarTitleDisplayMode(.inline)
+        .toolbar {
+            #if os(iOS)
+            ToolbarItem(placement: .topBarLeading) {
+                draftsButton
+            }
+            #else
+            ToolbarItem(placement: .navigation) {
+                draftsButton
+            }
+            #endif
+        }
         .task {
             if case .loading = templateLoadState {
                 loadTemplates()
@@ -118,6 +130,17 @@ struct CreateView: View {
                 selectedTemplate: $selectedTemplate
             )
         }
+        .sheet(isPresented: $isDraftsPresented) {
+            CreateDraftsSheet(
+                drafts: appModel.createDrafts,
+                assetsByID: Dictionary(uniqueKeysWithValues: appModel.overview.assets.map { ($0.id, $0) }),
+                selectedDraftID: appModel.activeCreateDraftID,
+                selectAction: { draftID in
+                    appModel.selectCreateDraft(id: draftID)
+                    updateSelectedSlide(using: appModel)
+                }
+            )
+        }
         .sheet(isPresented: $isTikTokSettingsPresented) {
             TikTokSettingsSheet(
                 accountName: tiktokAccountName,
@@ -139,6 +162,12 @@ struct CreateView: View {
         #endif
     }
 
+    private var draftsButton: some View {
+        Button("Drafts", systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90") {
+            isDraftsPresented = true
+        }
+    }
+
     private func loadTemplates() {
         templateLoadState = .loading
         do {
@@ -157,13 +186,7 @@ struct CreateView: View {
     }
 
     private func activeDraftID(in appModel: FlickAppModel) -> UUID? {
-        if
-            let activeCreateDraftID = appModel.activeCreateDraftID,
-            appModel.overview.drafts.contains(where: { $0.id == activeCreateDraftID })
-        {
-            return activeCreateDraftID
-        }
-        return appModel.overview.drafts.first?.id
+        appModel.activeCreateDraft?.id
     }
 
     private func updateSelectedSlide(using appModel: FlickAppModel) {

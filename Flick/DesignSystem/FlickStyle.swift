@@ -28,8 +28,7 @@ private struct FlickAppBackgroundModifier: ViewModifier {
         #if os(iOS)
         content
             .background(FlickStyle.pageBackground.ignoresSafeArea())
-            .toolbarBackground(FlickStyle.pageBackground, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbarBackground(FlickStyle.pageBackground, for: .tabBar)
             .toolbarBackground(.visible, for: .tabBar)
         #elseif os(macOS)

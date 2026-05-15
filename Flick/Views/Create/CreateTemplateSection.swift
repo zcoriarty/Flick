@@ -85,8 +85,8 @@ struct AnalyzeTemplateSection: View {
                     Text(isPlanning ? "Analyzing Template" : "Analyze Template")
                         .fontWeight(.semibold)
                 }
+                .frame(maxWidth: .infinity)
             }
-            .frame(maxWidth: .infinity)
             .buttonStyle(.glassProminent)
             .controlSize(.large)
             .disabled(isPlanning)
