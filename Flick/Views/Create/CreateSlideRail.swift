@@ -38,22 +38,9 @@ private struct SlideRailItem: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ZStack(alignment: .bottomLeading) {
-                ZStack {
-                    GeneratedSlideImageView(asset: asset)
-                    SlideOverlayPreview(slide: slide)
-                }
-                    .frame(width: 74, height: 132)
-                    .clipShape(.rect(cornerRadius: 8))
-
-                Text("\(slide.index + 1)")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(.black.opacity(0.55), in: .capsule)
-                    .padding(6)
-            }
+            GeneratedSlideImageView(asset: asset)
+                .frame(width: 74, height: 132)
+                .clipShape(.rect(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("Slide \(slide.index + 1)")
@@ -70,11 +57,7 @@ private struct SlideRailItem: View {
             }
         }
         .frame(width: 90, alignment: .leading)
-        .padding(8)
-        .background(
-            Color.secondary.opacity(0.08),
-            in: .rect(cornerRadius: 10)
-        )
+        .padding(.vertical, 8)
         .accessibilityElement(children: .combine)
     }
 }

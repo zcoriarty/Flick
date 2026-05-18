@@ -22,6 +22,8 @@ struct CreateView: View {
 
     @State private var templateLoadState: CreateTemplateLoadState = .loading
     @State private var selectedTemplate: ExampleSlideshowTemplate?
+    @State private var selectedProductID: UUID?
+    @State private var selectedProductImageAssetID: UUID?
     @State private var presentedSheet: CreateSheet?
     @State private var selectedSlideID: UUID?
     @State private var isAutonomous = false
@@ -51,10 +53,19 @@ struct CreateView: View {
                 retryAction: loadTemplates
             )
 
+            CreateProductImageSection(
+                products: appModel.overview.products,
+                productImageAssets: selectableProductImageAssets(in: appModel),
+                isAutonomous: isAutonomous,
+                selectedProductID: $selectedProductID,
+                selectedProductImageAssetID: $selectedProductImageAssetID
+            )
+
             AnalyzeTemplateSection(
                 selectedTemplate: selectedTemplate,
                 isPlanning: appModel.isPlanningSlideshow,
                 hasAnalyzedTemplate: currentDraftID != nil,
+                canAnalyze: canAnalyzeTemplate(in: appModel),
                 action: analyzeTemplate
             )
 
@@ -166,6 +177,12 @@ struct CreateView: View {
             Task {
                 await appModel.persistCreateState()
             }
+        }
+        .onChange(of: appModel.overview.products) { _, _ in
+            reconcileProductSelection(in: appModel)
+        }
+        .onChange(of: appModel.overview.assets) { _, _ in
+            reconcileProductSelection(in: appModel)
         }
         .sheet(item: $presentedSheet) { sheet in
             switch sheet {
@@ -355,6 +372,8 @@ struct CreateView: View {
             appModel.clearActiveCreateDraft()
         }
         selectedTemplate = nil
+        selectedProductID = nil
+        selectedProductImageAssetID = nil
         selectedSlideID = nil
     }
 
@@ -369,9 +388,67 @@ struct CreateView: View {
 
     private func analyzeTemplate() {
         guard let selectedTemplate else { return }
+        let productImage = selectedProductImageContext(in: appModel)
         Task {
-            await appModel.createAISlideshow(brief: "", from: selectedTemplate)
+            await appModel.createAISlideshow(brief: "", from: selectedTemplate, productImage: productImage)
             updateSelectedSlide(using: appModel)
+        }
+    }
+
+    private func canAnalyzeTemplate(in appModel: FlickAppModel) -> Bool {
+        guard selectedTemplate != nil else { return false }
+        guard let selectedProductID else { return true }
+        let imageAssets = selectableProductImageAssets(in: appModel).filter { asset in
+            asset.productIDs.contains(selectedProductID)
+        }
+        guard !imageAssets.isEmpty else { return false }
+        return isAutonomous || selectedProductImageAssetID.map { selectedAssetID in
+            imageAssets.contains { $0.id == selectedAssetID }
+        } == true
+    }
+
+    private func selectableProductImageAssets(in appModel: FlickAppModel) -> [MediaAsset] {
+        appModel.productMediaAssets.filter { asset in
+            asset.mediaType == .image && asset.hasAvailableMediaLocation
+        }
+    }
+
+    private func selectedProductImageContext(in appModel: FlickAppModel) -> SlideshowProductImage? {
+        guard
+            let selectedProductID,
+            let product = appModel.overview.products.first(where: { $0.id == selectedProductID })
+        else {
+            return nil
+        }
+
+        let productImages = selectableProductImageAssets(in: appModel).filter { asset in
+            asset.productIDs.contains(selectedProductID)
+        }
+        let asset: MediaAsset?
+        if isAutonomous {
+            asset = productImages.randomElement()
+        } else {
+            asset = selectedProductImageAssetID.flatMap { selectedAssetID in
+                productImages.first { $0.id == selectedAssetID }
+            }
+        }
+
+        guard let asset else { return nil }
+        return SlideshowProductImage(product: product, asset: asset)
+    }
+
+    private func reconcileProductSelection(in appModel: FlickAppModel) {
+        if let selectedProductID, !appModel.overview.products.contains(where: { $0.id == selectedProductID }) {
+            self.selectedProductID = nil
+            selectedProductImageAssetID = nil
+            return
+        }
+
+        guard let selectedProductImageAssetID else { return }
+        let imageAssets = selectableProductImageAssets(in: appModel)
+        guard imageAssets.contains(where: { $0.id == selectedProductImageAssetID }) else {
+            self.selectedProductImageAssetID = nil
+            return
         }
     }
 

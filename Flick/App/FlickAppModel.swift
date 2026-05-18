@@ -459,7 +459,11 @@ final class FlickAppModel {
         }
     }
 
-    func createAISlideshow(brief: String, from template: ExampleSlideshowTemplate) async {
+    func createAISlideshow(
+        brief: String,
+        from template: ExampleSlideshowTemplate,
+        productImage: SlideshowProductImage? = nil
+    ) async {
         guard !isPlanningSlideshow else { return }
 
         let normalizedBrief = brief.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -481,12 +485,15 @@ final class FlickAppModel {
             let plan = try await SlideshowPlannerService(client: openAIClient).createPlan(
                 brief: planningBrief,
                 template: template,
-                styleGuide: styleGuide
+                styleGuide: styleGuide,
+                productImage: productImage
             )
 
-            guard plan.slides.count == template.slideCount else {
-                throw SlideshowCreationError.planSlideCountMismatch(expected: template.slideCount, actual: plan.slides.count)
+            let expectedSlideCount = expectedPlanSlideCount(template: template, productImage: productImage)
+            guard plan.slides.count == expectedSlideCount else {
+                throw SlideshowCreationError.planSlideCountMismatch(expected: expectedSlideCount, actual: plan.slides.count)
             }
+            try validateProductImagePlacement(in: plan, productImage: productImage)
 
             let now = Date()
             let creativeTemplate = CreativeTemplate(
@@ -506,6 +513,7 @@ final class FlickAppModel {
                 from: plan,
                 brief: planningBrief,
                 templateID: creativeTemplate.id,
+                productImage: productImage,
                 now: now
             )
 
@@ -587,6 +595,9 @@ final class FlickAppModel {
             let slideIDs = overview.drafts[draftIndex].slides
                 .sorted { $0.index < $1.index }
                 .filter { slide in
+                    if slideUsesAvailableUploadedImage(slide, assetsByID: assetsByID) {
+                        return false
+                    }
                     guard !replacingExisting else { return true }
                     guard let imageAssetID = slide.imageAssetID else { return true }
                     return assetsByID[imageAssetID]?.hasAvailableMediaLocation != true
@@ -610,6 +621,11 @@ final class FlickAppModel {
 
     func regenerateSlideImage(slideID: UUID, in draftID: UUID, instruction: String) async {
         guard !isGeneratingSlideshowImages else { return }
+        guard !slideUsesAvailableUploadedImage(slideID: slideID, draftID: draftID) else {
+            createWorkflowMessage = "This slide uses a selected product image."
+            lastErrorMessage = nil
+            return
+        }
         isGeneratingSlideshowImages = true
         defer {
             isGeneratingSlideshowImages = false
@@ -937,6 +953,7 @@ enum SlideshowCreationError: LocalizedError {
     case missingDraft
     case missingStyleGuide
     case planSlideCountMismatch(expected: Int, actual: Int)
+    case invalidProductImagePlacement
 
     var errorDescription: String? {
         switch self {
@@ -946,6 +963,8 @@ enum SlideshowCreationError: LocalizedError {
             "Create or repair the template style guide before generating images."
         case let .planSlideCountMismatch(expected, actual):
             "The slideshow plan returned \(actual) slides, but the selected template requires \(expected)."
+        case .invalidProductImagePlacement:
+            "The slideshow plan must place the selected product image on exactly one slide."
         }
     }
 }
@@ -965,26 +984,35 @@ enum ManualPublishError: LocalizedError {
 }
 
 private extension FlickAppModel {
+    func expectedPlanSlideCount(
+        template: ExampleSlideshowTemplate,
+        productImage: SlideshowProductImage?
+    ) -> Int {
+        template.slideCount + (productImage == nil ? 0 : 1)
+    }
+
     func makeDraft(
         from plan: PlannedSlideshow,
         brief: String,
         templateID: UUID,
+        productImage: SlideshowProductImage?,
         now: Date
     ) -> SlideshowDraft {
         let slides = plan.slides
             .sorted { $0.index < $1.index }
             .enumerated()
             .map { offset, plannedSlide in
-                Slide(
+                let usesProductImage = productImage != nil && plannedSlide.usesProductImage
+                return Slide(
                     id: UUID(),
                     index: offset,
-                    imageAssetID: nil,
-                    prompt: plannedSlide.imagePrompt,
+                    imageAssetID: usesProductImage ? productImage?.asset.id : nil,
+                    prompt: usesProductImage ? productImagePrompt(for: productImage) : plannedSlide.imagePrompt,
                     text: plannedSlide.text,
                     textPosition: .center,
                     textStyle: SlideTextStyle(),
-                    selectedVisualSummary: plannedSlide.selectedVisualSummary,
-                    generationStatus: .notStarted,
+                    selectedVisualSummary: selectedVisualSummary(for: plannedSlide, productImage: usesProductImage ? productImage : nil),
+                    generationStatus: usesProductImage ? .complete : .notStarted,
                     generationErrorMessage: nil,
                     promptVersion: 1,
                     createdAt: now,
@@ -1014,6 +1042,39 @@ private extension FlickAppModel {
             createdAt: now,
             updatedAt: now
         )
+    }
+
+    func validateProductImagePlacement(
+        in plan: PlannedSlideshow,
+        productImage: SlideshowProductImage?
+    ) throws {
+        guard productImage != nil else { return }
+        let placementCount = plan.slides.filter(\.usesProductImage).count
+        guard placementCount == 1 else {
+            throw SlideshowCreationError.invalidProductImagePlacement
+        }
+    }
+
+    func productImagePrompt(for productImage: SlideshowProductImage?) -> String {
+        guard let productImage else { return "" }
+        return "Use the selected product image for \(productImage.product.name) directly. Flick renders the overlay text."
+    }
+
+    func selectedVisualSummary(
+        for plannedSlide: PlannedSlide,
+        productImage: SlideshowProductImage?
+    ) -> String {
+        guard let productImage else { return plannedSlide.selectedVisualSummary }
+
+        let plannedSummary = plannedSlide.selectedVisualSummary.trimmingCharacters(in: .whitespacesAndNewlines)
+        let productSummary = productImage.product.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        return [
+            "Selected product image for \(productImage.product.name).",
+            productSummary.isEmpty ? nil : productSummary,
+            plannedSummary.isEmpty ? nil : plannedSummary
+        ]
+        .compactMap(\.self)
+        .joined(separator: " ")
     }
 
     func generateImage(
@@ -1457,7 +1518,7 @@ private extension FlickAppModel {
         let slide = overview.drafts[draftIndex].slides[slideIndex]
         let assetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
 
-        if slideHasAvailableGeneratedImage(slide, assetsByID: assetsByID) {
+        if slideHasAvailableCreateImage(slide, assetsByID: assetsByID) {
             overview.drafts[draftIndex].slides[slideIndex].generationStatus = .complete
             overview.drafts[draftIndex].slides[slideIndex].generationErrorMessage = nil
         } else {
@@ -1480,9 +1541,9 @@ private extension FlickAppModel {
 
             for slideIndex in overview.drafts[draftIndex].slides.indices {
                 let slide = overview.drafts[draftIndex].slides[slideIndex]
-                let hasGeneratedImage = slideHasAvailableGeneratedImage(slide, assetsByID: assetsByID)
+                let hasCreateImage = slideHasAvailableCreateImage(slide, assetsByID: assetsByID)
 
-                if hasGeneratedImage {
+                if hasCreateImage {
                     if slide.generationStatus != .complete || slide.generationErrorMessage != nil {
                         overview.drafts[draftIndex].slides[slideIndex].generationStatus = .complete
                         overview.drafts[draftIndex].slides[slideIndex].generationErrorMessage = nil
@@ -1507,16 +1568,40 @@ private extension FlickAppModel {
         return didChange
     }
 
-    func slideHasAvailableGeneratedImage(_ slide: Slide, assetsByID: [UUID: MediaAsset]) -> Bool {
+    func slideHasAvailableCreateImage(_ slide: Slide, assetsByID: [UUID: MediaAsset]) -> Bool {
         guard
             let assetID = slide.imageAssetID,
             let asset = assetsByID[assetID],
-            asset.source == .generated
+            asset.source == .generated || asset.source == .uploaded
         else {
             return false
         }
 
         return asset.hasAvailableMediaLocation
+    }
+
+    func slideUsesAvailableUploadedImage(_ slide: Slide, assetsByID: [UUID: MediaAsset]) -> Bool {
+        guard
+            let assetID = slide.imageAssetID,
+            let asset = assetsByID[assetID],
+            asset.source == .uploaded
+        else {
+            return false
+        }
+
+        return asset.hasAvailableMediaLocation
+    }
+
+    func slideUsesAvailableUploadedImage(slideID: UUID, draftID: UUID) -> Bool {
+        guard
+            let draft = overview.drafts.first(where: { $0.id == draftID }),
+            let slide = draft.slides.first(where: { $0.id == slideID })
+        else {
+            return false
+        }
+
+        let assetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
+        return slideUsesAvailableUploadedImage(slide, assetsByID: assetsByID)
     }
 
     func styleGuide(for draft: SlideshowDraft) throws -> TemplateStyleGuide {

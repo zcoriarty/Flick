@@ -6,12 +6,11 @@
 import Foundation
 
 extension SlideshowDraft {
-    func createGeneratedImageCount(assetsByID: [UUID: MediaAsset]) -> Int {
+    func createReadyImageCount(assetsByID: [UUID: MediaAsset]) -> Int {
         slides.filter { slide in
             guard let imageAssetID = slide.imageAssetID else { return false }
             guard let asset = assetsByID[imageAssetID] else { return false }
-            return asset.hasAvailableMediaLocation
-                && SlideshowImageGenerationSettings.draft.isSatisfied(by: asset)
+            return SlideshowImageGenerationSettings.draft.acceptsExistingSlideAsset(asset)
                 && slide.generationStatus == .complete
         }.count
     }
@@ -20,7 +19,7 @@ extension SlideshowDraft {
         slides.filter { slide in
             guard let imageAssetID = slide.imageAssetID else { return true }
             guard let asset = assetsByID[imageAssetID], asset.hasAvailableMediaLocation else { return true }
-            return !SlideshowImageGenerationSettings.draft.isSatisfied(by: asset)
+            return !SlideshowImageGenerationSettings.draft.acceptsExistingSlideAsset(asset)
         }.count
     }
 

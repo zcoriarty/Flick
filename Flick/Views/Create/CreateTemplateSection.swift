@@ -71,6 +71,7 @@ struct AnalyzeTemplateSection: View {
     var selectedTemplate: ExampleSlideshowTemplate?
     var isPlanning: Bool
     var hasAnalyzedTemplate: Bool
+    var canAnalyze: Bool = true
     var action: () -> Void
 
     var body: some View {
@@ -79,7 +80,7 @@ struct AnalyzeTemplateSection: View {
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets(top: 0, leading: -16, bottom: 0, trailing: -16))
             .controlSize(.large)
-            .disabled(isPlanning)
+            .disabled(isPlanning || !canAnalyze)
         }
     }
 

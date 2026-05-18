@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import UniformTypeIdentifiers
 
 struct SlideshowPlannerService {
     var client = OpenAIClient()
@@ -11,33 +12,47 @@ struct SlideshowPlannerService {
     func createPlan(
         brief: String,
         template: ExampleSlideshowTemplate,
-        styleGuide: TemplateStyleGuide
+        styleGuide: TemplateStyleGuide,
+        productImage: SlideshowProductImage? = nil
     ) async throws -> PlannedSlideshow {
+        let expectedSlideCount = template.slideCount + (productImage == nil ? 0 : 1)
+        var content: [[String: Any]] = [
+            [
+                "type": "input_text",
+                "text": """
+                User brief:
+                \(brief)
+
+                Selected Flick template:
+                - Niche: \(template.niche)
+                - Creator profile: @\(template.profile)
+                - Template slide count to keep: \(template.slideCount)
+                - Total planned slide count to return: \(expectedSlideCount)
+                - Template product or medium: \(template.subtitle)
+
+                Template style guide:
+                \(styleGuide.promptSummary)
+
+                \(productImageInstructions(for: productImage, templateSlideCount: template.slideCount))
+
+                Create a complete slideshow plan with exactly \(expectedSlideCount) planned slides.
+                Flick will render all text separately, so generated image prompts must forbid readable text, captions, logos, watermarks, fake UI text, and gibberish.
+                Set each slide's textPosition to center and keep the centered text area low-detail.
+                """
+            ]
+        ]
+
+        if let productImage {
+            content.append([
+                "type": "input_image",
+                "image_url": try imageURL(for: productImage.asset)
+            ])
+        }
+
         let input: [[String: Any]] = [
             [
                 "role": "user",
-                "content": [
-                    [
-                        "type": "input_text",
-                        "text": """
-                        User brief:
-                        \(brief)
-
-                        Selected Flick template:
-                        - Niche: \(template.niche)
-                        - Creator profile: @\(template.profile)
-                        - Slide count to match exactly: \(template.slideCount)
-                        - Template product or medium: \(template.subtitle)
-
-                        Template style guide:
-                        \(styleGuide.promptSummary)
-
-                        Create a complete slideshow plan. Generate exactly \(template.slideCount) planned slides and exactly one image prompt per slide.
-                        Flick will render all text separately, so image prompts must forbid readable text, captions, logos, watermarks, fake UI text, and gibberish.
-                        Set each slide's textPosition to center and keep the centered text area low-detail.
-                        """
-                    ]
-                ]
+                "content": content
             ]
         ]
 
@@ -142,6 +157,7 @@ struct SlideshowPlannerService {
         Do not create image variants or candidate grids.
         Every slide must have editable Flick-rendered overlay text and exactly one vertical portrait image prompt.
         The generated images are backgrounds and must leave clean low-detail room for text overlays.
+        When a selected product image is supplied, choose the single best slide position for that actual product image and write the surrounding slide strings with that image in the carousel.
         """
     }
 
@@ -200,14 +216,16 @@ struct SlideshowPlannerService {
                         "text",
                         "textPosition",
                         "imagePrompt",
-                        "selectedVisualSummary"
+                        "selectedVisualSummary",
+                        "usesProductImage"
                     ],
                     "properties": [
                         "index": ["type": "integer"],
                         "text": ["type": "string"],
                         "textPosition": ["type": "string", "enum": textPositionEnum],
                         "imagePrompt": ["type": "string"],
-                        "selectedVisualSummary": ["type": "string"]
+                        "selectedVisualSummary": ["type": "string"],
+                        "usesProductImage": ["type": "boolean"]
                     ]
                 ]
             ]
@@ -232,10 +250,59 @@ struct SlideshowPlannerService {
             "visualSummary": ["type": "string"]
         ]
     ]
+
+    private func productImageInstructions(
+        for productImage: SlideshowProductImage?,
+        templateSlideCount: Int
+    ) -> String {
+        guard let productImage else {
+            return "No selected product image was supplied. Set usesProductImage to false for every slide."
+        }
+
+        let summary = productImage.product.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        return """
+        Selected product image:
+        - Product name: \(productImage.product.name)
+        - Product summary: \(summary.isEmpty ? "Not provided" : summary)
+        - Actual image dimensions: \(productImage.asset.width)x\(productImage.asset.height)
+
+        The attached image must be added as one extra actual slide image in the carousel. It must not replace one of the template slides.
+        Keep exactly \(templateSlideCount) non-product generated/template slides, plus this one product-image slide.
+        Choose the best narrative slide position for it and set usesProductImage to true only for that one slide.
+        For the product-image slide, curate the overlay text knowing the actual product image will be shown; keep imagePrompt as a short note that Flick should use the selected product image directly.
+        For all other slides, set usesProductImage to false and keep generated visuals aligned to the selected template's slide style.
+        """
+    }
+
+    private func imageURL(for asset: MediaAsset) throws -> String {
+        if let localFileURL = asset.localFileURL {
+            let data = try Data(contentsOf: localFileURL)
+            let fileExtension = localFileURL.pathExtension
+            let contentType = UTType(filenameExtension: fileExtension)?.preferredMIMEType ?? "image/jpeg"
+            return "data:\(contentType);base64,\(data.base64EncodedString())"
+        }
+
+        if let publicURL = asset.publicURL {
+            return publicURL.absoluteString
+        }
+
+        throw SlideshowPlannerError.productImageUnavailable
+    }
 }
 
 private struct VisualSummaryResponse: Decodable {
     var visualSummary: String
+}
+
+enum SlideshowPlannerError: LocalizedError {
+    case productImageUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .productImageUnavailable:
+            "The selected product image is no longer available."
+        }
+    }
 }
 
 enum SlideshowPromptBuilder {

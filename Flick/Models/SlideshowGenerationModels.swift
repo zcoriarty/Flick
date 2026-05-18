@@ -50,11 +50,17 @@ struct PlannedSlide: Codable, Hashable {
     var textPosition: TextPosition
     var imagePrompt: String
     var selectedVisualSummary: String
+    var usesProductImage: Bool
 }
 
 struct SlidePromptRewrite: Codable, Hashable {
     var imagePrompt: String
     var selectedVisualSummary: String
+}
+
+struct SlideshowProductImage: Hashable {
+    var product: FlickProduct
+    var asset: MediaAsset
 }
 
 struct GeneratedSlideImage: Hashable {
@@ -96,6 +102,10 @@ struct SlideshowImageGenerationSettings: Hashable {
 
         let assetAspectRatio = Double(asset.width) / Double(asset.height)
         return abs(assetAspectRatio - aspectRatio) <= 0.01
+    }
+
+    func acceptsExistingSlideAsset(_ asset: MediaAsset) -> Bool {
+        asset.hasAvailableMediaLocation && (asset.source == .uploaded || isSatisfied(by: asset))
     }
 }
 

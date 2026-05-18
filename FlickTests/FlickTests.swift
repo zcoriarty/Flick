@@ -308,6 +308,26 @@ final class FlickTests: XCTestCase {
         XCTAssertTrue(asset.hasAvailableMediaLocation)
     }
 
+    func testUploadedProductImageCountsAsReadyCreateImage() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let product = makeProduct(now: now)
+        let asset = makeMediaAsset(
+            source: .uploaded,
+            publicURL: try XCTUnwrap(URL(string: "https://example.com/product-image.jpg")),
+            width: 0,
+            height: 0,
+            productIDs: [product.id],
+            now: now
+        )
+        let slide = makeSlide(imageAssetID: asset.id, generationStatus: .complete, now: now)
+        let draft = makeSlideshowDraft(slides: [slide], now: now)
+        let assetsByID = [asset.id: asset]
+
+        XCTAssertEqual(draft.createReadyImageCount(assetsByID: assetsByID), 1)
+        XCTAssertEqual(draft.createMissingImageCount(assetsByID: assetsByID), 0)
+        XCTAssertTrue(draft.hasCompletedCreateImages(assetsByID: assetsByID))
+    }
+
     func testRefreshRepairsFailedStatusWhenGeneratedImageExists() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let asset = makeMediaAsset(
@@ -331,6 +351,33 @@ final class FlickTests: XCTestCase {
         let repairedSlide = try XCTUnwrap(model.overview.drafts.first?.slides.first)
         XCTAssertEqual(repairedSlide.generationStatus, .complete)
         XCTAssertNil(repairedSlide.generationErrorMessage)
+        XCTAssertEqual(repository.state.drafts.first?.slides.first?.generationStatus, .complete)
+    }
+
+    func testRefreshPreservesCompletedStatusForUploadedProductImage() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let product = makeProduct(now: now)
+        let asset = makeMediaAsset(
+            source: .uploaded,
+            publicURL: try XCTUnwrap(URL(string: "https://example.com/product-image.jpg")),
+            width: 0,
+            height: 0,
+            productIDs: [product.id],
+            now: now
+        )
+        let slide = makeSlide(imageAssetID: asset.id, generationStatus: .complete, now: now)
+        let draft = makeSlideshowDraft(slides: [slide], now: now)
+        var state = FlickEmptyState.make(now: now)
+        state.products = [product]
+        state.assets = [asset]
+        state.drafts = [draft]
+
+        let repository = InMemoryFlickRepository(state: state)
+        let model = FlickAppModel(repository: repository, configuration: .current)
+
+        await model.refresh()
+
+        XCTAssertEqual(model.overview.drafts.first?.slides.first?.generationStatus, .complete)
         XCTAssertEqual(repository.state.drafts.first?.slides.first?.generationStatus, .complete)
     }
 
@@ -933,6 +980,77 @@ final class FlickTests: XCTestCase {
         XCTAssertTrue(prompt.contains("stale output size"))
     }
 
+    func testPlannerRequestsExtraSlideForSelectedProductImage() async throws {
+        let product = makeProduct(name: "Flick Pro")
+        let productImageURL = try XCTUnwrap(URL(string: "https://example.com/product-image.jpg"))
+        let productImage = SlideshowProductImage(
+            product: product,
+            asset: makeMediaAsset(
+                source: .uploaded,
+                publicURL: productImageURL,
+                productIDs: [product.id]
+            )
+        )
+        let responsePlan = PlannedSlideshow(
+            title: "Launch Carousel",
+            topic: "Product launch",
+            audience: "Creators",
+            goal: "Increase installs",
+            tone: "Direct",
+            slideCount: 3,
+            narrativeArc: ["Hook", "Product", "Proof"],
+            globalVisualMotif: "Clean product frames",
+            planSummary: "Two template slides plus one product image slide.",
+            slides: [
+                PlannedSlide(index: 0, text: "Start here", textPosition: .center, imagePrompt: "Generated hook", selectedVisualSummary: "Hook visual", usesProductImage: false),
+                PlannedSlide(index: 1, text: "See Flick Pro", textPosition: .center, imagePrompt: "Use selected product image", selectedVisualSummary: "Product image", usesProductImage: true),
+                PlannedSlide(index: 2, text: "Ship faster", textPosition: .center, imagePrompt: "Generated proof", selectedVisualSummary: "Proof visual", usesProductImage: false)
+            ],
+            caption: "Try Flick Pro",
+            hashtags: ["flick"]
+        )
+
+        CapturingURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url?.path, "/v1/responses")
+            let bodyData = Data(request.encodedBodyString.utf8)
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: bodyData) as? [String: Any])
+            let input = try XCTUnwrap(body["input"] as? [[String: Any]])
+            let content = try XCTUnwrap(input.first?["content"] as? [[String: Any]])
+            let promptText = try XCTUnwrap(content.first?["text"] as? String)
+
+            XCTAssertTrue(promptText.contains("Template slide count to keep: 2"))
+            XCTAssertTrue(promptText.contains("Total planned slide count to return: 3"))
+            XCTAssertTrue(promptText.contains("Keep exactly 2 non-product generated/template slides, plus this one product-image slide."))
+            XCTAssertEqual(content.last?["image_url"] as? String, productImageURL.absoluteString)
+
+            let responsePlanData = try JSONEncoder.flick.encode(responsePlan)
+            let responsePlanText = try XCTUnwrap(String(data: responsePlanData, encoding: .utf8))
+            let responseData = try JSONSerialization.data(withJSONObject: ["output_text": responsePlanText])
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                responseData
+            )
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CapturingURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = OpenAIClient(
+            credentials: ["OPENAI_API_KEY": "test-key"],
+            urlSession: session
+        )
+
+        let plan = try await SlideshowPlannerService(client: client).createPlan(
+            brief: "Launch Flick Pro",
+            template: makeExampleSlideshowTemplate(slideCount: 2),
+            styleGuide: .empty,
+            productImage: productImage
+        )
+
+        XCTAssertEqual(plan.slides.count, 3)
+        XCTAssertEqual(plan.slides.filter(\.usesProductImage).count, 1)
+    }
+
     func testOpenAIImageGenerationRequestsJpegOutput() async throws {
         let imageBytes = Data([0xFF, 0xD8, 0xFF])
         CapturingURLProtocol.requestHandler = { request in
@@ -1096,6 +1214,38 @@ private func makeProduct(
         summary: summary,
         createdAt: now,
         updatedAt: now
+    )
+}
+
+private func makeExampleSlideshowTemplate(slideCount: Int = 2) -> ExampleSlideshowTemplate {
+    ExampleSlideshowTemplate(
+        id: "template-\(slideCount)",
+        niche: "Productivity",
+        nicheSlug: "productivity",
+        sourceURL: nil,
+        postNumber: 1,
+        profile: "flickapp",
+        profileDisplayName: "Flick",
+        folder: "Productivity/template-\(slideCount)",
+        slideCount: slideCount,
+        metrics: ExampleSlideshowMetrics(
+            views: nil,
+            likes: nil,
+            bookmarks: nil,
+            shares: nil
+        ),
+        product: ExampleSlideshowProduct(
+            medium: "App",
+            name: "Flick",
+            linkInBio: nil
+        ),
+        creator: ExampleSlideshowCreator(
+            followerCount: nil,
+            signature: nil,
+            avatarURL: nil,
+            region: nil
+        ),
+        slides: []
     )
 }
 

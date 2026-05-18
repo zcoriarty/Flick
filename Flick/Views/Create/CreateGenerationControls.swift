@@ -13,7 +13,7 @@ struct CreateGenerationControls: View {
     var generateAction: () -> Void
 
     private var completeCount: Int {
-        draft.createGeneratedImageCount(assetsByID: assetsByID)
+        draft.createReadyImageCount(assetsByID: assetsByID)
     }
 
     private var missingCount: Int {
@@ -44,7 +44,7 @@ struct CreateGenerationControls: View {
     var body: some View {
         Section("Images") {
             FlickSettingsValueRow(
-                title: "Generated images",
+                title: "Ready images",
                 systemImage: "photo.stack",
                 iconColor: completeCount == draft.slides.count ? .green : .blue,
                 value: "\(completeCount) of \(draft.slides.count)"
