@@ -10,6 +10,8 @@ struct TikTokAdapter: SocialPlatformAdapter {
     let configuration: TikTokConfiguration
     var tokenStore: LoginKitTokenStore
     var urlSession: URLSession
+    var statusPollAttempts: Int
+    var statusPollIntervalNanoseconds: UInt64
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.orion.Flick", category: "TikTokPublishing")
 
     var platform: SocialPlatform { .tiktok }
@@ -17,11 +19,15 @@ struct TikTokAdapter: SocialPlatformAdapter {
     init(
         configuration: TikTokConfiguration,
         tokenStore: SecretStoring = KeychainSecretStore(synchronizesAcrossDevices: true),
-        urlSession: URLSession = .shared
+        urlSession: URLSession = .shared,
+        statusPollAttempts: Int = 6,
+        statusPollIntervalNanoseconds: UInt64 = 2_000_000_000
     ) {
         self.configuration = configuration
         self.tokenStore = LoginKitTokenStore(store: tokenStore)
         self.urlSession = urlSession
+        self.statusPollAttempts = max(1, statusPollAttempts)
+        self.statusPollIntervalNanoseconds = statusPollIntervalNanoseconds
     }
 
     func connectAccount() async throws -> ConnectedAccount {
@@ -94,6 +100,10 @@ struct TikTokAdapter: SocialPlatformAdapter {
             throw PlatformAdapterError.notConfigured("TikTok account is missing the \(settings.requiredScope) scope.")
         }
         let tokenBundle = try await validTokenBundle(for: account)
+        let mediaPreflightResults = try await preflightMediaURLs(media.imageURLs)
+        let mediaPreflightSummary = mediaPreflightResults
+            .map(\.diagnosticDescription)
+            .joined(separator: "\n")
 
         logger.info("Initializing TikTok photo publish jobID=\(job.id.uuidString, privacy: .public) mode=\(settings.tikTokPostMode.rawValue, privacy: .public) images=\(media.imageURLs.count, privacy: .public) privacy=\(settings.privacyLevel.rawValue, privacy: .public)")
         var request = URLRequest(url: URL(string: "https://open.tiktokapis.com/v2/post/publish/content/init/")!)
@@ -145,12 +155,25 @@ struct TikTokAdapter: SocialPlatformAdapter {
         }
 
         logger.info("TikTok photo publish initialized jobID=\(job.id.uuidString, privacy: .public) publishID=\(publishID, privacy: .public)")
+        let statusSnapshot: TikTokPublishStatusSnapshot?
+        if settings.tikTokPostMode == .mediaUpload {
+            statusSnapshot = try await waitForDraftUploadStatus(
+                publishID: publishID,
+                accessToken: tokenBundle.accessToken,
+                initialRawResponse: rawResponse,
+                mediaPreflightSummary: mediaPreflightSummary
+            )
+        } else {
+            statusSnapshot = nil
+        }
+
         return PublishResult(
             platform: .tiktok,
             platformPostID: publishID,
             platformURL: nil,
             publishedAt: Date(),
-            rawResponse: rawResponse
+            platformStatus: statusSnapshot?.data?.status.rawValue,
+            rawResponse: statusSnapshot?.combinedRawResponse ?? rawResponse.withMediaPreflightSummary(mediaPreflightSummary)
         )
     }
 
@@ -165,6 +188,164 @@ struct TikTokAdapter: SocialPlatformAdapter {
         let missingImageCount = draft.slides.filter { $0.imageAssetID == nil }.count
         guard missingImageCount > 0 else { return [] }
         return ["\(missingImageCount) slide images still need generated or uploaded Cloudflare R2 URLs."]
+    }
+
+    private func waitForDraftUploadStatus(
+        publishID: String,
+        accessToken: String,
+        initialRawResponse: String,
+        mediaPreflightSummary: String
+    ) async throws -> TikTokPublishStatusSnapshot? {
+        var latestSnapshot: TikTokPublishStatusSnapshot?
+
+        for attempt in 1...statusPollAttempts {
+            let snapshot = try await fetchPublishStatus(
+                publishID: publishID,
+                accessToken: accessToken,
+                initialRawResponse: initialRawResponse,
+                mediaPreflightSummary: mediaPreflightSummary
+            )
+            latestSnapshot = snapshot
+
+            guard let statusData = snapshot.data else {
+                return snapshot
+            }
+
+            switch statusData.status {
+            case .sendToUserInbox, .publishComplete:
+                logger.info("TikTok draft upload status jobPublishID=\(publishID, privacy: .public) status=\(statusData.status.rawValue, privacy: .public)")
+                return snapshot
+            case .failed:
+                let failReason = statusData.failReason ?? "FAILED"
+                let apiError = TikTokPublishAPIError(
+                    code: failReason,
+                    message: "TikTok accepted the draft upload but failed before delivering it: \(failReason).",
+                    logID: snapshot.logID,
+                    rawResponse: snapshot.combinedRawResponse
+                )
+                logPublishFailure(apiError)
+                throw apiError
+            case .processingUpload, .processingDownload:
+                guard attempt < statusPollAttempts else { break }
+                if statusPollIntervalNanoseconds > 0 {
+                    try await Task.sleep(nanoseconds: statusPollIntervalNanoseconds)
+                }
+            }
+        }
+
+        if let latestSnapshot, let status = latestSnapshot.data?.status.rawValue {
+            logger.info("TikTok draft upload still processing publishID=\(publishID, privacy: .public) status=\(status, privacy: .public)")
+        }
+        return latestSnapshot
+    }
+
+    private func fetchPublishStatus(
+        publishID: String,
+        accessToken: String,
+        initialRawResponse: String,
+        mediaPreflightSummary: String
+    ) async throws -> TikTokPublishStatusSnapshot {
+        var request = URLRequest(url: URL(string: "https://open.tiktokapis.com/v2/post/publish/status/fetch/")!)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(TikTokPublishStatusRequest(publishID: publishID))
+
+        let (data, response) = try await urlSession.data(for: request)
+        let rawResponse = String(data: data, encoding: .utf8) ?? ""
+        let combinedRawResponse = [initialRawResponse, rawResponse]
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+            .withMediaPreflightSummary(mediaPreflightSummary)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw TikTokPublishAPIError(code: "invalid_response", message: "TikTok returned an invalid status response.", logID: nil, rawResponse: combinedRawResponse)
+        }
+
+        let payload: TikTokPublishStatusResponse
+        do {
+            payload = try JSONDecoder().decode(TikTokPublishStatusResponse.self, from: data)
+        } catch {
+            let apiError = TikTokPublishAPIError(
+                code: "invalid_response",
+                message: "TikTok returned an unreadable status response: \(error.localizedDescription)",
+                logID: nil,
+                rawResponse: combinedRawResponse
+            )
+            logPublishFailure(apiError)
+            throw apiError
+        }
+
+        guard (200..<300).contains(httpResponse.statusCode), payload.error.code == "ok" else {
+            let apiError = TikTokPublishAPIError(
+                code: payload.error.code,
+                message: payload.error.message.isEmpty ? "TikTok publish status fetch failed with HTTP \(httpResponse.statusCode)." : payload.error.message,
+                logID: payload.error.logID,
+                rawResponse: combinedRawResponse
+            )
+            logPublishFailure(apiError)
+            throw apiError
+        }
+
+        return TikTokPublishStatusSnapshot(
+            data: payload.data,
+            rawResponse: rawResponse,
+            combinedRawResponse: combinedRawResponse,
+            logID: payload.error.logID
+        )
+    }
+
+    private func preflightMediaURLs(_ imageURLs: [URL]) async throws -> [TikTokMediaURLPreflightResult] {
+        var results: [TikTokMediaURLPreflightResult] = []
+        for imageURL in imageURLs {
+            var request = URLRequest(url: imageURL)
+            request.httpMethod = "HEAD"
+            request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            request.timeoutInterval = 20
+
+            do {
+                let (_, response) = try await urlSession.data(for: request)
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    let result = TikTokMediaURLPreflightResult(url: imageURL, finalURL: response.url, statusCode: nil, contentType: nil, contentLength: nil, errorMessage: "No HTTP response.")
+                    try result.throwIfFailed()
+                    results.append(result)
+                    continue
+                }
+
+                let result = TikTokMediaURLPreflightResult(
+                    url: imageURL,
+                    finalURL: httpResponse.url,
+                    statusCode: httpResponse.statusCode,
+                    contentType: httpResponse.value(forHTTPHeaderField: "Content-Type"),
+                    contentLength: httpResponse.expectedContentLength >= 0 ? httpResponse.expectedContentLength : nil,
+                    errorMessage: nil
+                )
+                try result.throwIfFailed()
+                logger.info("TikTok media URL preflight passed: \(result.diagnosticDescription, privacy: .public)")
+                results.append(result)
+            } catch let error as TikTokPublishAPIError {
+                logPublishFailure(error)
+                throw error
+            } catch {
+                let result = TikTokMediaURLPreflightResult(
+                    url: imageURL,
+                    finalURL: nil,
+                    statusCode: nil,
+                    contentType: nil,
+                    contentLength: nil,
+                    errorMessage: error.localizedDescription
+                )
+                let apiError = TikTokPublishAPIError(
+                    code: "media_url_inaccessible",
+                    message: "TikTok media URL preflight failed before upload: \(result.diagnosticDescription)",
+                    logID: nil,
+                    rawResponse: result.diagnosticDescription
+                )
+                logPublishFailure(apiError)
+                throw apiError
+            }
+        }
+        return results
     }
 
     private func validTokenBundle(for account: ConnectedAccount) async throws -> LoginKitTokenBundle {
@@ -503,6 +684,111 @@ private struct TikTokContentInitData: Decodable {
     }
 }
 
+private struct TikTokPublishStatusRequest: Encodable {
+    var publishID: String
+
+    private enum CodingKeys: String, CodingKey {
+        case publishID = "publish_id"
+    }
+}
+
+private struct TikTokPublishStatusResponse: Decodable {
+    var data: TikTokPublishStatusData?
+    var error: TikTokAPIErrorEnvelope
+}
+
+private struct TikTokPublishStatusData: Decodable, Hashable {
+    var status: TikTokPublishStatus
+    var failReason: String?
+    var publiclyAvailablePostIDs: [Int64]?
+    var downloadedBytes: Int64?
+    var uploadedBytes: Int64?
+
+    private enum CodingKeys: String, CodingKey {
+        case status
+        case failReason = "fail_reason"
+        case publiclyAvailablePostIDs = "publicaly_available_post_id"
+        case downloadedBytes = "downloaded_bytes"
+        case uploadedBytes = "uploaded_bytes"
+    }
+}
+
+private enum TikTokPublishStatus: String, Decodable {
+    case processingUpload = "PROCESSING_UPLOAD"
+    case processingDownload = "PROCESSING_DOWNLOAD"
+    case sendToUserInbox = "SEND_TO_USER_INBOX"
+    case publishComplete = "PUBLISH_COMPLETE"
+    case failed = "FAILED"
+}
+
+private struct TikTokPublishStatusSnapshot {
+    var data: TikTokPublishStatusData?
+    var rawResponse: String
+    var combinedRawResponse: String
+    var logID: String?
+}
+
+private struct TikTokMediaURLPreflightResult: Hashable {
+    var url: URL
+    var finalURL: URL?
+    var statusCode: Int?
+    var contentType: String?
+    var contentLength: Int64?
+    var errorMessage: String?
+
+    var diagnosticDescription: String {
+        [
+            "url=\(url.absoluteString)",
+            finalURL.map { "finalURL=\($0.absoluteString)" },
+            statusCode.map { "status=\($0)" },
+            contentType.map { "contentType=\($0)" },
+            contentLength.map { "contentLength=\($0)" },
+            errorMessage.map { "error=\($0)" }
+        ]
+        .compactMap(\.self)
+        .joined(separator: " ")
+    }
+
+    func throwIfFailed() throws {
+        if let errorMessage {
+            throw TikTokPublishAPIError(
+                code: "media_url_inaccessible",
+                message: "TikTok media URL preflight failed: \(errorMessage)",
+                logID: nil,
+                rawResponse: diagnosticDescription
+            )
+        }
+
+        guard let statusCode, (200..<300).contains(statusCode) else {
+            let statusText = statusCode.map { "HTTP \($0)" } ?? "unknown HTTP status"
+            throw TikTokPublishAPIError(
+                code: "media_url_inaccessible",
+                message: "TikTok media URL preflight failed with \(statusText).",
+                logID: nil,
+                rawResponse: diagnosticDescription
+            )
+        }
+
+        if let finalURL, finalURL.normalizedAbsoluteString != url.normalizedAbsoluteString {
+            throw TikTokPublishAPIError(
+                code: "media_url_redirect",
+                message: "TikTok media URL preflight found a redirect. TikTok requires media URLs that do not redirect.",
+                logID: nil,
+                rawResponse: diagnosticDescription
+            )
+        }
+
+        guard contentType?.lowercased().hasPrefix("image/") == true else {
+            throw TikTokPublishAPIError(
+                code: "media_url_invalid_content_type",
+                message: "TikTok media URL preflight expected an image Content-Type.",
+                logID: nil,
+                rawResponse: diagnosticDescription
+            )
+        }
+    }
+}
+
 private struct TikTokAPIErrorEnvelope: Decodable {
     var code: String
     var message: String
@@ -530,6 +816,12 @@ private extension String {
         let value = trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
     }
+
+    func withMediaPreflightSummary(_ summary: String) -> String {
+        guard !summary.isEmpty else { return self }
+        let separator = isEmpty ? "" : "\n"
+        return "\(self)\(separator)mediaPreflight=\(summary)"
+    }
 }
 
 private extension URL {
@@ -537,6 +829,10 @@ private extension URL {
         let mediaURL = absoluteString.trimmingTrailingSlash()
         let base = baseURL.absoluteString.trimmingTrailingSlash()
         return mediaURL == base || mediaURL.hasPrefix("\(base)/")
+    }
+
+    var normalizedAbsoluteString: String {
+        absoluteString.trimmingTrailingSlash()
     }
 }
 

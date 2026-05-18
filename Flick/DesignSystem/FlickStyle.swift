@@ -85,6 +85,7 @@ extension PublishingJobStatus {
     var displayName: String {
         switch self {
         case .awaitingApproval: "Awaiting approval"
+        case .awaitingUserCompletion: "Awaiting draft completion"
         case .uploadingMedia: "Uploading media"
         default: rawValue.capitalized
         }
@@ -94,7 +95,7 @@ extension PublishingJobStatus {
         switch self {
         case .published: .green
         case .failed, .canceled: .red
-        case .awaitingApproval, .approved: .orange
+        case .awaitingApproval, .awaitingUserCompletion, .approved: .orange
         case .rendering, .uploadingMedia, .publishing: .blue
         case .paused: .secondary
         case .draft, .queued: .teal

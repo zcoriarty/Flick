@@ -182,7 +182,7 @@ struct R2StorageService: MediaStorageProviding {
     func publicURL(path: String) throws -> URL {
         let configuration = try configuredStorage()
         let objectPath = try normalizedObjectPath(path)
-        let base = configuration.publicBaseURL.absoluteString.trimmingTrailingSlashes()
+        let base = publicObjectBaseURL(configuration: configuration).absoluteString.trimmingTrailingSlashes()
         guard let url = URL(string: "\(base)/\(R2PercentEncoding.path(objectPath))") else {
             throw MediaStorageError.invalidObjectPath(path)
         }
@@ -303,6 +303,26 @@ struct R2StorageService: MediaStorageProviding {
             secretAccessKey: secretAccessKey,
             bucket: bucket
         )
+    }
+
+    private func publicObjectBaseURL(configuration: R2StorageClientConfiguration) -> URL {
+        guard
+            publicBaseURLNeedsBucketPath(configuration.publicBaseURL, bucket: configuration.bucket),
+            let bucketBaseURL = URL(string: "\(configuration.publicBaseURL.absoluteString.trimmingTrailingSlashes())/\(R2PercentEncoding.path(configuration.bucket))")
+        else {
+            return configuration.publicBaseURL
+        }
+
+        return bucketBaseURL
+    }
+
+    private func publicBaseURLNeedsBucketPath(_ publicBaseURL: URL, bucket: String) -> Bool {
+        guard publicBaseURL.pathComponents.filter({ $0 != "/" }).isEmpty else {
+            return false
+        }
+
+        let hostPrefix = publicBaseURL.host(percentEncoded: false)?.split(separator: ".").first.map(String.init)
+        return hostPrefix?.localizedCaseInsensitiveCompare(bucket) == .orderedSame
     }
 
     private func objectExists(path: String, configuration: R2StorageClientConfiguration) async throws -> Bool {

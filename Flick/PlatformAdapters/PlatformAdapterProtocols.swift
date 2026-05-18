@@ -26,6 +26,7 @@ struct PublishResult: Hashable {
     var platformPostID: String
     var platformURL: URL?
     var publishedAt: Date
+    var platformStatus: String?
     var rawResponse: String
 }
 

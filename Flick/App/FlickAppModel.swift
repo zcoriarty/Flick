@@ -597,14 +597,27 @@ final class FlickAppModel {
             )
             let adapter = TikTokAdapter(configuration: configuration.tiktok)
             let result = try await adapter.publish(job, account: account, media: media, settings: settings)
-            completePublishStep(ManualPublishProgressStepID.publishTikTok, detail: "TikTok publish ID \(result.platformPostID).")
+            let publishStepDetail = settings.postAsDraft
+                ? tikTokDraftUploadDetail(for: result)
+                : "TikTok publish ID \(result.platformPostID)."
+            completePublishStep(ManualPublishProgressStepID.publishTikTok, detail: publishStepDetail)
 
-            startPublishStep(ManualPublishProgressStepID.recordResult, detail: "Saving the final publish status.")
-            completePublishingJob(job.id, result: result, draft: refreshedDraft)
+            let recordStepDetail = settings.postAsDraft
+                ? "Saving the TikTok inbox upload status."
+                : "Saving the final publish status."
+            startPublishStep(ManualPublishProgressStepID.recordResult, detail: recordStepDetail)
+            if settings.postAsDraft {
+                completeDraftUploadJob(job.id, result: result)
+            } else {
+                completePublishingJob(job.id, result: result, draft: refreshedDraft)
+            }
             try await repository.saveOverview(overview)
-            completePublishStep(ManualPublishProgressStepID.recordResult, detail: "Publish status saved.")
+            let recordCompletionDetail = settings.postAsDraft
+                ? "TikTok draft saved. Open TikTok's inbox notification to edit, save, or post."
+                : "Publish status saved."
+            completePublishStep(ManualPublishProgressStepID.recordResult, detail: recordCompletionDetail)
             finishManualPublishProgress()
-            createWorkflowMessage = settings.postAsDraft ? "Sent to TikTok for completion." : "Published to TikTok."
+            createWorkflowMessage = settings.postAsDraft ? "TikTok draft sent. Open TikTok's inbox notification to finish." : "Published to TikTok."
             lastErrorMessage = nil
             logPublish("Manual TikTok publish completed jobID=\(job.id.uuidString) publishID=\(result.platformPostID)")
         } catch {
@@ -1130,6 +1143,27 @@ private extension FlickAppModel {
         )
     }
 
+    func completeDraftUploadJob(_ jobID: UUID, result: PublishResult) {
+        guard let jobIndex = overview.publishingJobs.firstIndex(where: { $0.id == jobID }) else { return }
+        overview.publishingJobs[jobIndex].status = .awaitingUserCompletion
+        overview.publishingJobs[jobIndex].platformPublishID = result.platformPostID
+        overview.publishingJobs[jobIndex].lastError = nil
+        overview.publishingJobs[jobIndex].updatedAt = Date()
+    }
+
+    func tikTokDraftUploadDetail(for result: PublishResult) -> String {
+        switch result.platformStatus {
+        case "SEND_TO_USER_INBOX":
+            "TikTok draft upload ID \(result.platformPostID). Open TikTok's inbox notification to edit, save, or post."
+        case "PUBLISH_COMPLETE":
+            "TikTok draft upload ID \(result.platformPostID). TikTok reports this draft was posted."
+        case "PROCESSING_DOWNLOAD", "PROCESSING_UPLOAD":
+            "TikTok draft upload ID \(result.platformPostID). TikTok is still preparing the draft."
+        default:
+            "TikTok draft upload ID \(result.platformPostID). Open TikTok's inbox notification to finish."
+        }
+    }
+
     func failPublishingJob(_ jobID: UUID, error: Error) {
         guard let jobIndex = overview.publishingJobs.firstIndex(where: { $0.id == jobID }) else { return }
         overview.publishingJobs[jobIndex].status = .failed
@@ -1186,10 +1220,16 @@ private extension FlickAppModel {
             .rateLimit
         case "url_ownership_unverified":
             .urlOwnershipUnverified
+        case "media_url_inaccessible", "media_url_redirect", "media_url_invalid_content_type":
+            .mediaURLInaccessible
         case "privacy_level_option_mismatch", "invalid_param":
             .invalidPrivacySetting
         case "unaudited_client_can_only_post_to_private_accounts":
             .unauditedClient
+        case "video_pull_failed", "photo_pull_failed":
+            .mediaURLInaccessible
+        case "file_format_check_failed", "picture_size_check_failed":
+            .platformProcessingFailed
         case "spam_risk_too_many_posts", "spam_risk_user_banned_from_posting", "spam_risk_too_many_pending_share", "reached_active_user_cap", "app_version_check_failed":
             .platformProcessingFailed
         default:

@@ -25,9 +25,13 @@ struct TikTokSettingsSheet: View {
                 accountSection
                 titleSection
                 publishingSection
-                interactionsSection
-                disclosureSection
-                declarationSection
+                if postAsDraft {
+                    draftFlowSection
+                } else {
+                    interactionsSection
+                    disclosureSection
+                    declarationSection
+                }
             }
             .flickSettingsListStyle()
             .toolbarTitleDisplayMode(.inline)
@@ -95,18 +99,35 @@ struct TikTokSettingsSheet: View {
     private var publishingSection: some View {
         Section("Publishing") {
             FlickSettingsRow(
-                title: "Post as draft",
+                title: "Create TikTok draft",
                 systemImage: "doc.badge.clock",
                 iconColor: .teal
             ) {
-                Toggle("Post as draft", isOn: $postAsDraft)
+                Toggle("Create TikTok draft", isOn: $postAsDraft)
                     .labelsHidden()
             }
 
-            VisibilityMenuRow(
-                selectedVisibility: $selectedVisibility,
-                disablesPrivate: promotesBrandedContent
-            )
+            if !postAsDraft {
+                VisibilityMenuRow(
+                    selectedVisibility: $selectedVisibility,
+                    disablesPrivate: promotesBrandedContent
+                )
+            }
+        }
+    }
+
+    private var draftFlowSection: some View {
+        Section("Draft Flow") {
+            FlickSettingsRow(
+                title: "Open in TikTok",
+                systemImage: "bell.badge",
+                iconColor: .orange
+            ) {
+                Text("Use the inbox notification")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(2)
+            }
         }
     }
 

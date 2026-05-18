@@ -19,7 +19,7 @@ struct CreateTikTokSettingsSection: View {
         guard hasConfiguredSettings else { return "Select settings" }
 
         if postAsDraft {
-            return "Draft upload"
+            return "TikTok draft"
         }
 
         let destination = "Direct post"

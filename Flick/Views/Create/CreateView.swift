@@ -400,7 +400,7 @@ struct CreateView: View {
         guard !title.isEmpty else { return nil }
         guard hasSavedTikTokSettings else { return nil }
         guard postAsDraft || selectedVisibility != nil else { return nil }
-        guard !disclosesVideoContent || promotesYourBrand || promotesBrandedContent else { return nil }
+        guard postAsDraft || !disclosesVideoContent || promotesYourBrand || promotesBrandedContent else { return nil }
 
         return TikTokManualPublishSettings(
             title: title,

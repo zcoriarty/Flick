@@ -160,6 +160,7 @@ enum PublishingJobStatus: String, CaseIterable, Codable, Identifiable {
     case rendering
     case uploadingMedia
     case publishing
+    case awaitingUserCompletion
     case published
     case failed
     case canceled
@@ -169,7 +170,7 @@ enum PublishingJobStatus: String, CaseIterable, Codable, Identifiable {
 
     var isTerminal: Bool {
         switch self {
-        case .published, .failed, .canceled:
+        case .awaitingUserCompletion, .published, .failed, .canceled:
             true
         default:
             false
@@ -185,6 +186,7 @@ enum PublishingJobStatus: String, CaseIterable, Codable, Identifiable {
              (.approved, .rendering),
              (.rendering, .uploadingMedia),
              (.uploadingMedia, .publishing),
+             (.publishing, .awaitingUserCompletion),
              (.publishing, .published),
              (.publishing, .failed),
              (.rendering, .failed),

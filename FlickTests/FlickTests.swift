@@ -13,7 +13,9 @@ final class FlickTests: XCTestCase {
         XCTAssertTrue(PublishingJobStatus.awaitingApproval.canTransition(to: .approved))
         XCTAssertTrue(PublishingJobStatus.approved.canTransition(to: .rendering))
         XCTAssertTrue(PublishingJobStatus.uploadingMedia.canTransition(to: .publishing))
+        XCTAssertTrue(PublishingJobStatus.publishing.canTransition(to: .awaitingUserCompletion))
         XCTAssertFalse(PublishingJobStatus.draft.canTransition(to: .published))
+        XCTAssertFalse(PublishingJobStatus.awaitingUserCompletion.canTransition(to: .published))
         XCTAssertFalse(PublishingJobStatus.published.canTransition(to: .queued))
     }
 
@@ -79,6 +81,15 @@ final class FlickTests: XCTestCase {
         await model.refresh()
 
         XCTAssertEqual(model.createDrafts.map(\.id), [draft.id])
+    }
+
+    func testAwaitingUserCompletionIsTerminalForScheduler() {
+        let scheduler = PublishingScheduler()
+        let job = makePublishingJob(status: .awaitingUserCompletion)
+
+        XCTAssertTrue(job.status.isTerminal)
+        XCTAssertNil(scheduler.claim(job, workerDeviceID: UUID(), leaseDuration: 60))
+        XCTAssertTrue(scheduler.dueJobs(from: [job]).isEmpty)
     }
 
     func testCoreDataRoundTripsGeneratedSlideImageAsset() async throws {
@@ -244,6 +255,40 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(
             url.absoluteString,
             "https://media.example.com/generated-slides/drafts/slide%2001.png"
+        )
+    }
+
+    func testR2StorageServiceBuildsPublicURLForBucketNamedHost() throws {
+        let service = R2StorageService(credentials: [
+            "R2_ACCOUNT_ID": "account-id",
+            "R2_ACCESS_KEY_ID": "access-key",
+            "R2_SECRET_ACCESS_KEY": "secret-key",
+            "R2_BUCKET": "flick-media",
+            "R2_PUBLIC_BASE_URL": "https://flick-media.goingviral.club"
+        ])
+
+        let url = try service.publicURL(path: "rendered-image-sequences/draft-id/slide.png")
+
+        XCTAssertEqual(
+            url.absoluteString,
+            "https://flick-media.goingviral.club/flick-media/rendered-image-sequences/draft-id/slide.png"
+        )
+    }
+
+    func testR2StorageServiceDoesNotDoubleBucketPathInPublicURL() throws {
+        let service = R2StorageService(credentials: [
+            "R2_ACCOUNT_ID": "account-id",
+            "R2_ACCESS_KEY_ID": "access-key",
+            "R2_SECRET_ACCESS_KEY": "secret-key",
+            "R2_BUCKET": "flick-media",
+            "R2_PUBLIC_BASE_URL": "https://flick-media.goingviral.club/flick-media"
+        ])
+
+        let url = try service.publicURL(path: "rendered-image-sequences/draft-id/slide.png")
+
+        XCTAssertEqual(
+            url.absoluteString,
+            "https://flick-media.goingviral.club/flick-media/rendered-image-sequences/draft-id/slide.png"
         )
     }
 
@@ -446,6 +491,20 @@ final class FlickTests: XCTestCase {
                         """.utf8
                     )
                 )
+            case "/rendered-slide.png":
+                XCTAssertEqual(request.httpMethod, "HEAD")
+                return (
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: [
+                            "Content-Type": "image/png",
+                            "Content-Length": "1024"
+                        ]
+                    )!,
+                    Data()
+                )
             case "/v2/post/publish/content/init":
                 publishAuthorizationHeader.value = request.value(forHTTPHeaderField: "Authorization")
                 return (
@@ -516,6 +575,146 @@ final class FlickTests: XCTestCase {
         let storedBundle = try XCTUnwrap(LoginKitTokenStore(store: secretStore).tokenBundle(for: account))
         XCTAssertEqual(storedBundle.accessToken, "refreshed-access-token")
         XCTAssertEqual(storedBundle.refreshToken, "new-refresh-token")
+    }
+
+    func testTikTokAdapterUsesMediaUploadForDraftUploads() async throws {
+        let secretStore = MemorySecretStore()
+        let account = LoginKitAccountMapper.connectedAccount(
+            from: LoginKitAuthorizedUser(
+                platform: .tiktok,
+                openID: "real-open-id",
+                displayName: "@realaccount",
+                avatarURL: nil,
+                scopes: ["user.info.basic", "video.upload"]
+            )
+        )
+        let tokenBundle = LoginKitTokenBundle(
+            platform: .tiktok,
+            platformUserID: account.platformUserID,
+            accessToken: "valid-access-token",
+            refreshToken: "refresh-token",
+            tokenType: "Bearer",
+            scopes: account.scopes,
+            accessTokenExpiresAt: Date(timeIntervalSinceNow: 3_600),
+            refreshTokenExpiresAt: Date(timeIntervalSinceNow: 86_400),
+            updatedAt: Date()
+        )
+        try LoginKitTokenStore(store: secretStore).save(tokenBundle, for: account)
+
+        let publishBody = CapturingURLProtocol.CapturedValue()
+        let statusBody = CapturingURLProtocol.CapturedValue()
+        CapturingURLProtocol.requestHandler = { request in
+            switch request.url?.path.removingTrailingSlash {
+            case "/v2/post/publish/content/init":
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer valid-access-token")
+                publishBody.value = request.encodedBodyString
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data(
+                        """
+                        {
+                            "data": {
+                                "publish_id": "p_inbox_url~v2.123"
+                            },
+                            "error": {
+                                "code": "ok",
+                                "message": "",
+                                "log_id": "log-123"
+                            }
+                        }
+                        """.utf8
+                    )
+                )
+            case "/rendered-slide.png":
+                XCTAssertEqual(request.httpMethod, "HEAD")
+                return (
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: [
+                            "Content-Type": "image/png",
+                            "Content-Length": "1024"
+                        ]
+                    )!,
+                    Data()
+                )
+            case "/v2/post/publish/status/fetch":
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer valid-access-token")
+                statusBody.value = request.encodedBodyString
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data(
+                        """
+                        {
+                            "data": {
+                                "status": "SEND_TO_USER_INBOX"
+                            },
+                            "error": {
+                                "code": "ok",
+                                "message": "",
+                                "log_id": "status-log-123"
+                            }
+                        }
+                        """.utf8
+                    )
+                )
+            default:
+                XCTFail("Unexpected request URL: \(request.url?.absoluteString ?? "nil")")
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!,
+                    Data()
+                )
+            }
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CapturingURLProtocol.self]
+        let adapter = TikTokAdapter(
+            configuration: TikTokConfiguration(values: [
+                "TIKTOK_CLIENT_ID": "client-key",
+                "TIKTOK_VERIFIED_BASE_URL": "https://example.com"
+            ]),
+            tokenStore: secretStore,
+            urlSession: URLSession(configuration: configuration),
+            statusPollIntervalNanoseconds: 0
+        )
+        var job = makePublishingJob()
+        job.accountID = account.id
+
+        let result = try await adapter.publish(
+            job,
+            account: account,
+            media: PreparedPlatformMedia(
+                mode: .photoUploadForCompletion,
+                imageURLs: [try XCTUnwrap(URL(string: "https://example.com/rendered-slide.png"))],
+                videoURL: nil,
+                warnings: []
+            ),
+            settings: TikTokManualPublishSettings(
+                title: "Launch",
+                description: "Try Flick",
+                postAsDraft: true,
+                privacyLevel: .publicToEveryone,
+                allowComment: true,
+                allowDuet: true,
+                allowStitch: true,
+                disclosesVideoContent: true,
+                promotesYourBrand: true,
+                promotesBrandedContent: true
+            )
+        )
+
+        let body = try XCTUnwrap(publishBody.value)
+        let fetchedStatusBody = try XCTUnwrap(statusBody.value)
+        XCTAssertEqual(result.platformPostID, "p_inbox_url~v2.123")
+        XCTAssertEqual(result.platformStatus, "SEND_TO_USER_INBOX")
+        XCTAssertTrue(body.contains(#""post_mode":"MEDIA_UPLOAD""#))
+        XCTAssertTrue(fetchedStatusBody.contains(#""publish_id":"p_inbox_url~v2.123""#))
+        XCTAssertFalse(body.contains("privacy_level"))
+        XCTAssertFalse(body.contains("disable_comment"))
+        XCTAssertFalse(body.contains("brand_content_toggle"))
+        XCTAssertFalse(body.contains("brand_organic_toggle"))
     }
 
     func testAccountManagementPolicyIsIOSOnly() {
