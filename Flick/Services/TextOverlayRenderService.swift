@@ -37,20 +37,21 @@ struct TextOverlayRenderService {
             }
 
             let background = try await loadCGImage(for: asset)
-            let pngData = try await renderPNGData(
+            let renderedData = try await renderImageData(
                 background: background,
                 slide: slide,
-                width: options.width,
-                height: options.height
+                options: options
             )
-            let fileURL = renderDirectory.appending(path: "slide-\(String(format: "%02d", slide.index + 1))-\(slide.id.uuidString).png")
-            try pngData.write(to: fileURL, options: [.atomic])
+            let fileURL = renderDirectory.appending(path: "slide-\(String(format: "%02d", slide.index + 1))-\(slide.id.uuidString).\(options.format.fileExtension)")
+            try renderedData.write(to: fileURL, options: [.atomic])
 
             renderedImages.append(
                 RenderedImage(
                     fileURL: fileURL,
                     width: options.width,
                     height: options.height,
+                    contentType: options.format.contentType,
+                    fileExtension: options.format.fileExtension,
                     slideID: slide.id
                 )
             )
@@ -78,14 +79,14 @@ struct TextOverlayRenderService {
         return image
     }
 
-    private func renderPNGData(background: CGImage, slide: Slide, width: Int, height: Int) async throws -> Data {
+    private func renderImageData(background: CGImage, slide: Slide, options: ImageRenderOptions) async throws -> Data {
         #if canImport(UIKit)
         return await MainActor.run {
-            renderPNGDataWithUIKit(background: background, slide: slide, width: width, height: height)
+            renderImageDataWithUIKit(background: background, slide: slide, options: options)
         }
         #elseif canImport(AppKit)
         return try await MainActor.run {
-            try renderPNGDataWithAppKit(background: background, slide: slide, width: width, height: height)
+            try renderImageDataWithAppKit(background: background, slide: slide, options: options)
         }
         #else
         throw TextOverlayRenderError.rendererUnavailable
@@ -98,7 +99,7 @@ enum TextOverlayRenderError: LocalizedError {
     case missingImageLocation(UUID)
     case invalidImage(UUID)
     case rendererUnavailable
-    case pngEncodingFailed
+    case imageEncodingFailed
 
     var errorDescription: String? {
         switch self {
@@ -110,27 +111,44 @@ enum TextOverlayRenderError: LocalizedError {
             "Media asset \(id.uuidString) could not be decoded as an image."
         case .rendererUnavailable:
             "Image rendering is unavailable on this platform."
-        case .pngEncodingFailed:
-            "The rendered slide could not be encoded as PNG."
+        case .imageEncodingFailed:
+            "The rendered slide could not be encoded."
         }
     }
 }
 
 #if canImport(UIKit)
-private func renderPNGDataWithUIKit(background: CGImage, slide: Slide, width: Int, height: Int) -> Data {
-    let size = CGSize(width: width, height: height)
+private func renderImageDataWithUIKit(background: CGImage, slide: Slide, options: ImageRenderOptions) -> Data {
+    let size = CGSize(width: options.width, height: options.height)
     let format = UIGraphicsImageRendererFormat()
     format.scale = 1
     format.opaque = true
 
-    return UIGraphicsImageRenderer(size: size, format: format).pngData { context in
-        UIColor.black.setFill()
-        context.fill(CGRect(origin: .zero, size: size))
-
-        let backgroundRect = aspectFillRect(imageSize: CGSize(width: background.width, height: background.height), canvasSize: size)
-        UIImage(cgImage: background).draw(in: backgroundRect)
-        drawOverlayTextUIKit(slide: slide, canvasSize: size)
+    let renderer = UIGraphicsImageRenderer(size: size, format: format)
+    switch options.format {
+    case .png:
+        return renderer.pngData { context in
+            drawRenderedSlideUIKit(background: background, slide: slide, size: size, context: context)
+        }
+    case let .jpeg(quality):
+        return renderer.jpegData(withCompressionQuality: quality) { context in
+            drawRenderedSlideUIKit(background: background, slide: slide, size: size, context: context)
+        }
     }
+}
+
+private func drawRenderedSlideUIKit(
+    background: CGImage,
+    slide: Slide,
+    size: CGSize,
+    context: UIGraphicsImageRendererContext
+) {
+    UIColor.black.setFill()
+    context.fill(CGRect(origin: .zero, size: size))
+
+    let backgroundRect = aspectFillRect(imageSize: CGSize(width: background.width, height: background.height), canvasSize: size)
+    UIImage(cgImage: background).draw(in: backgroundRect)
+    drawOverlayTextUIKit(slide: slide, canvasSize: size)
 }
 
 private func drawOverlayTextUIKit(slide: Slide, canvasSize: CGSize) {
@@ -175,8 +193,8 @@ private func drawOverlayTextUIKit(slide: Slide, canvasSize: CGSize) {
 #endif
 
 #if canImport(AppKit)
-private func renderPNGDataWithAppKit(background: CGImage, slide: Slide, width: Int, height: Int) throws -> Data {
-    let size = CGSize(width: width, height: height)
+private func renderImageDataWithAppKit(background: CGImage, slide: Slide, options: ImageRenderOptions) throws -> Data {
+    let size = CGSize(width: options.width, height: options.height)
     let image = NSImage(size: size)
     image.lockFocus()
     NSColor.black.setFill()
@@ -188,14 +206,22 @@ private func renderPNGDataWithAppKit(background: CGImage, slide: Slide, width: I
     drawOverlayTextAppKit(slide: slide, canvasSize: size)
     image.unlockFocus()
 
-    guard
-        let tiffData = image.tiffRepresentation,
-        let bitmap = NSBitmapImageRep(data: tiffData),
-        let pngData = bitmap.representation(using: .png, properties: [:])
-    else {
-        throw TextOverlayRenderError.pngEncodingFailed
+    guard let tiffData = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiffData) else {
+        throw TextOverlayRenderError.imageEncodingFailed
     }
-    return pngData
+
+    switch options.format {
+    case .png:
+        guard let pngData = bitmap.representation(using: .png, properties: [:]) else {
+            throw TextOverlayRenderError.imageEncodingFailed
+        }
+        return pngData
+    case let .jpeg(quality):
+        guard let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: quality]) else {
+            throw TextOverlayRenderError.imageEncodingFailed
+        }
+        return jpegData
+    }
 }
 
 private func drawOverlayTextAppKit(slide: Slide, canvasSize: CGSize) {

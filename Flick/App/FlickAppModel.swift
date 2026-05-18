@@ -1039,10 +1039,7 @@ private extension FlickAppModel {
             .renderImages(
                 from: draft,
                 assets: overview.assets,
-                options: ImageRenderOptions(
-                    width: SlideshowImageGenerationSettings.finalExport.width,
-                    height: SlideshowImageGenerationSettings.finalExport.height
-                )
+                options: .tikTokPhotoPost
             )
         completePublishStep(ManualPublishProgressStepID.renderImages, detail: "Snapshot \(renderedImages.count) edited slides.")
 
@@ -1053,10 +1050,20 @@ private extension FlickAppModel {
             startPublishStep(uploadStepID, detail: "Uploading rendered image to Cloudflare R2.")
             let data = try Data(contentsOf: renderedImage.fileURL)
             let assetID = UUID()
-            let path = renderedStoragePath(draftID: draftID, slideID: renderedImage.slideID, assetID: assetID)
+            let path = renderedStoragePath(
+                draftID: draftID,
+                slideID: renderedImage.slideID,
+                assetID: assetID,
+                fileExtension: renderedImage.fileExtension
+            )
             let remote = try await R2StorageService(credentials: credentialVault.loadValues())
                 .uploadAsset(
-                    LocalMediaAsset(id: assetID, data: data, contentType: "image/png", fileExtension: "png"),
+                    LocalMediaAsset(
+                        id: assetID,
+                        data: data,
+                        contentType: renderedImage.contentType,
+                        fileExtension: renderedImage.fileExtension
+                    ),
                     path: path
                 )
 
@@ -1422,8 +1429,13 @@ private extension FlickAppModel {
         "\(configuration.storagePaths.generatedImages)/\(draftID.uuidString)/slide-\(String(format: "%02d", slide.index + 1))-v\(slide.promptVersion)-\(settings.width)x\(settings.height)-\(assetID.uuidString).png"
     }
 
-    func renderedStoragePath(draftID: UUID, slideID: UUID, assetID: UUID) -> String {
-        "\(configuration.storagePaths.renderedImages)/\(draftID.uuidString)/\(slideID.uuidString)-\(assetID.uuidString).png"
+    func renderedStoragePath(
+        draftID: UUID,
+        slideID: UUID,
+        assetID: UUID,
+        fileExtension: String = "png"
+    ) -> String {
+        "\(configuration.storagePaths.renderedImages)/\(draftID.uuidString)/\(slideID.uuidString)-\(assetID.uuidString).\(fileExtension)"
     }
 
     func reindexSlides(in draftIndex: Int) {

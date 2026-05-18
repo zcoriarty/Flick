@@ -491,7 +491,7 @@ final class FlickTests: XCTestCase {
                         """.utf8
                     )
                 )
-            case "/rendered-slide.png":
+            case "/rendered-slide.jpg":
                 XCTAssertEqual(request.httpMethod, "HEAD")
                 return (
                     HTTPURLResponse(
@@ -499,7 +499,7 @@ final class FlickTests: XCTestCase {
                         statusCode: 200,
                         httpVersion: nil,
                         headerFields: [
-                            "Content-Type": "image/png",
+                            "Content-Type": "image/jpeg",
                             "Content-Length": "1024"
                         ]
                     )!,
@@ -552,7 +552,7 @@ final class FlickTests: XCTestCase {
             account: account,
             media: PreparedPlatformMedia(
                 mode: .photoDirectPost,
-                imageURLs: [try XCTUnwrap(URL(string: "https://example.com/rendered-slide.png"))],
+                imageURLs: [try XCTUnwrap(URL(string: "https://example.com/rendered-slide.jpg"))],
                 videoURL: nil,
                 warnings: []
             ),
@@ -625,7 +625,7 @@ final class FlickTests: XCTestCase {
                         """.utf8
                     )
                 )
-            case "/rendered-slide.png":
+            case "/rendered-slide.jpg":
                 XCTAssertEqual(request.httpMethod, "HEAD")
                 return (
                     HTTPURLResponse(
@@ -633,7 +633,7 @@ final class FlickTests: XCTestCase {
                         statusCode: 200,
                         httpVersion: nil,
                         headerFields: [
-                            "Content-Type": "image/png",
+                            "Content-Type": "image/jpeg",
                             "Content-Length": "1024"
                         ]
                     )!,
@@ -687,7 +687,7 @@ final class FlickTests: XCTestCase {
             account: account,
             media: PreparedPlatformMedia(
                 mode: .photoUploadForCompletion,
-                imageURLs: [try XCTUnwrap(URL(string: "https://example.com/rendered-slide.png"))],
+                imageURLs: [try XCTUnwrap(URL(string: "https://example.com/rendered-slide.jpg"))],
                 videoURL: nil,
                 warnings: []
             ),
@@ -743,6 +743,15 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(SlideshowImageGenerationSettings.finalExport.width, 1024)
         XCTAssertEqual(SlideshowImageGenerationSettings.finalExport.height, 1536)
         XCTAssertEqual(SlideshowImageGenerationSettings.finalExport.aspectRatio, 2.0 / 3.0)
+    }
+
+    func testTikTokPhotoPostRenderOptionsUseSupportedFormat() {
+        let options = ImageRenderOptions.tikTokPhotoPost
+
+        XCTAssertEqual(options.width, 720)
+        XCTAssertEqual(options.height, 1080)
+        XCTAssertEqual(options.format.contentType, "image/jpeg")
+        XCTAssertEqual(options.format.fileExtension, "jpg")
     }
 
     func testSlideshowImageGenerationSettingsRejectHorizontalAssets() {
