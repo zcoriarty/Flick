@@ -152,11 +152,13 @@
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="narrativeArcJSON" optional="YES" attributeType="String"/>
         <attribute name="planSummary" optional="YES" attributeType="String"/>
+        <attribute name="selectedSongsJSON" optional="YES" attributeType="String"/>
         <attribute name="slideIDsJSON" optional="YES" attributeType="String"/>
         <attribute name="sourceTrendID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="status" optional="YES" attributeType="String"/>
         <attribute name="targetPlatformsJSON" optional="YES" attributeType="String"/>
         <attribute name="templateID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="tikTokSettingsJSON" optional="YES" attributeType="String"/>
         <attribute name="title" optional="YES" attributeType="String"/>
         <attribute name="tone" optional="YES" attributeType="String"/>
         <attribute name="topic" optional="YES" attributeType="String"/>
@@ -206,7 +208,7 @@
         <element name="CDTrend" positionX="234" positionY="-198" width="128" height="179"/>
         <element name="CDTrendTag" positionX="432" positionY="-198" width="128" height="104"/>
         <element name="CDAsset" positionX="-558" positionY="36" width="128" height="224"/>
-        <element name="CDSlideshowDraft" positionX="-360" positionY="36" width="128" height="179"/>
+        <element name="CDSlideshowDraft" positionX="-360" positionY="36" width="128" height="209"/>
         <element name="CDSlide" positionX="-162" positionY="36" width="128" height="194"/>
         <element name="CDCreativeTemplate" positionX="36" positionY="36" width="128" height="149"/>
         <element name="CDPublishingJob" positionX="234" positionY="36" width="128" height="269"/>

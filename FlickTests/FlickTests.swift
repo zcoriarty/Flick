@@ -7,6 +7,10 @@ import CoreData
 import XCTest
 @testable import Flick
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
 @MainActor
 final class FlickTests: XCTestCase {
     func testPublishingStatusTransitionsGuardInvalidJumps() throws {
@@ -122,6 +126,46 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(loadedAsset.id, asset.id)
         XCTAssertEqual(loadedAsset.source, .generated)
         XCTAssertEqual(loadedAsset.publicURL, asset.publicURL)
+    }
+
+    func testCoreDataRoundTripsCreateDraftPublishFields() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let persistenceController = PersistenceController(inMemory: true)
+        let repository = CoreDataFlickRepository(
+            context: persistenceController.container.viewContext,
+            cloudAvailability: { false }
+        )
+        let tikTokSettings = DraftTikTokSettings(
+            title: "Launch day carousel",
+            postAsDraft: false,
+            privacyLevel: .publicToEveryone,
+            allowComment: true,
+            allowDuet: true,
+            allowStitch: false,
+            disclosesVideoContent: true,
+            promotesYourBrand: true,
+            promotesBrandedContent: false
+        )
+        let selectedSongs = [
+            SelectedSong(
+                id: "12345",
+                title: "Morning Run",
+                artist: "Flick Library",
+                duration: 182
+            )
+        ]
+        var draft = makeSlideshowDraft(now: now)
+        draft.tikTokSettings = tikTokSettings
+        draft.selectedSongs = selectedSongs
+        var state = FlickEmptyState.make(now: now)
+        state.drafts = [draft]
+
+        try await repository.saveOverview(state)
+        let loaded = try await repository.loadOverview()
+        let loadedDraft = try XCTUnwrap(loaded.drafts.first)
+
+        XCTAssertEqual(loadedDraft.tikTokSettings, tikTokSettings)
+        XCTAssertEqual(loadedDraft.selectedSongs, selectedSongs)
     }
 
     func testDeletingCreateDraftRemovesDraftSlidesAndDraftOwnedAssetsFromCoreData() async throws {
@@ -267,11 +311,11 @@ final class FlickTests: XCTestCase {
             "R2_PUBLIC_BASE_URL": "https://flick-media.goingviral.club"
         ])
 
-        let url = try service.publicURL(path: "rendered-image-sequences/draft-id/slide.png")
+        let url = try service.publicURL(path: "rendered-image-sequences/draft-id/slide.jpg")
 
         XCTAssertEqual(
             url.absoluteString,
-            "https://flick-media.goingviral.club/flick-media/rendered-image-sequences/draft-id/slide.png"
+            "https://flick-media.goingviral.club/flick-media/rendered-image-sequences/draft-id/slide.jpg"
         )
     }
 
@@ -284,11 +328,11 @@ final class FlickTests: XCTestCase {
             "R2_PUBLIC_BASE_URL": "https://flick-media.goingviral.club/flick-media"
         ])
 
-        let url = try service.publicURL(path: "rendered-image-sequences/draft-id/slide.png")
+        let url = try service.publicURL(path: "rendered-image-sequences/draft-id/slide.jpg")
 
         XCTAssertEqual(
             url.absoluteString,
-            "https://flick-media.goingviral.club/flick-media/rendered-image-sequences/draft-id/slide.png"
+            "https://flick-media.goingviral.club/flick-media/rendered-image-sequences/draft-id/slide.jpg"
         )
     }
 
@@ -750,8 +794,47 @@ final class FlickTests: XCTestCase {
 
         XCTAssertEqual(options.width, 720)
         XCTAssertEqual(options.height, 1080)
-        XCTAssertEqual(options.format.contentType, "image/jpeg")
-        XCTAssertEqual(options.format.fileExtension, "jpg")
+        XCTAssertEqual(options.jpegQuality, 0.92)
+        XCTAssertEqual(options.contentType, "image/jpeg")
+        XCTAssertEqual(options.fileExtension, "jpg")
+    }
+
+    func testTextOverlayRendererWritesTikTokJpegImages() async throws {
+        #if canImport(UIKit)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("flick-render-test-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let sourceURL = directory.appendingPathComponent("source.png")
+        let sourceData = UIGraphicsImageRenderer(size: CGSize(width: 120, height: 180)).pngData { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 120, height: 180))
+        }
+        try sourceData.write(to: sourceURL)
+
+        let asset = makeMediaAsset(
+            source: .generated,
+            localFilePath: sourceURL.path,
+            width: 120,
+            height: 180,
+            now: now
+        )
+        var slide = makeSlide(imageAssetID: asset.id, generationStatus: .complete, now: now)
+        slide.text = "Launch"
+        let draft = makeSlideshowDraft(slides: [slide], now: now)
+        let renderedImages = try await TextOverlayRenderService(renderDirectory: directory)
+            .renderImages(from: draft, assets: [asset], options: .tikTokPhotoPost)
+        let renderedImage = try XCTUnwrap(renderedImages.first)
+        let renderedData = try Data(contentsOf: renderedImage.fileURL)
+
+        XCTAssertEqual(renderedImage.contentType, "image/jpeg")
+        XCTAssertEqual(renderedImage.fileURL.pathExtension, "jpg")
+        XCTAssertEqual(Array(renderedData.prefix(3)), [0xFF, 0xD8, 0xFF])
+        #endif
     }
 
     func testSlideshowImageGenerationSettingsRejectHorizontalAssets() {
@@ -772,6 +855,45 @@ final class FlickTests: XCTestCase {
         XCTAssertTrue(prompt.contains("720x1280 portrait canvas"))
         XCTAssertTrue(prompt.contains("ignore that stale format instruction"))
         XCTAssertTrue(prompt.contains("stale output size"))
+    }
+
+    func testOpenAIImageGenerationRequestsJpegOutput() async throws {
+        let imageBytes = Data([0xFF, 0xD8, 0xFF])
+        CapturingURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url?.path, "/v1/images/generations")
+            let bodyData = Data(request.encodedBodyString.utf8)
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: bodyData) as? [String: Any])
+            XCTAssertEqual(body["output_format"] as? String, "jpeg")
+            XCTAssertEqual(body["output_compression"] as? Int, 92)
+            XCTAssertEqual(body["size"] as? String, SlideshowImageGenerationSettings.draft.size)
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                Data(
+                    """
+                    {
+                        "data": [
+                            {
+                                "b64_json": "\(imageBytes.base64EncodedString())"
+                            }
+                        ]
+                    }
+                    """.utf8
+                )
+            )
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CapturingURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = OpenAIClient(
+            credentials: ["OPENAI_API_KEY": "test-key"],
+            urlSession: session
+        )
+        let image = try await client.generateImage(prompt: "Create a product image.", settings: .draft)
+
+        XCTAssertEqual(image.data, imageBytes)
+        XCTAssertEqual(image.contentType, "image/jpeg")
+        XCTAssertEqual(image.fileExtension, "jpg")
     }
 }
 

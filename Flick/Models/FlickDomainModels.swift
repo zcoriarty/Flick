@@ -460,6 +460,8 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
     var caption: String
     var hashtags: [String]
     var targetPlatforms: [SocialPlatform]
+    var tikTokSettings: DraftTikTokSettings?
+    var selectedSongs: [SelectedSong]
     var status: SlideshowDraftStatus
     var exportedImageAssetIDs: [UUID]
     var createdAt: Date
@@ -482,6 +484,8 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
         caption: String,
         hashtags: [String],
         targetPlatforms: [SocialPlatform],
+        tikTokSettings: DraftTikTokSettings? = nil,
+        selectedSongs: [SelectedSong] = [],
         status: SlideshowDraftStatus,
         exportedImageAssetIDs: [UUID] = [],
         createdAt: Date,
@@ -503,6 +507,8 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
         self.caption = caption
         self.hashtags = hashtags
         self.targetPlatforms = targetPlatforms
+        self.tikTokSettings = tikTokSettings
+        self.selectedSongs = selectedSongs
         self.status = status
         self.exportedImageAssetIDs = exportedImageAssetIDs
         self.createdAt = createdAt
@@ -526,6 +532,8 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
         case caption
         case hashtags
         case targetPlatforms
+        case tikTokSettings
+        case selectedSongs
         case status
         case exportedImageAssetIDs
         case createdAt
@@ -550,6 +558,8 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
         caption = try container.decode(String.self, forKey: .caption)
         hashtags = try container.decode([String].self, forKey: .hashtags)
         targetPlatforms = try container.decode([SocialPlatform].self, forKey: .targetPlatforms)
+        tikTokSettings = try container.decodeIfPresent(DraftTikTokSettings.self, forKey: .tikTokSettings)
+        selectedSongs = try container.decodeIfPresent([SelectedSong].self, forKey: .selectedSongs) ?? []
         status = try container.decode(SlideshowDraftStatus.self, forKey: .status)
         exportedImageAssetIDs = try container.decodeIfPresent([UUID].self, forKey: .exportedImageAssetIDs) ?? []
         createdAt = try container.decode(Date.self, forKey: .createdAt)

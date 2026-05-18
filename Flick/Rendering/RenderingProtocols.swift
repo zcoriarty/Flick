@@ -13,35 +13,28 @@ struct RenderOptions: Hashable {
 }
 
 struct ImageRenderOptions: Hashable {
-    var width: Int = 1024
-    var height: Int = 1536
-    var scale: Double = 1
-    var format: ImageRenderFormat = .png
+    var width: Int
+    var height: Int
+    var jpegQuality: Double
 
     static let tikTokPhotoPost = ImageRenderOptions(
         width: 720,
         height: 1080,
-        scale: 1,
-        format: .jpeg(quality: 0.92)
+        jpegQuality: 0.92
     )
-}
-
-enum ImageRenderFormat: Hashable {
-    case png
-    case jpeg(quality: Double)
 
     var fileExtension: String {
-        switch self {
-        case .png: "png"
-        case .jpeg: "jpg"
-        }
+        "jpg"
     }
 
     var contentType: String {
-        switch self {
-        case .png: "image/png"
-        case .jpeg: "image/jpeg"
-        }
+        "image/jpeg"
+    }
+
+    init(width: Int = 720, height: Int = 1080, jpegQuality: Double = 0.92) {
+        self.width = width
+        self.height = height
+        self.jpegQuality = jpegQuality
     }
 }
 
@@ -57,7 +50,6 @@ struct RenderedImage: Hashable {
     var width: Int
     var height: Int
     var contentType: String
-    var fileExtension: String
     var slideID: UUID
 }
 

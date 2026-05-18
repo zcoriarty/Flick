@@ -7,10 +7,8 @@ import CryptoKit
 import Foundation
 
 struct LocalMediaAsset: Hashable {
-    var id: UUID
     var data: Data
     var contentType: String
-    var fileExtension: String
 }
 
 struct RemoteMediaAsset: Hashable {
@@ -220,10 +218,8 @@ struct R2StorageService: MediaStorageProviding {
         let ensuredPrefixPaths = try await ensurePrefixPlaceholders(requiredPrefixes)
         let payload = Data("Flick Cloudflare R2 smoke test \(Date().ISO8601Format())".utf8)
         let asset = LocalMediaAsset(
-            id: UUID(),
             data: payload,
-            contentType: "text/plain",
-            fileExtension: "txt"
+            contentType: "text/plain"
         )
 
         _ = try await uploadAsset(asset, path: objectPath)
@@ -272,10 +268,8 @@ struct R2StorageService: MediaStorageProviding {
             let placeholderPath = "\(normalizedPrefix)/.keep"
             _ = try await uploadAsset(
                 LocalMediaAsset(
-                    id: UUID(),
                     data: placeholderData,
-                    contentType: "text/plain",
-                    fileExtension: "txt"
+                    contentType: "text/plain"
                 ),
                 path: placeholderPath
             )

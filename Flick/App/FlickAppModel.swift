@@ -520,8 +520,9 @@ final class FlickAppModel {
         logPublish("Manual publish progress opened draftID=\(draft.id.uuidString) slideCount=\(draft.slides.count)")
     }
 
-    func publishManualSlideshow(draftID: UUID, settings: TikTokManualPublishSettings) async {
-        guard !isPublishingSlideshow else { return }
+    @discardableResult
+    func publishManualSlideshow(draftID: UUID, settings: TikTokManualPublishSettings) async -> Bool {
+        guard !isPublishingSlideshow else { return false }
         isPublishingSlideshow = true
         createWorkflowMessage = "Preparing publish images..."
         lastErrorMessage = nil
@@ -620,6 +621,7 @@ final class FlickAppModel {
             createWorkflowMessage = settings.postAsDraft ? "TikTok draft sent. Open TikTok's inbox notification to finish." : "Published to TikTok."
             lastErrorMessage = nil
             logPublish("Manual TikTok publish completed jobID=\(job.id.uuidString) publishID=\(result.platformPostID)")
+            return true
         } catch {
             if let activeJobID {
                 failPublishingJob(activeJobID, error: error)
@@ -630,6 +632,7 @@ final class FlickAppModel {
             failCurrentPublishStep(error)
             finishManualPublishProgress(errorMessage: error.localizedDescription)
             logPublish("Manual TikTok publish failed draftID=\(draftID.uuidString) \(publishErrorDiagnostics(for: error))")
+            return false
         }
     }
 
@@ -956,16 +959,21 @@ private extension FlickAppModel {
                 prompt: slide.prompt,
                 settings: settings
             )
-            let storedMedia = try generatedImageLibrary.store(data: generatedImage.data, contentType: .png)
+            let generatedContentType = UTType(mimeType: generatedImage.contentType) ?? .jpeg
+            let storedMedia = try generatedImageLibrary.store(data: generatedImage.data, contentType: generatedContentType)
             let assetID = UUID()
-            let path = generatedStoragePath(draftID: draftID, slide: slide, assetID: assetID, settings: settings)
+            let path = generatedStoragePath(
+                draftID: draftID,
+                slide: slide,
+                assetID: assetID,
+                settings: settings,
+                fileExtension: generatedImage.fileExtension
+            )
             let remote = try await R2StorageService(credentials: credentialVault.loadValues())
                 .uploadAsset(
                     LocalMediaAsset(
-                        id: assetID,
                         data: generatedImage.data,
-                        contentType: generatedImage.contentType,
-                        fileExtension: generatedImage.fileExtension
+                        contentType: generatedImage.contentType
                     ),
                     path: path
                 )
@@ -1053,16 +1061,13 @@ private extension FlickAppModel {
             let path = renderedStoragePath(
                 draftID: draftID,
                 slideID: renderedImage.slideID,
-                assetID: assetID,
-                fileExtension: renderedImage.fileExtension
+                assetID: assetID
             )
             let remote = try await R2StorageService(credentials: credentialVault.loadValues())
                 .uploadAsset(
                     LocalMediaAsset(
-                        id: assetID,
                         data: data,
-                        contentType: renderedImage.contentType,
-                        fileExtension: renderedImage.fileExtension
+                        contentType: renderedImage.contentType
                     ),
                     path: path
                 )
@@ -1424,18 +1429,18 @@ private extension FlickAppModel {
         draftID: UUID,
         slide: Slide,
         assetID: UUID,
-        settings: SlideshowImageGenerationSettings
+        settings: SlideshowImageGenerationSettings,
+        fileExtension: String
     ) -> String {
-        "\(configuration.storagePaths.generatedImages)/\(draftID.uuidString)/slide-\(String(format: "%02d", slide.index + 1))-v\(slide.promptVersion)-\(settings.width)x\(settings.height)-\(assetID.uuidString).png"
+        "\(configuration.storagePaths.generatedImages)/\(draftID.uuidString)/slide-\(String(format: "%02d", slide.index + 1))-v\(slide.promptVersion)-\(settings.width)x\(settings.height)-\(assetID.uuidString).\(fileExtension)"
     }
 
     func renderedStoragePath(
         draftID: UUID,
         slideID: UUID,
-        assetID: UUID,
-        fileExtension: String = "png"
+        assetID: UUID
     ) -> String {
-        "\(configuration.storagePaths.renderedImages)/\(draftID.uuidString)/\(slideID.uuidString)-\(assetID.uuidString).\(fileExtension)"
+        "\(configuration.storagePaths.renderedImages)/\(draftID.uuidString)/\(slideID.uuidString)-\(assetID.uuidString).jpg"
     }
 
     func reindexSlides(in draftIndex: Int) {

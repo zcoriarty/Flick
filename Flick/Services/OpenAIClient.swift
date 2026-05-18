@@ -59,7 +59,8 @@ struct OpenAIClient {
             "size": settings.size,
             "quality": settings.quality,
             "n": 1,
-            "output_format": "png"
+            "output_format": "jpeg",
+            "output_compression": 92
         ]
 
         let data = try await postJSON(body, to: URL(string: "https://api.openai.com/v1/images/generations")!)
@@ -70,8 +71,8 @@ struct OpenAIClient {
 
         return GeneratedSlideImage(
             data: imageData,
-            contentType: "image/png",
-            fileExtension: "png",
+            contentType: "image/jpeg",
+            fileExtension: "jpg",
             width: settings.width,
             height: settings.height
         )

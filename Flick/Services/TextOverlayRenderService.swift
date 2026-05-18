@@ -7,6 +7,10 @@ import CoreGraphics
 import Foundation
 import ImageIO
 
+#if canImport(SwiftUI)
+import SwiftUI
+#endif
+
 #if canImport(UIKit)
 import UIKit
 #elseif canImport(AppKit)
@@ -42,7 +46,7 @@ struct TextOverlayRenderService {
                 slide: slide,
                 options: options
             )
-            let fileURL = renderDirectory.appending(path: "slide-\(String(format: "%02d", slide.index + 1))-\(slide.id.uuidString).\(options.format.fileExtension)")
+            let fileURL = renderDirectory.appending(path: "slide-\(String(format: "%02d", slide.index + 1))-\(slide.id.uuidString).\(options.fileExtension)")
             try renderedData.write(to: fileURL, options: [.atomic])
 
             renderedImages.append(
@@ -50,8 +54,7 @@ struct TextOverlayRenderService {
                     fileURL: fileURL,
                     width: options.width,
                     height: options.height,
-                    contentType: options.format.contentType,
-                    fileExtension: options.format.fileExtension,
+                    contentType: options.contentType,
                     slideID: slide.id
                 )
             )
@@ -118,6 +121,7 @@ enum TextOverlayRenderError: LocalizedError {
 }
 
 #if canImport(UIKit)
+@MainActor
 private func renderImageDataWithUIKit(background: CGImage, slide: Slide, options: ImageRenderOptions) -> Data {
     let size = CGSize(width: options.width, height: options.height)
     let format = UIGraphicsImageRendererFormat()
@@ -125,18 +129,12 @@ private func renderImageDataWithUIKit(background: CGImage, slide: Slide, options
     format.opaque = true
 
     let renderer = UIGraphicsImageRenderer(size: size, format: format)
-    switch options.format {
-    case .png:
-        return renderer.pngData { context in
-            drawRenderedSlideUIKit(background: background, slide: slide, size: size, context: context)
-        }
-    case let .jpeg(quality):
-        return renderer.jpegData(withCompressionQuality: quality) { context in
-            drawRenderedSlideUIKit(background: background, slide: slide, size: size, context: context)
-        }
+    return renderer.jpegData(withCompressionQuality: options.jpegQuality) { context in
+        drawRenderedSlideUIKit(background: background, slide: slide, size: size, context: context)
     }
 }
 
+@MainActor
 private func drawRenderedSlideUIKit(
     background: CGImage,
     slide: Slide,
@@ -148,7 +146,11 @@ private func drawRenderedSlideUIKit(
 
     let backgroundRect = aspectFillRect(imageSize: CGSize(width: background.width, height: background.height), canvasSize: size)
     UIImage(cgImage: background).draw(in: backgroundRect)
-    drawOverlayTextUIKit(slide: slide, canvasSize: size)
+    if let overlayImage = renderOverlayPreviewImage(slide: slide, pixelSize: size) {
+        UIImage(cgImage: overlayImage).draw(in: CGRect(origin: .zero, size: size))
+    } else {
+        drawOverlayTextUIKit(slide: slide, canvasSize: size)
+    }
 }
 
 private func drawOverlayTextUIKit(slide: Slide, canvasSize: CGSize) {
@@ -193,6 +195,7 @@ private func drawOverlayTextUIKit(slide: Slide, canvasSize: CGSize) {
 #endif
 
 #if canImport(AppKit)
+@MainActor
 private func renderImageDataWithAppKit(background: CGImage, slide: Slide, options: ImageRenderOptions) throws -> Data {
     let size = CGSize(width: options.width, height: options.height)
     let image = NSImage(size: size)
@@ -203,25 +206,22 @@ private func renderImageDataWithAppKit(background: CGImage, slide: Slide, option
     let backgroundRect = aspectFillRect(imageSize: CGSize(width: background.width, height: background.height), canvasSize: size)
     NSImage(cgImage: background, size: CGSize(width: background.width, height: background.height))
         .draw(in: backgroundRect, from: .zero, operation: .sourceOver, fraction: 1)
-    drawOverlayTextAppKit(slide: slide, canvasSize: size)
+    if let overlayImage = renderOverlayPreviewImage(slide: slide, pixelSize: size) {
+        NSImage(cgImage: overlayImage, size: size)
+            .draw(in: NSRect(origin: .zero, size: size), from: .zero, operation: .sourceOver, fraction: 1)
+    } else {
+        drawOverlayTextAppKit(slide: slide, canvasSize: size)
+    }
     image.unlockFocus()
 
     guard let tiffData = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiffData) else {
         throw TextOverlayRenderError.imageEncodingFailed
     }
 
-    switch options.format {
-    case .png:
-        guard let pngData = bitmap.representation(using: .png, properties: [:]) else {
-            throw TextOverlayRenderError.imageEncodingFailed
-        }
-        return pngData
-    case let .jpeg(quality):
-        guard let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: quality]) else {
-            throw TextOverlayRenderError.imageEncodingFailed
-        }
-        return jpegData
+    guard let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: options.jpegQuality]) else {
+        throw TextOverlayRenderError.imageEncodingFailed
     }
+    return jpegData
 }
 
 private func drawOverlayTextAppKit(slide: Slide, canvasSize: CGSize) {
@@ -257,6 +257,35 @@ private func drawOverlayTextAppKit(slide: Slide, canvasSize: CGSize) {
     ).integral.size
     let drawRect = alignedTextRect(for: boundingSize, in: textRect, position: slide.textPosition)
     attributedText.draw(with: drawRect, options: [.usesLineFragmentOrigin, .usesFontLeading])
+}
+#endif
+
+#if canImport(SwiftUI)
+@MainActor
+private func renderOverlayPreviewImage(slide: Slide, pixelSize: CGSize) -> CGImage? {
+    let logicalSize = overlayPreviewLogicalSize(for: pixelSize)
+    guard logicalSize.width > 0, logicalSize.height > 0 else { return nil }
+
+    let renderer = ImageRenderer(
+        content: SlideOverlayPreview(slide: slide)
+            .frame(width: logicalSize.width, height: logicalSize.height)
+    )
+    renderer.proposedSize = ProposedViewSize(logicalSize)
+    renderer.scale = pixelSize.height / logicalSize.height
+    renderer.isOpaque = false
+    return renderer.cgImage
+}
+
+private func overlayPreviewLogicalSize(for pixelSize: CGSize) -> CGSize {
+    let logicalHeight = CGFloat(24) / 0.058
+    return CGSize(
+        width: logicalHeight * pixelSize.width / max(pixelSize.height, 1),
+        height: logicalHeight
+    )
+}
+#else
+private func renderOverlayPreviewImage(slide: Slide, pixelSize: CGSize) -> CGImage? {
+    nil
 }
 #endif
 

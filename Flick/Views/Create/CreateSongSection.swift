@@ -36,13 +36,6 @@ struct CreateSongSection: View {
     }
 }
 
-struct SelectedSong: Identifiable, Hashable {
-    var id: String
-    var title: String
-    var artist: String
-    var duration: TimeInterval?
-}
-
 private struct SelectedSongRow: View {
     var song: SelectedSong
     var removeAction: () -> Void

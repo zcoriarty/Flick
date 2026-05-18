@@ -25,4 +25,17 @@ enum TikTokAudience: String, CaseIterable, Identifiable, Hashable {
         case .selfOnly: .selfOnly
         }
     }
+
+    nonisolated init?(privacyLevel: TikTokPrivacyLevel) {
+        switch privacyLevel {
+        case .publicToEveryone:
+            self = .publicEveryone
+        case .mutualFollowFriends:
+            self = .friendsOnly
+        case .selfOnly:
+            self = .selfOnly
+        case .followerOfCreator:
+            return nil
+        }
+    }
 }

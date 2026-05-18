@@ -255,6 +255,8 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(draft.caption, forKey: DraftKey.caption)
         object.setValue(draft.hashtags, asJSONForKey: DraftKey.hashtagsJSON)
         object.setValue(draft.targetPlatforms.map(\.rawValue), asJSONForKey: DraftKey.targetPlatformsJSON)
+        object.setValue(draft.tikTokSettings, asJSONForKey: DraftKey.tikTokSettingsJSON)
+        object.setValue(draft.selectedSongs, asJSONForKey: DraftKey.selectedSongsJSON)
         object.setValue(draft.status.rawValue, forKey: DraftKey.status)
         object.setValue(draft.exportedImageAssetIDs.map(\.uuidString), asJSONForKey: DraftKey.exportedImageAssetIDsJSON)
         object.setValue(draft.createdAt, forKey: DraftKey.createdAt)
@@ -338,10 +340,12 @@ private enum DraftKey {
     static let id = "id"
     static let narrativeArcJSON = "narrativeArcJSON"
     static let planSummary = "planSummary"
+    static let selectedSongsJSON = "selectedSongsJSON"
     static let slideIDsJSON = "slideIDsJSON"
     static let status = "status"
     static let targetPlatformsJSON = "targetPlatformsJSON"
     static let templateID = "templateID"
+    static let tikTokSettingsJSON = "tikTokSettingsJSON"
     static let title = "title"
     static let tone = "tone"
     static let topic = "topic"
@@ -439,6 +443,8 @@ private extension SlideshowDraft {
         let targetPlatformsRawValues: [String] = managedObject.decodedJSON([String].self, forKey: DraftKey.targetPlatformsJSON) ?? []
         let targetPlatforms = targetPlatformsRawValues.compactMap(SocialPlatform.init(rawValue:))
         let exportedIDs: [String] = managedObject.decodedJSON([String].self, forKey: DraftKey.exportedImageAssetIDsJSON) ?? []
+        let tikTokSettings = managedObject.decodedJSON(DraftTikTokSettings.self, forKey: DraftKey.tikTokSettingsJSON)
+        let selectedSongs = managedObject.decodedJSON([SelectedSong].self, forKey: DraftKey.selectedSongsJSON) ?? []
 
         self.init(
             id: id,
@@ -457,6 +463,8 @@ private extension SlideshowDraft {
             caption: managedObject.value(forKey: DraftKey.caption) as? String ?? "",
             hashtags: managedObject.decodedJSON([String].self, forKey: DraftKey.hashtagsJSON) ?? [],
             targetPlatforms: targetPlatforms.isEmpty ? [.tiktok] : targetPlatforms,
+            tikTokSettings: tikTokSettings,
+            selectedSongs: selectedSongs,
             status: status,
             exportedImageAssetIDs: exportedIDs.compactMap(UUID.init(uuidString:)),
             createdAt: managedObject.value(forKey: DraftKey.createdAt) as? Date ?? Date(),

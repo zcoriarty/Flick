@@ -783,10 +783,10 @@ private struct TikTokMediaURLPreflightResult: Hashable {
             .first?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-        guard ["image/jpeg", "image/jpg", "image/webp"].contains(normalizedContentType) else {
+        guard ["image/jpeg", "image/jpg"].contains(normalizedContentType) else {
             throw TikTokPublishAPIError(
                 code: "media_url_invalid_content_type",
-                message: "TikTok media URL preflight expected JPEG or WebP Content-Type.",
+                message: "TikTok media URL preflight expected JPEG Content-Type.",
                 logID: nil,
                 rawResponse: diagnosticDescription
             )
