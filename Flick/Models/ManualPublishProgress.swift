@@ -55,7 +55,7 @@ struct ManualPublishProgress: Identifiable, Hashable {
             ManualPublishProgressStep(
                 id: ManualPublishProgressStepID.uploadSlide(slide.id),
                 title: "Upload slide \(slide.index + 1)",
-                detail: "Uploading the rendered image to Supabase.",
+                detail: "Uploading the rendered image to Cloudflare R2.",
                 systemImage: "icloud.and.arrow.up"
             )
         })

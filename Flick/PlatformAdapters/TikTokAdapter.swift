@@ -78,11 +78,14 @@ struct TikTokAdapter: SocialPlatformAdapter {
         guard configuration.clientIDPresent else {
             throw PlatformAdapterError.notConfigured("TikTok client ID is missing.")
         }
-        guard configuration.verifiedBaseURL != nil else {
-            throw PlatformAdapterError.notConfigured("TikTok photo publishing requires a verified media URL prefix.")
+        guard let verifiedBaseURL = configuration.verifiedBaseURL else {
+            throw PlatformAdapterError.notConfigured("TikTok photo publishing requires a verified Cloudflare R2 custom domain or media URL prefix.")
         }
         guard !media.imageURLs.isEmpty else {
             throw PlatformAdapterError.notConfigured("TikTok photo publishing needs at least one rendered image URL.")
+        }
+        guard media.imageURLs.allSatisfy({ $0.isUnderMediaBaseURL(verifiedBaseURL) }) else {
+            throw PlatformAdapterError.notConfigured("TikTok photo publishing image URLs must use the verified Cloudflare R2 custom domain or configured media URL prefix.")
         }
         guard media.imageURLs.count <= 35 else {
             throw PlatformAdapterError.notConfigured("TikTok photo publishing supports up to 35 images.")
@@ -161,7 +164,7 @@ struct TikTokAdapter: SocialPlatformAdapter {
     private func missingImageWarnings(for draft: SlideshowDraft) -> [String] {
         let missingImageCount = draft.slides.filter { $0.imageAssetID == nil }.count
         guard missingImageCount > 0 else { return [] }
-        return ["\(missingImageCount) slide images still need generated or uploaded Supabase URLs."]
+        return ["\(missingImageCount) slide images still need generated or uploaded Cloudflare R2 URLs."]
     }
 
     private func validTokenBundle(for account: ConnectedAccount) async throws -> LoginKitTokenBundle {
@@ -526,6 +529,24 @@ private extension String {
     var nilIfEmpty: String? {
         let value = trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
+    }
+}
+
+private extension URL {
+    func isUnderMediaBaseURL(_ baseURL: URL) -> Bool {
+        let mediaURL = absoluteString.trimmingTrailingSlash()
+        let base = baseURL.absoluteString.trimmingTrailingSlash()
+        return mediaURL == base || mediaURL.hasPrefix("\(base)/")
+    }
+}
+
+private extension String {
+    func trimmingTrailingSlash() -> String {
+        var value = self
+        while value.hasSuffix("/") {
+            value.removeLast()
+        }
+        return value
     }
 }
 

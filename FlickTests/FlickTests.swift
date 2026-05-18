@@ -213,54 +213,67 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(String(data: try XCTUnwrap(store.data(for: "TIKTOK_CLIENT_ID")), encoding: .utf8), "client-id")
     }
 
-    func testSupabaseConfigurationRecognizesPublishableKey() {
-        let configuration = SupabaseConfiguration(values: [
-            "SUPABASE_URL": "https://example.supabase.co",
-            "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_test"
+    func testR2ConfigurationRecognizesBucketAndDerivedEndpoint() {
+        let configuration = R2StorageConfiguration(values: [
+            "R2_ACCOUNT_ID": "account-id",
+            "R2_ACCESS_KEY_ID": "access-key",
+            "R2_SECRET_ACCESS_KEY": "secret-key",
+            "R2_BUCKET": "flick-media",
+            "R2_PUBLIC_BASE_URL": "https://media.example.com"
         ])
 
-        XCTAssertEqual(configuration.url?.absoluteString, "https://example.supabase.co")
-        XCTAssertTrue(configuration.publishableKeyPresent)
-        XCTAssertTrue(configuration.apiKeyPresent)
-        XCTAssertFalse(configuration.anonKeyPresent)
+        XCTAssertEqual(configuration.endpointURL?.absoluteString, "https://account-id.r2.cloudflarestorage.com")
+        XCTAssertEqual(configuration.publicBaseURL?.absoluteString, "https://media.example.com")
+        XCTAssertEqual(configuration.bucket, "flick-media")
+        XCTAssertTrue(configuration.accessKeyIDPresent)
+        XCTAssertTrue(configuration.secretAccessKeyPresent)
+        XCTAssertTrue(configuration.isConfigured)
     }
 
-    func testSupabaseStorageServiceBuildsPublicURLWithSDK() throws {
-        let service = SupabaseStorageService(credentials: [
-            "SUPABASE_URL": "https://example.supabase.co",
-            "SUPABASE_ANON_KEY": "anon-key"
+    func testR2StorageServiceBuildsPublicURLFromCustomDomain() throws {
+        let service = R2StorageService(credentials: [
+            "R2_ACCOUNT_ID": "account-id",
+            "R2_ACCESS_KEY_ID": "access-key",
+            "R2_SECRET_ACCESS_KEY": "secret-key",
+            "R2_BUCKET": "flick-media",
+            "R2_PUBLIC_BASE_URL": "https://media.example.com"
         ])
 
-        let url = try service.publicURL(bucket: "flick-generated-images", path: "drafts/slide-01.png")
+        let url = try service.publicURL(path: "generated-slides/drafts/slide 01.png")
 
         XCTAssertEqual(
             url.absoluteString,
-            "https://example.supabase.co/storage/v1/object/public/flick-generated-images/drafts/slide-01.png"
+            "https://media.example.com/generated-slides/drafts/slide%2001.png"
         )
     }
 
-    func testSupabaseStorageServicePrefersServiceRoleKeyWhenPresent() async throws {
-        let service = SupabaseStorageService(credentials: [
-            "SUPABASE_URL": "https://example.supabase.co",
-            "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_test",
-            "SUPABASE_SERVICE_ROLE_KEY": "service-role-key"
+    func testR2StorageServiceBuildsSignedURLForSingleBucketObject() async throws {
+        let service = R2StorageService(credentials: [
+            "R2_ACCOUNT_ID": "account-id",
+            "R2_ACCESS_KEY_ID": "access-key",
+            "R2_SECRET_ACCESS_KEY": "secret-key",
+            "R2_BUCKET": "flick-media",
+            "R2_PUBLIC_BASE_URL": "https://media.example.com"
         ])
 
-        let status = try await service.ensureAuthenticatedSession()
+        let url = try await service.signedURL(path: "generated-slides/slide-01.png", expiresIn: 600)
 
-        XCTAssertEqual(status.mode, .serviceRole)
+        XCTAssertTrue(url.absoluteString.hasPrefix("https://account-id.r2.cloudflarestorage.com/flick-media/generated-slides/slide-01.png?"))
+        XCTAssertTrue(url.absoluteString.contains("X-Amz-Algorithm=AWS4-HMAC-SHA256"))
+        XCTAssertTrue(url.absoluteString.contains("X-Amz-Credential=access-key%2F"))
+        XCTAssertTrue(url.absoluteString.contains("X-Amz-Signature="))
     }
 
-    func testStorageBucketsExposeEveryConfiguredBucket() {
-        let buckets = StorageBuckets()
+    func testR2StoragePathsExposeEveryConfiguredPrefix() {
+        let paths = R2StoragePaths()
 
         XCTAssertEqual(
-            buckets.all,
+            paths.all,
             [
-                buckets.generatedImages,
-                buckets.renderedVideos,
-                buckets.referenceImages,
-                buckets.thumbnails
+                paths.generatedImages,
+                paths.renderedImages,
+                paths.referenceImages,
+                paths.thumbnails
             ]
         )
     }
@@ -648,7 +661,7 @@ private func makeMediaAsset(
         mediaType: .image,
         source: source,
         localFilePath: localFilePath,
-        storageBucket: "flick-generated-images",
+        storageBucket: "flick-media",
         storagePath: "generated-slides/\(id.uuidString).png",
         publicURL: publicURL,
         signedURLExpiration: nil,

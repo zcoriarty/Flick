@@ -24,9 +24,9 @@ final class FlickAppModel {
     var credentialMessage: String?
     var accountConnectionMessage: String?
     var connectingPlatform: SocialPlatform?
-    var isSupabaseSmokeTestRunning = false
-    var supabaseSmokeTestResult: SupabaseStorageSmokeTestResult?
-    var supabaseSmokeTestErrorMessage: String?
+    var isR2SmokeTestRunning = false
+    var r2SmokeTestResult: R2StorageSmokeTestResult?
+    var r2SmokeTestErrorMessage: String?
     var activeCreateDraftID: UUID?
     var createWorkflowMessage: String?
     var isPlanningSlideshow = false
@@ -718,32 +718,38 @@ final class FlickAppModel {
         }
     }
 
-    func runSupabaseSmokeTest() async {
-        guard !isSupabaseSmokeTestRunning else { return }
+    func runR2SmokeTest() async {
+        guard !isR2SmokeTestRunning else { return }
         reloadCredentialConfiguration()
-        isSupabaseSmokeTestRunning = true
-        supabaseSmokeTestResult = nil
-        supabaseSmokeTestErrorMessage = nil
-        credentialMessage = "Testing Supabase Storage..."
+        isR2SmokeTestRunning = true
+        r2SmokeTestResult = nil
+        r2SmokeTestErrorMessage = nil
+        credentialMessage = "Testing Cloudflare R2..."
         lastErrorMessage = nil
 
         defer {
-            isSupabaseSmokeTestRunning = false
+            isR2SmokeTestRunning = false
         }
 
         do {
-            let result = try await SupabaseStorageService().runSmokeTest(
-                bucket: configuration.storageBuckets.generatedImages,
-                requiredBuckets: configuration.storageBuckets.all
+            let result = try await R2StorageService().runSmokeTest(
+                requiredPrefixes: configuration.storagePaths.all
             )
-            supabaseSmokeTestResult = result
-            supabaseSmokeTestErrorMessage = nil
+            r2SmokeTestResult = result
+            r2SmokeTestErrorMessage = nil
             credentialMessage = result.summary
+            logger.info("Cloudflare R2 smoke test: \(result.summary, privacy: .public)")
+            print("[R2SmokeTest] \(result.summary)")
+            print("[R2SmokeTest] Object: \(result.bucket)/\(result.path)")
+            print("[R2SmokeTest] Prefix placeholders: \(result.ensuredPrefixPaths.joined(separator: ", "))")
+            print("[R2SmokeTest] \(result.diagnosticMessages.joined(separator: " | "))")
             lastErrorMessage = nil
         } catch {
             let message = error.localizedDescription
-            supabaseSmokeTestErrorMessage = message
-            credentialMessage = "Supabase smoke test failed."
+            r2SmokeTestErrorMessage = message
+            credentialMessage = "Cloudflare R2 smoke test failed."
+            logger.error("Cloudflare R2 smoke test failed: \(message, privacy: .public)")
+            print("[R2SmokeTest] Failed: \(message)")
             lastErrorMessage = message
         }
     }
@@ -764,9 +770,9 @@ final class FlickAppModel {
                 lastCheckedAt: Date()
             ),
             APIHealthStatus(
-                serviceName: "Supabase Storage",
-                isConfigured: configuration.supabase.url != nil && configuration.supabase.apiKeyPresent,
-                statusText: supabaseStatusText(),
+                serviceName: "Cloudflare R2",
+                isConfigured: configuration.r2.isConfigured,
+                statusText: r2StatusText(),
                 lastCheckedAt: Date()
             ),
             APIHealthStatus(
@@ -783,17 +789,11 @@ final class FlickAppModel {
         applyCredentialHealth()
     }
 
-    private func supabaseStatusText() -> String {
-        if configuration.supabase.serviceRoleKeyPresent {
-            return "Service role key found locally"
+    private func r2StatusText() -> String {
+        if configuration.r2.isConfigured {
+            return "R2 bucket and S3 credentials found locally"
         }
-        if configuration.supabase.publishableKeyPresent {
-            return "Publishable key found locally"
-        }
-        if configuration.supabase.anonKeyPresent {
-            return "Anon key found locally"
-        }
-        return "Supabase project credentials expected"
+        return "Cloudflare R2 bucket, custom domain, and S3 credentials expected"
     }
 }
 
@@ -946,7 +946,7 @@ private extension FlickAppModel {
             let storedMedia = try generatedImageLibrary.store(data: generatedImage.data, contentType: .png)
             let assetID = UUID()
             let path = generatedStoragePath(draftID: draftID, slide: slide, assetID: assetID, settings: settings)
-            let remote = try await SupabaseStorageService(credentials: credentialVault.loadValues())
+            let remote = try await R2StorageService(credentials: credentialVault.loadValues())
                 .uploadAsset(
                     LocalMediaAsset(
                         id: assetID,
@@ -954,7 +954,6 @@ private extension FlickAppModel {
                         contentType: generatedImage.contentType,
                         fileExtension: generatedImage.fileExtension
                     ),
-                    bucket: configuration.storageBuckets.generatedImages,
                     path: path
                 )
 
@@ -1038,14 +1037,13 @@ private extension FlickAppModel {
         var renderedAssetIDs: [UUID] = []
         for renderedImage in renderedImages {
             let uploadStepID = ManualPublishProgressStepID.uploadSlide(renderedImage.slideID)
-            startPublishStep(uploadStepID, detail: "Uploading rendered image to Supabase.")
+            startPublishStep(uploadStepID, detail: "Uploading rendered image to Cloudflare R2.")
             let data = try Data(contentsOf: renderedImage.fileURL)
             let assetID = UUID()
             let path = renderedStoragePath(draftID: draftID, slideID: renderedImage.slideID, assetID: assetID)
-            let remote = try await SupabaseStorageService(credentials: credentialVault.loadValues())
+            let remote = try await R2StorageService(credentials: credentialVault.loadValues())
                 .uploadAsset(
                     LocalMediaAsset(id: assetID, data: data, contentType: "image/png", fileExtension: "png"),
-                    bucket: configuration.storageBuckets.renderedVideos,
                     path: path
                 )
 
@@ -1069,7 +1067,7 @@ private extension FlickAppModel {
             )
             overview.assets.insert(asset, at: 0)
             renderedAssetIDs.append(assetID)
-            completePublishStep(uploadStepID, detail: "Uploaded rendered image to Supabase.")
+            completePublishStep(uploadStepID, detail: "Uploaded rendered image to Cloudflare R2.")
         }
 
         if let refreshedDraftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) {
@@ -1210,7 +1208,7 @@ private extension FlickAppModel {
         case .mediaURLInaccessible:
             "Verify the rendered image URLs are publicly reachable."
         case .urlOwnershipUnverified:
-            "Verify the Supabase media URL prefix or custom domain in TikTok."
+            "Verify the Cloudflare R2 custom domain or TikTok media URL prefix."
         case .invalidPrivacySetting:
             "Refresh TikTok creator info and choose a supported visibility option."
         case .unauditedClient:
@@ -1381,11 +1379,11 @@ private extension FlickAppModel {
         assetID: UUID,
         settings: SlideshowImageGenerationSettings
     ) -> String {
-        "generated-slides/\(draftID.uuidString)/slide-\(String(format: "%02d", slide.index + 1))-v\(slide.promptVersion)-\(settings.width)x\(settings.height)-\(assetID.uuidString).png"
+        "\(configuration.storagePaths.generatedImages)/\(draftID.uuidString)/slide-\(String(format: "%02d", slide.index + 1))-v\(slide.promptVersion)-\(settings.width)x\(settings.height)-\(assetID.uuidString).png"
     }
 
     func renderedStoragePath(draftID: UUID, slideID: UUID, assetID: UUID) -> String {
-        "rendered-image-sequences/\(draftID.uuidString)/\(slideID.uuidString)-\(assetID.uuidString).png"
+        "\(configuration.storagePaths.renderedImages)/\(draftID.uuidString)/\(slideID.uuidString)-\(assetID.uuidString).png"
     }
 
     func reindexSlides(in draftIndex: Int) {

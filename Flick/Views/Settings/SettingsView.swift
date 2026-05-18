@@ -33,54 +33,75 @@ struct SettingsView: View {
     }
 
     private var storageSection: some View {
-        Section("Supabase storage") {
-            SupabaseSmokeTestRow(
-                isRunning: appModel.isSupabaseSmokeTestRunning,
-                result: appModel.supabaseSmokeTestResult,
-                errorMessage: appModel.supabaseSmokeTestErrorMessage,
-                action: runSupabaseSmokeTest
+        Section("Cloudflare R2 storage") {
+            R2SmokeTestRow(
+                isRunning: appModel.isR2SmokeTestRunning,
+                result: appModel.r2SmokeTestResult,
+                errorMessage: appModel.r2SmokeTestErrorMessage,
+                action: runR2SmokeTest
             )
 
-            if let result = appModel.supabaseSmokeTestResult {
-                SupabaseSmokeTestDetailRow(result: result)
-            } else if let errorMessage = appModel.supabaseSmokeTestErrorMessage {
-                SettingsMessageRow(title: "Supabase test failed", message: errorMessage)
+            if let result = appModel.r2SmokeTestResult {
+                R2SmokeTestDetailRow(result: result)
+            } else if let errorMessage = appModel.r2SmokeTestErrorMessage {
+                SettingsMessageRow(title: "R2 test failed", message: errorMessage)
             }
 
             FlickSettingsValueRow(
-                title: "Generated images",
+                title: "Bucket",
+                systemImage: "shippingbox",
+                iconColor: .blue,
+                value: appModel.configuration.r2.bucket ?? "Not configured",
+                valueLineLimit: nil
+            )
+            FlickSettingsValueRow(
+                title: "Public base URL",
+                systemImage: "link",
+                iconColor: .green,
+                value: appModel.configuration.r2.publicBaseURL?.absoluteString ?? "Not configured",
+                valueLineLimit: nil
+            )
+            FlickSettingsValueRow(
+                title: "S3 endpoint",
+                systemImage: "network",
+                iconColor: .orange,
+                value: appModel.configuration.r2.endpointURL?.absoluteString ?? "Not configured",
+                valueLineLimit: nil
+            )
+            FlickSettingsValueRow(
+                title: "Generated images path",
                 systemImage: "photo",
                 iconColor: .blue,
-                value: appModel.configuration.storageBuckets.generatedImages,
+                value: appModel.configuration.storagePaths.generatedImages,
                 valueLineLimit: nil
             )
             FlickSettingsValueRow(
-                title: "Rendered videos",
+                title: "Rendered images path",
                 systemImage: "film",
                 iconColor: .purple,
-                value: appModel.configuration.storageBuckets.renderedVideos,
+                value: appModel.configuration.storagePaths.renderedImages,
                 valueLineLimit: nil
             )
             FlickSettingsValueRow(
-                title: "Reference images",
+                title: "Reference images path",
                 systemImage: "sparkles.rectangle.stack",
                 iconColor: .orange,
-                value: appModel.configuration.storageBuckets.referenceImages,
+                value: appModel.configuration.storagePaths.referenceImages,
                 valueLineLimit: nil
             )
             FlickSettingsValueRow(
-                title: "Thumbnails",
+                title: "Thumbnails path",
                 systemImage: "rectangle.stack",
                 iconColor: .green,
-                value: appModel.configuration.storageBuckets.thumbnails,
+                value: appModel.configuration.storagePaths.thumbnails,
                 valueLineLimit: nil
             )
         }
     }
 
-    private func runSupabaseSmokeTest() {
+    private func runR2SmokeTest() {
         Task {
-            await appModel.runSupabaseSmokeTest()
+            await appModel.runR2SmokeTest()
         }
     }
 
@@ -200,9 +221,9 @@ struct SettingsMessageRow: View {
     }
 }
 
-private struct SupabaseSmokeTestRow: View {
+private struct R2SmokeTestRow: View {
     var isRunning: Bool
-    var result: SupabaseStorageSmokeTestResult?
+    var result: R2StorageSmokeTestResult?
     var errorMessage: String?
     var action: () -> Void
 
@@ -213,7 +234,7 @@ private struct SupabaseSmokeTestRow: View {
                     .foregroundStyle(statusTint)
                     .frame(width: 24)
 
-                Text("Supabase Smoke Test")
+                Text("Cloudflare R2 Smoke Test")
                     .foregroundStyle(.primary)
 
                 Spacer()
@@ -258,15 +279,16 @@ private struct SupabaseSmokeTestRow: View {
     }
 }
 
-private struct SupabaseSmokeTestDetailRow: View {
-    var result: SupabaseStorageSmokeTestResult
+private struct R2SmokeTestDetailRow: View {
+    var result: R2StorageSmokeTestResult
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SettingsMessageRow(title: "Session", message: sessionMessage)
-            if !result.createdBuckets.isEmpty {
-                SettingsMessageRow(title: "Buckets created", message: result.createdBuckets.joined(separator: ", "))
-            }
+            SettingsMessageRow(title: result.isSuccessful ? "Result" : "What to check", message: result.diagnosticMessages.joined(separator: "\n"))
+            SettingsMessageRow(title: "Bucket", message: result.bucket)
+            SettingsMessageRow(title: "S3 endpoint", message: result.endpointURL.absoluteString)
+            SettingsMessageRow(title: "Public base URL", message: result.publicBaseURL.absoluteString)
+            SettingsMessageRow(title: "Prefix placeholders", message: result.ensuredPrefixPaths.joined(separator: "\n"))
             SettingsMessageRow(title: "Object", message: "\(result.bucket)/\(result.path)")
             SettingsMessageRow(title: "Public URL", message: "\(result.publicURLAccessText): \(result.publicURL.absoluteString)")
             SettingsMessageRow(title: "Signed URL", message: "\(result.signedURLAccessText), expires \(result.signedURLExpiration.formatted(date: .abbreviated, time: .shortened))")
@@ -280,16 +302,5 @@ private struct SupabaseSmokeTestDetailRow: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .contain)
-    }
-
-    private var sessionMessage: String {
-        var components = [result.sessionStatus.displayText]
-        if let userID = result.sessionStatus.userID {
-            components.append(userID.uuidString)
-        }
-        if let expiresAt = result.sessionStatus.expiresAt {
-            components.append("expires \(expiresAt.formatted(date: .abbreviated, time: .shortened))")
-        }
-        return components.joined(separator: " - ")
     }
 }

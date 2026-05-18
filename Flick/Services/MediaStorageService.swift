@@ -3,8 +3,8 @@
 //  Flick
 //
 
+import CryptoKit
 import Foundation
-import Supabase
 
 struct LocalMediaAsset: Hashable {
     var id: UUID
@@ -21,75 +21,56 @@ struct RemoteMediaAsset: Hashable {
 }
 
 protocol MediaStorageProviding {
-    func uploadAsset(_ asset: LocalMediaAsset, bucket: String, path: String) async throws -> RemoteMediaAsset
-    func publicURL(bucket: String, path: String) throws -> URL
-    func signedURL(bucket: String, path: String, expiresIn: TimeInterval) async throws -> URL
-    func ensureAuthenticatedSession() async throws -> SupabaseSessionStatus
+    func uploadAsset(_ asset: LocalMediaAsset, path: String) async throws -> RemoteMediaAsset
+    func publicURL(path: String) throws -> URL
+    func signedURL(path: String, expiresIn: TimeInterval) async throws -> URL
 }
 
 enum MediaStorageError: LocalizedError {
-    case missingSupabaseConfiguration
+    case missingR2Configuration
+    case invalidObjectPath(String)
     case invalidSignedURLExpiration(TimeInterval)
-    case uploadFailed(statusCode: Int, response: String)
-    case missingSupabaseClient
+    case requestFailed(operation: String, statusCode: Int, response: String)
     case httpStatusUnavailable(URL)
 
     var errorDescription: String? {
         switch self {
-        case .missingSupabaseConfiguration:
-            "Supabase URL and a Supabase API key are required for media storage."
+        case .missingR2Configuration:
+            "Cloudflare R2 account ID, access key ID, secret access key, bucket, and public base URL are required for media storage."
+        case let .invalidObjectPath(path):
+            "Cloudflare R2 object paths must be non-empty relative paths. Received \(path)."
         case let .invalidSignedURLExpiration(expiresIn):
             "Signed URL expiration must be a positive whole number of seconds. Received \(expiresIn)."
-        case let .uploadFailed(statusCode, response):
-            "Supabase upload failed with status \(statusCode): \(response)"
-        case .missingSupabaseClient:
-            "Supabase client is not initialized."
+        case let .requestFailed(operation, statusCode, response):
+            "Cloudflare R2 \(operation) failed with status \(statusCode): \(response)"
         case let .httpStatusUnavailable(url):
             "Could not read an HTTP status from \(url.absoluteString)."
         }
     }
 }
 
-struct SupabaseSessionStatus: Hashable {
-    enum Mode: String, Hashable {
-        case authenticated = "Authenticated"
-        case serviceRole = "Service role"
-        case apiKey = "API key"
-    }
-
-    var mode: Mode
-    var userID: UUID?
-    var expiresAt: Date?
-    var didCreateNewSession: Bool
-
-    var displayText: String {
-        switch mode {
-        case .authenticated:
-            didCreateNewSession ? "Created anonymous auth session" : "Using existing auth session"
-        case .serviceRole:
-            "Using service role key; auth session skipped"
-        case .apiKey:
-            "Using Supabase API key; auth session skipped"
-        }
-    }
-}
-
-struct SupabaseStorageSmokeTestResult: Hashable {
+struct R2StorageSmokeTestResult: Hashable {
     var bucket: String
     var path: String
-    var createdBuckets: [String]
-    var sessionStatus: SupabaseSessionStatus
+    var ensuredPrefixPaths: [String]
+    var endpointURL: URL
+    var publicBaseURL: URL
     var objectExists: Bool
     var publicURL: URL
     var publicURLStatusCode: Int?
+    var publicURLCheckError: String?
     var signedURL: URL
     var signedURLStatusCode: Int?
+    var signedURLCheckError: String?
     var signedURLExpiration: Date
     var cleanupSucceeded: Bool
     var cleanupError: String?
 
     var isSuccessful: Bool {
-        objectExists && isHTTPStatusSuccessful(publicURLStatusCode) && isHTTPStatusSuccessful(signedURLStatusCode)
+        objectExists
+            && isHTTPStatusSuccessful(publicURLStatusCode)
+            && isHTTPStatusSuccessful(signedURLStatusCode)
+            && cleanupSucceeded
     }
 
     var publicURLAccessText: String {
@@ -107,8 +88,46 @@ struct SupabaseStorageSmokeTestResult: Hashable {
         let publicAccess = publicURLAccessText.lowercased()
         let signedAccess = signedURLAccessText.lowercased()
         let cleanup = cleanupSucceeded ? "cleanup succeeded" : "cleanup needs attention"
-        let bucketSetup = createdBuckets.isEmpty ? "no buckets created" : "created buckets: \(createdBuckets.joined(separator: ", "))"
-        return "Supabase smoke test \(outcome); public URL is \(publicAccess); signed URL is \(signedAccess); \(cleanup); \(bucketSetup)."
+        return "Cloudflare R2 smoke test \(outcome); public URL is \(publicAccess); signed URL is \(signedAccess); \(cleanup)."
+    }
+
+    var diagnosticMessages: [String] {
+        var messages: [String] = []
+        if objectExists {
+            messages.append("Upload verified: R2 returned the object through a signed HEAD request.")
+        } else {
+            messages.append("Upload warning: R2 did not find the object immediately after upload.")
+        }
+
+        if ensuredPrefixPaths.isEmpty {
+            messages.append("No storage prefix placeholders were requested.")
+        } else {
+            messages.append("Storage structure ensured with placeholder objects: \(ensuredPrefixPaths.joined(separator: ", ")).")
+        }
+
+        if isHTTPStatusSuccessful(publicURLStatusCode) {
+            messages.append("Public URL check passed through the configured custom domain.")
+        } else if let publicURLStatusCode {
+            messages.append("Public URL check returned HTTP \(publicURLStatusCode). Check that the custom domain is attached to this bucket and public access is enabled for the object path.")
+        } else {
+            messages.append("Public URL check could not complete: \(publicURLCheckError ?? "no HTTP response").")
+        }
+
+        if isHTTPStatusSuccessful(signedURLStatusCode) {
+            messages.append("Signed S3 URL check passed through the R2 S3 endpoint.")
+        } else if let signedURLStatusCode {
+            messages.append("Signed S3 URL check returned HTTP \(signedURLStatusCode). Check that the R2 S3 key has Object Read permission for this bucket.")
+        } else {
+            messages.append("Signed S3 URL check could not complete: \(signedURLCheckError ?? "no HTTP response").")
+        }
+
+        if cleanupSucceeded {
+            messages.append("Cleanup deleted the smoke-test object, so it should not remain visible in the Cloudflare dashboard.")
+        } else {
+            messages.append("Cleanup failed: \(cleanupError ?? "unknown cleanup error").")
+        }
+
+        return messages
     }
 
     private func isHTTPStatusSuccessful(_ statusCode: Int?) -> Bool {
@@ -117,115 +136,89 @@ struct SupabaseStorageSmokeTestResult: Hashable {
     }
 }
 
-struct SupabaseStorageService: MediaStorageProviding {
-    fileprivate enum APIKeySource {
-        case publishable
-        case anon
-        case serviceRole
-    }
-
-    let projectURL: URL?
-    let apiKey: String?
+struct R2StorageService: MediaStorageProviding {
+    let endpointURL: URL?
+    let publicBaseURL: URL?
+    let accessKeyID: String?
+    let secretAccessKey: String?
+    let bucket: String?
     let urlSession: URLSession
-    private let apiKeySource: APIKeySource?
-    private let client: SupabaseClient?
 
     init(credentials: [String: String] = CredentialVault().loadValues(), urlSession: URLSession = .shared) {
-        projectURL = credentials.nonEmptyURL("SUPABASE_URL")
-        let key = credentials.supabaseAPIKey()
-        apiKey = key?.value
-        apiKeySource = key?.source
+        let accountID = credentials.nonEmptyValue("R2_ACCOUNT_ID")
+        self.endpointURL = credentials.nonEmptyURL("R2_S3_ENDPOINT")
+            ?? accountID.flatMap { URL(string: "https://\($0).r2.cloudflarestorage.com") }
+        self.publicBaseURL = credentials.nonEmptyURL("R2_PUBLIC_BASE_URL")
+        self.accessKeyID = credentials.nonEmptyValue("R2_ACCESS_KEY_ID")
+        self.secretAccessKey = credentials.nonEmptyValue("R2_SECRET_ACCESS_KEY")
+        self.bucket = credentials.nonEmptyValue("R2_BUCKET")
         self.urlSession = urlSession
-        if let projectURL, let apiKey {
-            client = SupabaseClient(
-                supabaseURL: projectURL,
-                supabaseKey: apiKey,
-                options: SupabaseClientOptions(
-                    auth: .init(emitLocalSessionAsInitialSession: true),
-                    global: .init(session: urlSession)
-                )
-            )
-        } else {
-            client = nil
-        }
     }
 
-    func uploadAsset(_ asset: LocalMediaAsset, bucket: String, path: String) async throws -> RemoteMediaAsset {
-        let client = try configuredClient()
-        _ = try await ensureAuthenticatedSession()
-        _ = try await ensureBucketsExist([bucket])
+    func uploadAsset(_ asset: LocalMediaAsset, path: String) async throws -> RemoteMediaAsset {
+        let configuration = try configuredStorage()
+        let objectPath = try normalizedObjectPath(path)
+        let request = try signedRequest(
+            method: "PUT",
+            path: objectPath,
+            headers: [
+                "cache-control": "3600",
+                "content-type": asset.contentType
+            ],
+            body: asset.data,
+            configuration: configuration
+        )
 
-        try await client.storage
-            .from(bucket)
-            .upload(
-                path,
-                data: asset.data,
-                options: FileOptions(
-                    cacheControl: "3600",
-                    contentType: asset.contentType,
-                    upsert: false
-                )
-            )
+        _ = try await send(request, operation: "upload")
 
         return RemoteMediaAsset(
-            storageBucket: bucket,
-            storagePath: path,
-            publicURL: try publicURL(bucket: bucket, path: path),
+            storageBucket: configuration.bucket,
+            storagePath: objectPath,
+            publicURL: try publicURL(path: objectPath),
             signedURLExpiration: nil
         )
     }
 
-    func publicURL(bucket: String, path: String) throws -> URL {
-        try configuredClient().storage
-            .from(bucket)
-            .getPublicURL(path: path)
+    func publicURL(path: String) throws -> URL {
+        let configuration = try configuredStorage()
+        let objectPath = try normalizedObjectPath(path)
+        let base = configuration.publicBaseURL.absoluteString.trimmingTrailingSlashes()
+        guard let url = URL(string: "\(base)/\(R2PercentEncoding.path(objectPath))") else {
+            throw MediaStorageError.invalidObjectPath(path)
+        }
+        return url
     }
 
-    func signedURL(bucket: String, path: String, expiresIn: TimeInterval) async throws -> URL {
+    func signedURL(path: String, expiresIn: TimeInterval) async throws -> URL {
         guard expiresIn > 0, expiresIn.rounded(.down) == expiresIn else {
             throw MediaStorageError.invalidSignedURLExpiration(expiresIn)
         }
 
-        let client = try configuredClient()
-        _ = try await ensureAuthenticatedSession()
+        let configuration = try configuredStorage()
+        let objectPath = try normalizedObjectPath(path)
+        let unsignedURL = try s3URL(for: objectPath, configuration: configuration)
+        let signer = R2AWSV4Signer(
+            accessKeyID: configuration.accessKeyID,
+            secretAccessKey: configuration.secretAccessKey
+        )
 
-        return try await client.storage
-            .from(bucket)
-            .createSignedURL(path: path, expiresIn: Int(expiresIn))
-    }
-
-    func ensureAuthenticatedSession() async throws -> SupabaseSessionStatus {
-        let client = try configuredClient()
-
-        guard apiKeySource != .serviceRole else {
-            return SupabaseSessionStatus(
-                mode: .serviceRole,
-                userID: nil,
-                expiresAt: nil,
-                didCreateNewSession: false
-            )
-        }
-
-        if let session = client.auth.currentSession, !session.isExpired {
-            return sessionStatus(for: session, didCreateNewSession: false)
-        }
-
-        return SupabaseSessionStatus(
-            mode: .apiKey,
-            userID: nil,
-            expiresAt: nil,
-            didCreateNewSession: false
+        return try signer.presignedURL(
+            url: unsignedURL,
+            method: "GET",
+            expiresIn: Int(expiresIn),
+            date: Date()
         )
     }
 
     func runSmokeTest(
-        bucket: String,
-        requiredBuckets: [String] = [],
+        requiredPrefixes: [String],
         path: String = "flick-smoke-tests/\(UUID().uuidString).txt",
         signedURLExpiresIn: TimeInterval = 600
-    ) async throws -> SupabaseStorageSmokeTestResult {
-        let client = try configuredClient()
-        let payload = Data("Flick Supabase smoke test \(Date().ISO8601Format())".utf8)
+    ) async throws -> R2StorageSmokeTestResult {
+        let configuration = try configuredStorage()
+        let objectPath = try normalizedObjectPath(path)
+        let ensuredPrefixPaths = try await ensurePrefixPlaceholders(requiredPrefixes)
+        let payload = Data("Flick Cloudflare R2 smoke test \(Date().ISO8601Format())".utf8)
         let asset = LocalMediaAsset(
             id: UUID(),
             data: payload,
@@ -233,79 +226,166 @@ struct SupabaseStorageService: MediaStorageProviding {
             fileExtension: "txt"
         )
 
-        let sessionStatus = try await ensureAuthenticatedSession()
-        let createdBuckets = try await ensureBucketsExist(uniqueBuckets(requiredBuckets + [bucket]))
-        _ = try await uploadAsset(asset, bucket: bucket, path: path)
-        let objectExists = try await client.storage.from(bucket).exists(path: path)
-        let publicURL = try publicURL(bucket: bucket, path: path)
-        let signedURL = try await signedURL(bucket: bucket, path: path, expiresIn: signedURLExpiresIn)
-        let publicStatusCode = try? await httpStatusCode(for: publicURL)
-        let signedStatusCode = try? await httpStatusCode(for: signedURL)
+        _ = try await uploadAsset(asset, path: objectPath)
+        let objectExists = try await objectExists(path: objectPath, configuration: configuration)
+        let publicURL = try publicURL(path: objectPath)
+        let signedURL = try await signedURL(path: objectPath, expiresIn: signedURLExpiresIn)
+        let publicURLCheck = await checkedHTTPStatusCode(for: publicURL)
+        let signedURLCheck = await checkedHTTPStatusCode(for: signedURL)
 
         let cleanupResult: Result<Void, Error>
         do {
-            _ = try await client.storage.from(bucket).remove(paths: [path])
+            try await deleteObject(path: objectPath, configuration: configuration)
             cleanupResult = .success(())
         } catch {
             cleanupResult = .failure(error)
         }
 
-        return SupabaseStorageSmokeTestResult(
-            bucket: bucket,
-            path: path,
-            createdBuckets: createdBuckets,
-            sessionStatus: sessionStatus,
+        return R2StorageSmokeTestResult(
+            bucket: configuration.bucket,
+            path: objectPath,
+            ensuredPrefixPaths: ensuredPrefixPaths,
+            endpointURL: configuration.endpointURL,
+            publicBaseURL: configuration.publicBaseURL,
             objectExists: objectExists,
             publicURL: publicURL,
-            publicURLStatusCode: publicStatusCode,
+            publicURLStatusCode: publicURLCheck.statusCode,
+            publicURLCheckError: publicURLCheck.errorMessage,
             signedURL: signedURL,
-            signedURLStatusCode: signedStatusCode,
+            signedURLStatusCode: signedURLCheck.statusCode,
+            signedURLCheckError: signedURLCheck.errorMessage,
             signedURLExpiration: Date().addingTimeInterval(signedURLExpiresIn),
             cleanupSucceeded: cleanupResult.isSuccess,
             cleanupError: cleanupResult.failureDescription
         )
     }
 
-    private func configuredClient() throws -> SupabaseClient {
-        guard projectURL != nil, apiKey != nil else {
-            throw MediaStorageError.missingSupabaseConfiguration
+    private func ensurePrefixPlaceholders(_ prefixes: [String]) async throws -> [String] {
+        var seenPrefixes = Set<String>()
+        var placeholderPaths: [String] = []
+        let placeholderData = Data("Flick Cloudflare R2 storage prefix placeholder.\n".utf8)
+
+        for prefix in prefixes {
+            let normalizedPrefix = try normalizedObjectPath(prefix)
+            guard seenPrefixes.insert(normalizedPrefix).inserted else { continue }
+
+            let placeholderPath = "\(normalizedPrefix)/.keep"
+            _ = try await uploadAsset(
+                LocalMediaAsset(
+                    id: UUID(),
+                    data: placeholderData,
+                    contentType: "text/plain",
+                    fileExtension: "txt"
+                ),
+                path: placeholderPath
+            )
+            placeholderPaths.append(placeholderPath)
         }
-        guard let client else {
-            throw MediaStorageError.missingSupabaseClient
-        }
-        return client
+
+        return placeholderPaths
     }
 
-    private func ensureBucketsExist(_ buckets: [String]) async throws -> [String] {
-        let client = try configuredClient()
-        let requestedBuckets = uniqueBuckets(buckets)
-        guard !requestedBuckets.isEmpty else { return [] }
-
-        let existingBucketIDs = Set(try await client.storage.listBuckets().map(\.id))
-        var createdBuckets: [String] = []
-
-        for bucket in requestedBuckets where !existingBucketIDs.contains(bucket) {
-            try await client.storage.createBucket(bucket, options: BucketOptions(public: true))
-            createdBuckets.append(bucket)
+    private func configuredStorage() throws -> R2StorageClientConfiguration {
+        guard
+            let endpointURL,
+            let publicBaseURL,
+            let accessKeyID,
+            let secretAccessKey,
+            let bucket
+        else {
+            throw MediaStorageError.missingR2Configuration
         }
 
-        return createdBuckets
-    }
-
-    private func uniqueBuckets(_ buckets: [String]) -> [String] {
-        var seenBuckets = Set<String>()
-        return buckets
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty && seenBuckets.insert($0).inserted }
-    }
-
-    private func sessionStatus(for session: Session, didCreateNewSession: Bool) -> SupabaseSessionStatus {
-        SupabaseSessionStatus(
-            mode: .authenticated,
-            userID: session.user.id,
-            expiresAt: Date(timeIntervalSince1970: session.expiresAt),
-            didCreateNewSession: didCreateNewSession
+        return R2StorageClientConfiguration(
+            endpointURL: endpointURL,
+            publicBaseURL: publicBaseURL,
+            accessKeyID: accessKeyID,
+            secretAccessKey: secretAccessKey,
+            bucket: bucket
         )
+    }
+
+    private func objectExists(path: String, configuration: R2StorageClientConfiguration) async throws -> Bool {
+        let request = try signedRequest(
+            method: "HEAD",
+            path: path,
+            headers: [:],
+            body: Data(),
+            configuration: configuration
+        )
+        let (_, response) = try await urlSession.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw MediaStorageError.httpStatusUnavailable(request.url!)
+        }
+        if httpResponse.statusCode == 404 { return false }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw MediaStorageError.requestFailed(operation: "head object", statusCode: httpResponse.statusCode, response: "")
+        }
+        return true
+    }
+
+    private func deleteObject(path: String, configuration: R2StorageClientConfiguration) async throws {
+        let request = try signedRequest(
+            method: "DELETE",
+            path: path,
+            headers: [:],
+            body: Data(),
+            configuration: configuration
+        )
+        _ = try await send(request, operation: "delete")
+    }
+
+    private func signedRequest(
+        method: String,
+        path: String,
+        headers: [String: String],
+        body: Data,
+        configuration: R2StorageClientConfiguration
+    ) throws -> URLRequest {
+        let url = try s3URL(for: path, configuration: configuration)
+        let signer = R2AWSV4Signer(
+            accessKeyID: configuration.accessKeyID,
+            secretAccessKey: configuration.secretAccessKey
+        )
+        return try signer.signedRequest(
+            url: url,
+            method: method,
+            headers: headers,
+            body: body,
+            date: Date()
+        )
+    }
+
+    private func s3URL(for path: String, configuration: R2StorageClientConfiguration) throws -> URL {
+        let endpoint = configuration.endpointURL.absoluteString.trimmingTrailingSlashes()
+        let objectPath = try normalizedObjectPath(path)
+        let bucketPath = "\(configuration.bucket)/\(objectPath)"
+        guard let url = URL(string: "\(endpoint)/\(R2PercentEncoding.path(bucketPath))") else {
+            throw MediaStorageError.invalidObjectPath(path)
+        }
+        return url
+    }
+
+    private func normalizedObjectPath(_ path: String) throws -> String {
+        let normalizedPath = path
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !normalizedPath.isEmpty else {
+            throw MediaStorageError.invalidObjectPath(path)
+        }
+        return normalizedPath
+    }
+
+    private func send(_ request: URLRequest, operation: String) async throws -> Data {
+        let (data, response) = try await urlSession.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw MediaStorageError.httpStatusUnavailable(request.url ?? URL(fileURLWithPath: "/"))
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            let responseBody = String(data: data, encoding: .utf8) ?? ""
+            throw MediaStorageError.requestFailed(operation: operation, statusCode: httpResponse.statusCode, response: responseBody)
+        }
+        return data
     }
 
     private func httpStatusCode(for url: URL) async throws -> Int {
@@ -315,10 +395,210 @@ struct SupabaseStorageService: MediaStorageProviding {
         }
         return httpResponse.statusCode
     }
+
+    private func checkedHTTPStatusCode(for url: URL) async -> (statusCode: Int?, errorMessage: String?) {
+        do {
+            return (try await httpStatusCode(for: url), nil)
+        } catch {
+            return (nil, error.localizedDescription)
+        }
+    }
+}
+
+private struct R2StorageClientConfiguration {
+    var endpointURL: URL
+    var publicBaseURL: URL
+    var accessKeyID: String
+    var secretAccessKey: String
+    var bucket: String
+}
+
+private struct R2AWSV4Signer {
+    var accessKeyID: String
+    var secretAccessKey: String
+    var region = "auto"
+    var service = "s3"
+
+    func signedRequest(
+        url: URL,
+        method: String,
+        headers: [String: String],
+        body: Data,
+        date: Date
+    ) throws -> URLRequest {
+        guard let host = url.host(percentEncoded: false) else {
+            throw MediaStorageError.httpStatusUnavailable(url)
+        }
+
+        let dates = R2SigningDate(date: date)
+        let payloadHash = R2SHA256.hexDigest(body)
+        var signedHeaders = headers.normalizedHTTPHeaders()
+        signedHeaders["host"] = host
+        signedHeaders["x-amz-content-sha256"] = payloadHash
+        signedHeaders["x-amz-date"] = dates.amzDate
+
+        let canonicalHeaders = signedHeaders
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key):\($0.value)\n" }
+            .joined()
+        let signedHeaderNames = signedHeaders.keys.sorted().joined(separator: ";")
+        let canonicalRequest = [
+            method,
+            url.encodedPathForSigning,
+            url.encodedQueryForSigning,
+            canonicalHeaders,
+            signedHeaderNames,
+            payloadHash
+        ].joined(separator: "\n")
+        let signature = signature(for: canonicalRequest, dates: dates)
+
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.httpBody = body.isEmpty ? nil : body
+        for (name, value) in signedHeaders where name != "host" {
+            request.setValue(value, forHTTPHeaderField: name)
+        }
+        request.setValue(
+            "AWS4-HMAC-SHA256 Credential=\(accessKeyID)/\(credentialScope(for: dates)), SignedHeaders=\(signedHeaderNames), Signature=\(signature)",
+            forHTTPHeaderField: "Authorization"
+        )
+        return request
+    }
+
+    func presignedURL(url: URL, method: String, expiresIn: Int, date: Date) throws -> URL {
+        guard let host = url.host(percentEncoded: false) else {
+            throw MediaStorageError.httpStatusUnavailable(url)
+        }
+
+        let dates = R2SigningDate(date: date)
+        let scope = credentialScope(for: dates)
+        let queryItems = [
+            ("X-Amz-Algorithm", "AWS4-HMAC-SHA256"),
+            ("X-Amz-Content-Sha256", "UNSIGNED-PAYLOAD"),
+            ("X-Amz-Credential", "\(accessKeyID)/\(scope)"),
+            ("X-Amz-Date", dates.amzDate),
+            ("X-Amz-Expires", String(expiresIn)),
+            ("X-Amz-SignedHeaders", "host")
+        ]
+        let canonicalQuery = R2PercentEncoding.query(queryItems)
+        let canonicalRequest = [
+            method,
+            url.encodedPathForSigning,
+            canonicalQuery,
+            "host:\(host)\n",
+            "host",
+            "UNSIGNED-PAYLOAD"
+        ].joined(separator: "\n")
+        let signature = signature(for: canonicalRequest, dates: dates)
+        let separator = canonicalQuery.isEmpty ? "" : "?"
+        guard let signedURL = URL(string: "\(url.absoluteString)\(separator)\(canonicalQuery)&X-Amz-Signature=\(signature)") else {
+            throw MediaStorageError.httpStatusUnavailable(url)
+        }
+        return signedURL
+    }
+
+    private func signature(for canonicalRequest: String, dates: R2SigningDate) -> String {
+        let stringToSign = [
+            "AWS4-HMAC-SHA256",
+            dates.amzDate,
+            credentialScope(for: dates),
+            R2SHA256.hexDigest(Data(canonicalRequest.utf8))
+        ].joined(separator: "\n")
+        let signingKey = signingKey(for: dates.dateStamp)
+        return R2HMAC.authenticationCode(for: stringToSign, key: signingKey).hexString
+    }
+
+    private func credentialScope(for dates: R2SigningDate) -> String {
+        "\(dates.dateStamp)/\(region)/\(service)/aws4_request"
+    }
+
+    private func signingKey(for dateStamp: String) -> Data {
+        let dateKey = R2HMAC.authenticationCode(for: dateStamp, key: Data("AWS4\(secretAccessKey)".utf8))
+        let dateRegionKey = R2HMAC.authenticationCode(for: region, key: dateKey)
+        let dateRegionServiceKey = R2HMAC.authenticationCode(for: service, key: dateRegionKey)
+        return R2HMAC.authenticationCode(for: "aws4_request", key: dateRegionServiceKey)
+    }
+}
+
+private struct R2SigningDate {
+    var dateStamp: String
+    var amzDate: String
+
+    init(date: Date) {
+        dateStamp = Self.dateStampFormatter.string(from: date)
+        amzDate = Self.amzDateFormatter.string(from: date)
+    }
+
+    private static let dateStampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd"
+        return formatter
+    }()
+
+    private static let amzDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
+        return formatter
+    }()
+}
+
+private enum R2SHA256 {
+    static func hexDigest(_ data: Data) -> String {
+        Data(SHA256.hash(data: data)).hexString
+    }
+}
+
+private enum R2HMAC {
+    static func authenticationCode(for value: String, key: Data) -> Data {
+        authenticationCode(for: Data(value.utf8), key: key)
+    }
+
+    static func authenticationCode(for data: Data, key: Data) -> Data {
+        Data(HMAC<SHA256>.authenticationCode(for: data, using: SymmetricKey(data: key)))
+    }
+}
+
+private enum R2PercentEncoding {
+    static func path(_ value: String) -> String {
+        value
+            .split(separator: "/", omittingEmptySubsequences: false)
+            .map { percentEncode(String($0)) }
+            .joined(separator: "/")
+    }
+
+    static func query(_ items: [(String, String)]) -> String {
+        items
+            .map { (percentEncode($0.0), percentEncode($0.1)) }
+            .sorted {
+                if $0.0 == $1.0 { return $0.1 < $1.1 }
+                return $0.0 < $1.0
+            }
+            .map { "\($0.0)=\($0.1)" }
+            .joined(separator: "&")
+    }
+
+    private static func percentEncode(_ value: String) -> String {
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+    }
 }
 
 private extension Dictionary where Key == String, Value == String {
-    typealias SupabaseAPIKey = (value: String, source: SupabaseStorageService.APIKeySource)
+    func normalizedHTTPHeaders() -> [String: String] {
+        reduce(into: [String: String]()) { result, pair in
+            let key = pair.key.lowercased()
+            let value = pair.value
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .split(whereSeparator: \.isWhitespace)
+                .joined(separator: " ")
+            result[key] = value
+        }
+    }
 
     func nonEmptyValue(_ key: String) -> String? {
         guard let value = self[key]?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
@@ -331,18 +611,32 @@ private extension Dictionary where Key == String, Value == String {
         guard let value = nonEmptyValue(key) else { return nil }
         return URL(string: value)
     }
+}
 
-    func supabaseAPIKey() -> SupabaseAPIKey? {
-        if let value = nonEmptyValue("SUPABASE_SERVICE_ROLE_KEY") {
-            return (value, .serviceRole)
+private extension URL {
+    var encodedPathForSigning: String {
+        let path = path(percentEncoded: true)
+        return path.isEmpty ? "/" : path
+    }
+
+    var encodedQueryForSigning: String {
+        query(percentEncoded: true) ?? ""
+    }
+}
+
+private extension String {
+    func trimmingTrailingSlashes() -> String {
+        var value = self
+        while value.hasSuffix("/") {
+            value.removeLast()
         }
-        if let value = nonEmptyValue("SUPABASE_PUBLISHABLE_KEY") {
-            return (value, .publishable)
-        }
-        if let value = nonEmptyValue("SUPABASE_ANON_KEY") {
-            return (value, .anon)
-        }
-        return nil
+        return value
+    }
+}
+
+private extension Data {
+    var hexString: String {
+        map { String(format: "%02x", $0) }.joined()
     }
 }
 

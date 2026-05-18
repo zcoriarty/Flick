@@ -6,11 +6,11 @@
 import Foundation
 
 struct AppConfiguration: Hashable {
-    var supabase: SupabaseConfiguration
+    var r2: R2StorageConfiguration
     var tiktok: TikTokConfiguration
     var openAI: OpenAIConfiguration
     var meta: MetaConfiguration
-    var storageBuckets: StorageBuckets
+    var storagePaths: R2StoragePaths
     var renderDirectory: URL
     var secureStoredCredentialKeys: Set<String>
 
@@ -19,11 +19,11 @@ struct AppConfiguration: Hashable {
         let values = credentialVault.loadValues()
         let secureStoredCredentialKeys = Set(values.keys)
         return AppConfiguration(
-            supabase: SupabaseConfiguration(values: values),
+            r2: R2StorageConfiguration(values: values),
             tiktok: TikTokConfiguration(values: values),
             openAI: OpenAIConfiguration(values: values),
             meta: MetaConfiguration(values: values),
-            storageBuckets: StorageBuckets(),
+            storagePaths: R2StoragePaths(),
             renderDirectory: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
                 .appending(path: "Flick/Renders", directoryHint: .isDirectory)
                 ?? URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "Flick/Renders", directoryHint: .isDirectory),
@@ -47,23 +47,32 @@ struct AppConfiguration: Hashable {
     }
 }
 
-struct SupabaseConfiguration: Hashable {
-    var url: URL?
-    var publishableKeyPresent: Bool
-    var anonKeyPresent: Bool
-    var serviceRoleKeyPresent: Bool
-    var postgresURLPresent: Bool
+struct R2StorageConfiguration: Hashable {
+    var endpointURL: URL?
+    var publicBaseURL: URL?
+    var accountIDPresent: Bool
+    var accessKeyIDPresent: Bool
+    var secretAccessKeyPresent: Bool
+    var bucket: String?
 
-    var apiKeyPresent: Bool {
-        publishableKeyPresent || anonKeyPresent || serviceRoleKeyPresent
+    var isConfigured: Bool {
+        endpointURL != nil
+            && publicBaseURL != nil
+            && accessKeyIDPresent
+            && secretAccessKeyPresent
+            && bucket != nil
     }
 
     init(values: [String: String]) {
-        url = values.nonEmptyURL("SUPABASE_URL")
-        publishableKeyPresent = values.hasNonEmptyValue("SUPABASE_PUBLISHABLE_KEY")
-        anonKeyPresent = values.hasNonEmptyValue("SUPABASE_ANON_KEY")
-        serviceRoleKeyPresent = values.hasNonEmptyValue("SUPABASE_SERVICE_ROLE_KEY")
-        postgresURLPresent = values.hasNonEmptyValue("POSTGRES_URL")
+        let accountID = values.nonEmptyString("R2_ACCOUNT_ID")
+        let derivedEndpointURL = accountID.flatMap { URL(string: "https://\($0).r2.cloudflarestorage.com") }
+        endpointURL = values.nonEmptyURL("R2_S3_ENDPOINT")
+            ?? derivedEndpointURL
+        publicBaseURL = values.nonEmptyURL("R2_PUBLIC_BASE_URL")
+        accountIDPresent = accountID != nil
+        accessKeyIDPresent = values.hasNonEmptyValue("R2_ACCESS_KEY_ID")
+        secretAccessKeyPresent = values.hasNonEmptyValue("R2_SECRET_ACCESS_KEY")
+        bucket = values.nonEmptyString("R2_BUCKET")
     }
 }
 
@@ -82,6 +91,7 @@ struct TikTokConfiguration: Hashable {
         clientSecret = values.nonEmptyString("TIKTOK_CLIENT_SECRET")
         redirectURI = values.nonEmptyURL("TIKTOK_REDIRECT_URI")
         verifiedBaseURL = values.nonEmptyURL("TIKTOK_VERIFIED_BASE_URL")
+            ?? values.nonEmptyURL("R2_PUBLIC_BASE_URL")
         requestedScopes = values
             .nonEmptyString("TIKTOK_SCOPES")?
             .split(separator: ",")
@@ -109,16 +119,16 @@ struct MetaConfiguration: Hashable {
     }
 }
 
-struct StorageBuckets: Hashable {
-    var generatedImages = "flick-generated-images"
-    var renderedVideos = "flick-rendered-videos"
-    var referenceImages = "flick-reference-images"
-    var thumbnails = "flick-thumbnails"
+struct R2StoragePaths: Hashable {
+    var generatedImages = "generated-slides"
+    var renderedImages = "rendered-image-sequences"
+    var referenceImages = "reference-images"
+    var thumbnails = "thumbnails"
 
     var all: [String] {
         [
             generatedImages,
-            renderedVideos,
+            renderedImages,
             referenceImages,
             thumbnails
         ]
@@ -141,11 +151,12 @@ struct CredentialDefinition: Identifiable, Hashable {
         CredentialDefinition(key: "POSTGRES_URL", name: "Postgres URL"),
         CredentialDefinition(key: "POSTGRES_URL_NON_POOLING", name: "Postgres non-pooling URL"),
         CredentialDefinition(key: "POSTGRES_USER", name: "Postgres user"),
-        CredentialDefinition(key: "SUPABASE_ANON_KEY", name: "Supabase anon key"),
-        CredentialDefinition(key: "SUPABASE_JWT_SECRET", name: "Supabase JWT secret"),
-        CredentialDefinition(key: "SUPABASE_PUBLISHABLE_KEY", name: "Supabase publishable key"),
-        CredentialDefinition(key: "SUPABASE_SERVICE_ROLE_KEY", name: "Supabase service role key"),
-        CredentialDefinition(key: "SUPABASE_URL", name: "Supabase URL"),
+        CredentialDefinition(key: "R2_ACCESS_KEY_ID", name: "Cloudflare R2 access key ID"),
+        CredentialDefinition(key: "R2_ACCOUNT_ID", name: "Cloudflare R2 account ID"),
+        CredentialDefinition(key: "R2_BUCKET", name: "Cloudflare R2 bucket"),
+        CredentialDefinition(key: "R2_PUBLIC_BASE_URL", name: "Cloudflare R2 public base URL"),
+        CredentialDefinition(key: "R2_S3_ENDPOINT", name: "Cloudflare R2 S3 endpoint"),
+        CredentialDefinition(key: "R2_SECRET_ACCESS_KEY", name: "Cloudflare R2 secret access key"),
         CredentialDefinition(key: "TIKTOK_CLIENT_ID", name: "TikTok client ID"),
         CredentialDefinition(key: "TIKTOK_CLIENT_SECRET", name: "TikTok client secret"),
         CredentialDefinition(key: "TIKTOK_REDIRECT_URI", name: "TikTok redirect URI"),

@@ -4,7 +4,7 @@ Last updated: May 11, 2026
 Platforms: iOS 26+, macOS 26+
 Primary platform integration: TikTok Content Posting API
 Future platform integrations: Instagram, Threads, X
-Architecture: SwiftUI, MVVM, Core Data + CloudKit, AVFoundation, Supabase Storage
+Architecture: SwiftUI, MVVM, Core Data + CloudKit, AVFoundation, Cloudflare R2
 
 ⸻
 
@@ -19,7 +19,7 @@ Flick runs on both macOS and iPhone:
 * Mac app: primary automation worker, scheduler, media renderer, uploader, and publisher.
 * iPhone app: monitoring, approvals, light edits, account/status checks, manual actions, and performance review.
 * CloudKit: syncs structured app state between devices.
-* Supabase Storage: stores generated slideshow images and publicly accessible media URLs for platform APIs that require URL-based media ingestion.
+* Cloudflare R2: stores generated slideshow images and publicly accessible media URLs for platform APIs that require URL-based media ingestion.
 * Core Data: local-first persistence layer.
 * AVFoundation: local video/slideshow rendering.
 
@@ -32,7 +32,7 @@ Primary Goals
 1. Connect and manage multiple social accounts.
 2. Generate TikTok-style slideshow creatives.
 3. Overlay clean, readable text on generated or uploaded images.
-4. Store slideshow images in Supabase object storage.
+4. Store slideshow images in Cloudflare R2 object storage.
 5. Publish TikTok slideshows through the approved TikTok API flow.
 6. Schedule posts on a defined cadence.
 7. Let the Mac perform autonomous work while iPhone monitors and controls the queue.
@@ -46,7 +46,7 @@ Non-Goals for V1
 2. Do not automate browser sessions or simulate user behavior.
 3. Do not require a paid server for the core app.
 4. Do not store large binary media in CloudKit.
-5. Do not put sensitive API secrets, TikTok tokens, or Supabase service-role credentials in CloudKit.
+5. Do not put sensitive API secrets, TikTok tokens, or Cloudflare R2 write credentials in CloudKit.
 6. Do not optimize for Android, web, or Windows.
 
 ⸻
@@ -76,14 +76,14 @@ CloudKit should not sync:
 * rendered videos
 * OAuth secrets
 * API tokens
-* Supabase service-role keys
+* Cloudflare R2 write credentials
 * large temporary render files
 
-3.2 Use Supabase Storage for Media
+3.2 Use Cloudflare R2 for Media
 
-Supabase Storage stores generated slideshow images and potentially rendered videos.
+Cloudflare R2 stores generated slideshow images and potentially rendered videos.
 
-Use Supabase for:
+Use Cloudflare R2 for:
 
 * generated image assets
 * manually uploaded trend/reference images
@@ -91,7 +91,7 @@ Use Supabase for:
 * TikTok slideshow image URL ingestion
 * reusable asset library
 
-Use Core Data + CloudKit for the metadata pointing to Supabase objects.
+Use Core Data + CloudKit for the metadata pointing to Cloudflare R2 objects.
 
 Example metadata stored in Core Data:
 
@@ -119,13 +119,13 @@ Use this when publishing TikTok photo/slideshow posts.
 Pipeline:
 
 Generate images locally
-→ Upload each image to Supabase Storage
+→ Upload each image to Cloudflare R2
 → Ensure each URL is publicly accessible and compatible with TikTok URL ingestion
 → Initialize TikTok photo post
 → Publish or upload through TikTok Content Posting API
 → Store publish status and platform post ID
 
-Important implementation note: TikTok photo publishing expects PULL_FROM_URL image URLs. The URLs must be publicly accessible and verified by the app/domain or URL prefix. Flick should support a custom domain or verified URL prefix for Supabase-hosted media if required.
+Important implementation note: TikTok photo publishing expects PULL_FROM_URL image URLs. The URLs must be publicly accessible and verified by the app/domain or URL prefix. Flick should use the Cloudflare R2 custom domain or a configured verified URL prefix for hosted media.
 
 ⸻
 
@@ -292,8 +292,8 @@ Purpose: app-level configuration.
 
 Features:
 
-* Supabase credentials/config
-* storage bucket names
+* Cloudflare R2 credentials/config
+* storage bucket and object prefixes
 * worker device role
 * API credentials status
 * local render directory
@@ -315,7 +315,7 @@ CloudKit sync                         CloudKit sync
 Monitoring/actions                    Scheduler + automation worker
 Light editing                         AVFoundation rendering
 Approval controls                     TikTok publishing
-                                      Supabase media upload
+                                      Cloudflare R2 media upload
                  Shared App Layer
 ────────────────────────────────────────────────────────────────
 Models / Core Data entities
@@ -336,7 +336,7 @@ Responsibilities:
 * scheduled generation
 * batch rendering
 * background queue processing
-* Supabase uploads
+* Cloudflare R2 uploads
 * TikTok publishing
 * analytics polling
 * retry processing
@@ -375,7 +375,7 @@ Repository / Use Case
 ↓
 Service / Adapter
 ↓
-Core Data, CloudKit, Supabase, TikTok, AVFoundation
+Core Data, CloudKit, Cloudflare R2, TikTok, AVFoundation
 
 6.2 Suggested Xcode Project Layout
 
@@ -460,11 +460,9 @@ Third-party packages should be minimal and justified.
 
 Likely acceptable third-party dependencies:
 
-1. Supabase Swift SDK
-    * Needed for clean Supabase Storage integration.
-2. Optional: OpenAI/AI provider SDK
+1. Optional: OpenAI/AI provider SDK
     * Only if direct URLSession calls become repetitive or hard to maintain.
-3. Optional: ZIP/export helper
+2. Optional: ZIP/export helper
     * Only if native compression is insufficient.
 
 Avoid adding third-party packages for UI, charts, networking, scheduling, or persistence unless there is a strong reason.
@@ -773,16 +771,18 @@ Add a sync status component:
 
 ⸻
 
-9. Supabase Storage Architecture
+9. Cloudflare R2 Storage Architecture
 
-9.1 Buckets
+9.1 Bucket
 
-Recommended buckets:
+Use a single R2 bucket for all app media. Separate media classes with object-key prefixes rather than separate buckets.
 
-flick-generated-images
-flick-rendered-videos
-flick-reference-images
-flick-thumbnails
+Recommended prefixes:
+
+generated-slides/
+rendered-image-sequences/
+reference-images/
+thumbnails/
 
 9.2 Path Structure
 
@@ -801,17 +801,18 @@ For TikTok photo publishing, public or otherwise TikTok-accessible URLs are requ
 
 Preferred production setup:
 
-Supabase Storage
-→ custom domain or verified URL prefix
+Cloudflare R2 bucket
+→ custom domain
 → stable public URL for publish-time media
 
 9.4 Credentials
 
-The app may include a Supabase anon key if RLS policies are correct.
+The app stores Cloudflare R2 credentials in Keychain for local upload workflows.
 
 Never ship:
 
-* Supabase service-role key
+* unrestricted Cloudflare account tokens
+* long-lived R2 write credentials outside Keychain
 * unrestricted admin credentials
 * TikTok client secret in an insecure client context
 
@@ -1215,7 +1216,7 @@ Notify for:
 * worker paused
 * failed queue
 * TikTok auth required
-* Supabase upload errors
+* Cloudflare R2 upload errors
 * CloudKit sync errors
 
 ⸻
@@ -1228,14 +1229,14 @@ Use Keychain for:
 
 * TikTok access/refresh tokens
 * platform tokens
-* Supabase user/session tokens if applicable
+* Cloudflare R2 write credentials
 * AI provider API keys if user-supplied
 
 CloudKit stores only metadata.
 
-17.2 Supabase Security
+17.2 Cloudflare R2 Security
 
-Use RLS policies carefully.
+Use bucket-scoped write credentials and a custom domain carefully.
 
 Recommended rule:
 
@@ -1314,7 +1315,7 @@ The app should work offline for:
 Online required for:
 
 * CloudKit sync
-* Supabase upload
+* Cloudflare R2 upload
 * TikTok publishing
 * analytics polling
 * external trend research
@@ -1339,7 +1340,7 @@ Build diagnostics from the start:
 * CloudKit sync log
 * worker log
 * publishing log
-* Supabase upload log
+* Cloudflare R2 upload log
 * platform API response log
 * local file cleanup log
 
@@ -1359,7 +1360,7 @@ Milestone 1 — Foundation
 
 Milestone 2 — Asset Library
 
-* Supabase Swift integration
+* Cloudflare R2 S3-compatible upload integration
 * image upload
 * reference image import
 * asset metadata sync
@@ -1430,7 +1431,7 @@ Milestone 9 — Future Platform Prep
 
 21. Open Questions
 
-1. Will TikTok accept Supabase-hosted image URLs directly, or do we need a custom verified domain/prefix?
+1. Will TikTok accept the Cloudflare R2 custom-domain image URLs directly, or do we need a narrower verified URL prefix?
 2. Which TikTok scopes are approved on the existing developer app?
 user.info.basic
 user.info.basic
@@ -1449,8 +1450,8 @@ user.info.profile
 Read access to profile_web_link, profile_deep_link, bio_description, is_verified.
 4. Should generation be local, API-based, or configurable?
 - For generation we can use OpenAI since we have the API key
-5. Will Flick use a dedicated Supabase user/auth model, or only project-level storage credentials?
-- We have the credentials for direct access in the env file
+5. Will Flick use direct R2 credentials only, or move uploads behind a serverless broker later?
+- V1 uses direct bucket-scoped R2 credentials stored in Keychain.
 6. Should iPhone be allowed to publish directly, or should all publishing route through the Mac worker?
 - It can publish directly, but can not have background processes like we can on mac
 
@@ -1463,7 +1464,7 @@ Recommended Defaults
 * Mac is primary worker.
 * iPhone is monitor/controller.
 * Manual approval required for V1 posts.
-* Store media in Supabase.
+* Store media in Cloudflare R2.
 * Store metadata in Core Data + CloudKit.
 * Store secrets in Keychain.
 * Use TikTok first.
@@ -1504,10 +1505,10 @@ TikTok
 * Photo post API reference: https://developers.tiktok.com/doc/content-posting-api-reference-photo-post
 * TikTok Creative Center: https://ads.tiktok.com/business/creativecenter
 
-Supabase
+Cloudflare R2
 
-* Supabase Swift storage upload: https://supabase.com/docs/reference/swift/storage-from-upload
-* Supabase Swift signed upload URL: https://supabase.com/docs/reference/swift/storage-from-createsigneduploadurl
+* R2 S3-compatible API: https://developers.cloudflare.com/r2/get-started/s3/
+* R2 public buckets and custom domains: https://developers.cloudflare.com/r2/buckets/public-buckets/
 
 Future Platforms
 
