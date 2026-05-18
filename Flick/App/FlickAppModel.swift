@@ -60,11 +60,17 @@ final class FlickAppModel {
     @ObservationIgnored private let tiktokLoginKitClient = TikTokLoginKitClient()
     @ObservationIgnored private let localMediaLibrary = LocalMediaLibrary(directoryName: "ProductMedia")
     @ObservationIgnored private let generatedImageLibrary = LocalMediaLibrary(directoryName: "GeneratedImages")
+    @ObservationIgnored private let openAIClientFactory: @MainActor ([String: String]) -> OpenAIClient
     @ObservationIgnored private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.orion.Flick", category: "Publishing")
 
-    init(repository: FlickRepository, configuration: AppConfiguration) {
+    init(
+        repository: FlickRepository,
+        configuration: AppConfiguration,
+        openAIClientFactory: @escaping @MainActor ([String: String]) -> OpenAIClient = { OpenAIClient(credentials: $0) }
+    ) {
         self.repository = repository
         self.configuration = configuration
+        self.openAIClientFactory = openAIClientFactory
         self.overview = FlickEmptyState.make()
         applyAuthorizedAccounts()
         applyCredentialHealth()
@@ -122,8 +128,11 @@ final class FlickAppModel {
             configuration = .current
             applyAuthorizedAccounts()
             applyCredentialHealth()
+            overview.refreshDerivedState()
+            let didUpdateTikTokStatuses = await refreshTikTokPublishStatuses()
             clearActiveCreateDraftIfUnavailable()
-            if reconcileCompletedSlideImages() {
+            if reconcileCompletedSlideImages() || didUpdateTikTokStatuses {
+                overview.refreshDerivedState()
                 try await repository.saveOverview(overview)
             }
             lastErrorMessage = nil
@@ -479,7 +488,7 @@ final class FlickAppModel {
         }
 
         do {
-            let openAIClient = OpenAIClient(credentials: credentialVault.loadValues())
+            let openAIClient = makeOpenAIClient()
             let styleGuide = try await TemplateAnalysisService(client: openAIClient).createStyleGuide(from: template)
             createWorkflowMessage = "Planning slideshow..."
             let plan = try await SlideshowPlannerService(client: openAIClient).createPlan(
@@ -537,7 +546,7 @@ final class FlickAppModel {
         }
 
         do {
-            let openAIClient = OpenAIClient(credentials: credentialVault.loadValues())
+            let openAIClient = makeOpenAIClient()
             guard
                 let draftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }),
                 let slideIndex = overview.drafts[draftIndex].slides.firstIndex(where: { $0.id == slideID })
@@ -742,6 +751,7 @@ final class FlickAppModel {
             } else {
                 completePublishingJob(job.id, result: result, draft: refreshedDraft)
             }
+            overview.refreshDerivedState()
             try await repository.saveOverview(overview)
             let recordCompletionDetail = settings.postAsDraft
                 ? "TikTok draft saved. Open TikTok's inbox notification to edit, save, or post."
@@ -984,6 +994,10 @@ enum ManualPublishError: LocalizedError {
 }
 
 private extension FlickAppModel {
+    func makeOpenAIClient() -> OpenAIClient {
+        openAIClientFactory(credentialVault.loadValues())
+    }
+
     func expectedPlanSlideCount(
         template: ExampleSlideshowTemplate,
         productImage: SlideshowProductImage?
@@ -1037,11 +1051,29 @@ private extension FlickAppModel {
             caption: plan.caption,
             hashtags: plan.hashtags.map { sanitizedHashtag($0) }.filter { !$0.isEmpty },
             targetPlatforms: [.tiktok, .instagram],
+            tikTokSettings: defaultTikTokSettings(from: plan),
             status: .draft,
             exportedImageAssetIDs: [],
             createdAt: now,
             updatedAt: now
         )
+    }
+
+    func defaultTikTokSettings(from plan: PlannedSlideshow) -> DraftTikTokSettings? {
+        let title = [plan.tikTokTitle, plan.title]
+            .map(normalizedTikTokTitle)
+            .first { !$0.isEmpty }
+            ?? ""
+
+        guard !title.isEmpty else { return nil }
+        return DraftTikTokSettings(title: title)
+    }
+
+    func normalizedTikTokTitle(_ title: String) -> String {
+        title
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
     }
 
     func validateProductImagePlacement(
@@ -1098,7 +1130,7 @@ private extension FlickAppModel {
         try await repository.saveOverview(overview)
 
         do {
-            let openAIClient = OpenAIClient(credentials: credentialVault.loadValues())
+            let openAIClient = makeOpenAIClient()
             let slideshowPlanner = SlideshowPlannerService(client: openAIClient)
             var draft = overview.drafts[draftIndex]
             var slide = draft.slides[slideIndex]
@@ -1289,6 +1321,40 @@ private extension FlickAppModel {
         }
     }
 
+    func refreshTikTokPublishStatuses() async -> Bool {
+        let awaitingJobs = overview.publishingJobs.filter { job in
+            job.platform == .tiktok
+                && job.status == .awaitingUserCompletion
+                && job.platformPublishID != nil
+        }
+        guard !awaitingJobs.isEmpty else { return false }
+
+        let accountsByID = Dictionary(uniqueKeysWithValues: overview.accounts.map { ($0.id, $0) })
+        let adapter = TikTokAdapter(configuration: configuration.tiktok)
+        var didChange = false
+
+        for job in awaitingJobs {
+            guard
+                let publishID = job.platformPublishID,
+                let account = accountsByID[job.accountID]
+            else {
+                continue
+            }
+
+            do {
+                let status = try await adapter.fetchPublishStatus(
+                    publishID: publishID,
+                    account: account
+                )
+                didChange = applyTikTokPublishStatus(status, to: job.id) || didChange
+            } catch {
+                logger.error("TikTok publish status refresh failed jobID=\(job.id.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            }
+        }
+
+        return didChange
+    }
+
     func updatePublishingJob(_ jobID: UUID, status: PublishingJobStatus) {
         guard let jobIndex = overview.publishingJobs.firstIndex(where: { $0.id == jobID }) else { return }
         overview.publishingJobs[jobIndex].status = status
@@ -1336,6 +1402,77 @@ private extension FlickAppModel {
         overview.publishingJobs[jobIndex].platformPublishID = result.platformPostID
         overview.publishingJobs[jobIndex].lastError = nil
         overview.publishingJobs[jobIndex].updatedAt = Date()
+    }
+
+    @discardableResult
+    func applyTikTokPublishStatus(_ status: TikTokPublishStatusResult, to jobID: UUID) -> Bool {
+        guard let jobIndex = overview.publishingJobs.firstIndex(where: { $0.id == jobID }) else {
+            return false
+        }
+
+        if status.isFailed {
+            let failReason = status.failReason ?? "FAILED"
+            overview.publishingJobs[jobIndex].status = .failed
+            overview.publishingJobs[jobIndex].lastError = PlatformFailure(
+                kind: platformFailureKind(forTikTokCode: failReason),
+                message: "TikTok reports this draft upload failed: \(failReason).",
+                suggestedFix: suggestedFix(for: platformFailureKind(forTikTokCode: failReason)),
+                rawResponse: status.rawResponse
+            )
+            overview.publishingJobs[jobIndex].lastAttemptAt = Date()
+            overview.publishingJobs[jobIndex].updatedAt = Date()
+            return true
+        }
+
+        guard status.isPublishComplete else { return false }
+
+        let now = Date()
+        let job = overview.publishingJobs[jobIndex]
+        overview.publishingJobs[jobIndex].status = .published
+        overview.publishingJobs[jobIndex].platformPublishID = status.publishID
+        overview.publishingJobs[jobIndex].lastError = nil
+        overview.publishingJobs[jobIndex].updatedAt = now
+
+        let draft = overview.drafts.first { $0.id == job.draftID }
+        if let draftIndex = overview.drafts.firstIndex(where: { $0.id == job.draftID }) {
+            overview.drafts[draftIndex].status = .published
+            overview.drafts[draftIndex].updatedAt = now
+        }
+
+        let platformPostIDs = status.publiclyAvailablePostIDs.isEmpty
+            ? [status.publishID]
+            : status.publiclyAvailablePostIDs
+
+        for platformPostID in platformPostIDs where !publishedPostExists(platformPostID: platformPostID, accountID: job.accountID) {
+            overview.publishedPosts.insert(
+                PublishedPost(
+                    id: UUID(),
+                    platform: .tiktok,
+                    accountID: job.accountID,
+                    platformPostID: platformPostID,
+                    platformURL: nil,
+                    publishedAt: now,
+                    draftID: job.draftID,
+                    campaignID: draft?.campaignID,
+                    templateID: draft?.templateID,
+                    trendTags: [],
+                    caption: draft?.caption ?? "",
+                    createdAt: now,
+                    updatedAt: now
+                ),
+                at: 0
+            )
+        }
+
+        return true
+    }
+
+    func publishedPostExists(platformPostID: String, accountID: UUID) -> Bool {
+        overview.publishedPosts.contains { post in
+            post.platform == .tiktok
+                && post.accountID == accountID
+                && post.platformPostID == platformPostID
+        }
     }
 
     func tikTokDraftUploadDetail(for result: PublishResult) -> String {

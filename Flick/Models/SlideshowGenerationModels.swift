@@ -31,6 +31,7 @@ struct TemplateStyleGuide: Codable, Hashable {
 
 struct PlannedSlideshow: Codable, Hashable {
     var title: String
+    var tikTokTitle: String
     var topic: String
     var audience: String
     var goal: String

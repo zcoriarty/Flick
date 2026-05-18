@@ -31,6 +31,7 @@ struct DashboardView: View {
     private var dashboardContent: some View {
         VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
             metricGrid
+            tiktokPublishing
             workerAndSync
             apiHealth
             accountHealth
@@ -65,6 +66,54 @@ struct DashboardView: View {
                 tint: .green
             )
         }
+    }
+
+    private var tiktokPublishing: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionTitle(title: "TikTok publishing", subtitle: "Draft uploads and completed posts", systemImage: "paperplane")
+            if awaitingTikTokJobs.isEmpty && recentPublishedPosts.isEmpty {
+                FlickEmptyStateCard(
+                    title: "No TikTok publish activity yet",
+                    message: "Draft uploads and direct posts will appear here after publishing from Create.",
+                    systemImage: "paperplane"
+                )
+            } else {
+                FlickGlassCard {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(awaitingTikTokJobs.enumerated()), id: \.element.id) { index, job in
+                            TikTokPublishingJobRow(job: job)
+                            if index < awaitingTikTokJobs.count - 1 || !recentPublishedPosts.isEmpty {
+                                Divider()
+                                    .padding(.vertical, 10)
+                            }
+                        }
+
+                        ForEach(Array(recentPublishedPosts.enumerated()), id: \.element.id) { index, post in
+                            TikTokPublishedPostRow(post: post)
+                            if index < recentPublishedPosts.count - 1 {
+                                Divider()
+                                    .padding(.vertical, 10)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var awaitingTikTokJobs: [PublishingJob] {
+        appModel.overview.publishingJobs
+            .filter { $0.platform == .tiktok && $0.status == .awaitingUserCompletion }
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    private var recentPublishedPosts: [PublishedPost] {
+        Array(
+            appModel.overview.publishedPosts
+                .filter { $0.platform == .tiktok }
+                .sorted { $0.publishedAt > $1.publishedAt }
+                .prefix(5)
+        )
     }
 
     private var workerAndSync: some View {
@@ -184,6 +233,78 @@ struct DashboardView: View {
                 )
             }
         }
+    }
+}
+
+private struct TikTokPublishingJobRow: View {
+    var job: PublishingJob
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "bell.badge")
+                .foregroundStyle(.orange)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Waiting for TikTok")
+                    .font(.subheadline.weight(.semibold))
+                Text("Open the TikTok inbox notification to finish posting.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let publishID = job.platformPublishID {
+                    Text(publishID)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+
+            Spacer(minLength: 12)
+
+            StatusBadge(title: "Draft sent", tint: .orange, systemImage: "clock")
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct TikTokPublishedPostRow: View {
+    var post: PublishedPost
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "checkmark.seal.fill")
+                .foregroundStyle(.green)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(post.dashboardTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(2)
+                Text("Published \(RelativeDateTimeFormatter.short.localizedString(for: post.publishedAt, relativeTo: Date()))")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Text(post.platformPostID)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: 12)
+
+            StatusBadge(title: "Published", tint: .green, systemImage: "checkmark.circle")
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private extension PublishedPost {
+    var dashboardTitle: String {
+        let trimmedCaption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedCaption.isEmpty else { return "\(platform.displayName) post" }
+        return trimmedCaption
     }
 }
 

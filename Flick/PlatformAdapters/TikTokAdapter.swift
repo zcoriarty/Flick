@@ -6,6 +6,22 @@
 import Foundation
 import OSLog
 
+struct TikTokPublishStatusResult: Hashable {
+    var publishID: String
+    var status: String
+    var failReason: String?
+    var publiclyAvailablePostIDs: [String]
+    var rawResponse: String
+
+    var isPublishComplete: Bool {
+        status == TikTokPublishStatus.publishComplete.rawValue
+    }
+
+    var isFailed: Bool {
+        status == TikTokPublishStatus.failed.rawValue
+    }
+}
+
 struct TikTokAdapter: SocialPlatformAdapter {
     let configuration: TikTokConfiguration
     var tokenStore: LoginKitTokenStore
@@ -182,6 +198,37 @@ struct TikTokAdapter: SocialPlatformAdapter {
             throw PlatformAdapterError.futurePlatform(post.platform)
         }
         throw PlatformAdapterError.missingAccountToken
+    }
+
+    func fetchPublishStatus(publishID: String, account: ConnectedAccount) async throws -> TikTokPublishStatusResult {
+        guard account.platform == .tiktok else {
+            throw PlatformAdapterError.futurePlatform(account.platform)
+        }
+
+        let tokenBundle = try await validTokenBundle(for: account)
+        let snapshot = try await fetchPublishStatus(
+            publishID: publishID,
+            accessToken: tokenBundle.accessToken,
+            initialRawResponse: "",
+            mediaPreflightSummary: ""
+        )
+
+        guard let data = snapshot.data else {
+            throw TikTokPublishAPIError(
+                code: "missing_status",
+                message: "TikTok did not return status data for publish ID \(publishID).",
+                logID: snapshot.logID,
+                rawResponse: snapshot.combinedRawResponse
+            )
+        }
+
+        return TikTokPublishStatusResult(
+            publishID: publishID,
+            status: data.status.rawValue,
+            failReason: data.failReason,
+            publiclyAvailablePostIDs: (data.publiclyAvailablePostIDs ?? []).map(String.init),
+            rawResponse: snapshot.combinedRawResponse
+        )
     }
 
     private func missingImageWarnings(for draft: SlideshowDraft) -> [String] {

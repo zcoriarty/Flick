@@ -244,6 +244,67 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(loadedDraft.selectedSongs, selectedSongs)
     }
 
+    func testCoreDataRoundTripsPublishingJobsPublishedPostsAndAnalytics() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let persistenceController = PersistenceController(inMemory: true)
+        let repository = CoreDataFlickRepository(
+            context: persistenceController.container.viewContext,
+            cloudAvailability: { false }
+        )
+        let draft = makeSlideshowDraft(now: now)
+        var job = makePublishingJob(status: .awaitingUserCompletion)
+        job.draftID = draft.id
+        job.publishMode = .photoUploadForCompletion
+        job.platformPublishID = "p_inbox_url~v2.123"
+        job.updatedAt = now
+        let post = PublishedPost(
+            id: UUID(),
+            platform: .tiktok,
+            accountID: job.accountID,
+            platformPostID: "7123456789012345678",
+            platformURL: nil,
+            publishedAt: now,
+            draftID: draft.id,
+            campaignID: nil,
+            templateID: nil,
+            trendTags: [],
+            caption: "Try Flick",
+            createdAt: now,
+            updatedAt: now
+        )
+        let snapshot = AnalyticsSnapshot(
+            id: UUID(),
+            publishedPostID: post.id,
+            capturedAt: now,
+            views: 1_200,
+            likes: 120,
+            comments: 12,
+            shares: 6,
+            saves: 24,
+            engagementRate: 0.135,
+            watchTime: nil,
+            completionRate: nil,
+            profileVisits: nil,
+            follows: nil,
+            rawJSON: "{}"
+        )
+        var state = FlickEmptyState.make(now: now)
+        state.drafts = [draft]
+        state.publishingJobs = [job]
+        state.publishedPosts = [post]
+        state.analyticsSnapshots = [snapshot]
+
+        try await repository.saveOverview(state)
+        let loaded = try await repository.loadOverview()
+
+        XCTAssertEqual(loaded.publishingJobs.first?.platformPublishID, "p_inbox_url~v2.123")
+        XCTAssertEqual(loaded.publishingJobs.first?.status, .awaitingUserCompletion)
+        XCTAssertEqual(loaded.publishedPosts.first?.platformPostID, "7123456789012345678")
+        XCTAssertEqual(loaded.analyticsSnapshots.first?.views, 1_200)
+        XCTAssertEqual(loaded.analyticsPerformance.first?.views, 1_200)
+        XCTAssertEqual(loaded.dashboard.bestRecentPost?.id, post.id)
+    }
+
     func testDeletingCreateDraftRemovesDraftSlidesAndDraftOwnedAssetsFromCoreData() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let persistenceController = PersistenceController(inMemory: true)
@@ -993,6 +1054,7 @@ final class FlickTests: XCTestCase {
         )
         let responsePlan = PlannedSlideshow(
             title: "Launch Carousel",
+            tikTokTitle: "Launch Flick Pro",
             topic: "Product launch",
             audience: "Creators",
             goal: "Increase installs",
@@ -1020,6 +1082,7 @@ final class FlickTests: XCTestCase {
 
             XCTAssertTrue(promptText.contains("Template slide count to keep: 2"))
             XCTAssertTrue(promptText.contains("Total planned slide count to return: 3"))
+            XCTAssertTrue(promptText.contains("TikTok post title"))
             XCTAssertTrue(promptText.contains("Keep exactly 2 non-product generated/template slides, plus this one product-image slide."))
             XCTAssertEqual(content.last?["image_url"] as? String, productImageURL.absoluteString)
 
@@ -1049,6 +1112,85 @@ final class FlickTests: XCTestCase {
 
         XCTAssertEqual(plan.slides.count, 3)
         XCTAssertEqual(plan.slides.filter(\.usesProductImage).count, 1)
+        XCTAssertEqual(plan.tikTokTitle, "Launch Flick Pro")
+    }
+
+    func testCreateAIAnalysisPrefillsTikTokSettingsTitle() async throws {
+        let styleGuide = TemplateStyleGuide(
+            styleName: "Clean Launch",
+            visualTraits: ["Polished app visuals"],
+            colorPalette: ["Blue", "White"],
+            lighting: "Soft studio light",
+            recurringMotifs: ["Phone frames"],
+            reuseStructurally: ["Hook, product, proof"],
+            avoidCopyingDirectly: ["Creator likeness"],
+            imageGenerationRules: ["No readable text"]
+        )
+        let responsePlan = PlannedSlideshow(
+            title: "Launch Carousel",
+            tikTokTitle: "Launch Flick Pro",
+            topic: "Product launch",
+            audience: "Creators",
+            goal: "Increase installs",
+            tone: "Direct",
+            slideCount: 2,
+            narrativeArc: ["Hook", "Proof"],
+            globalVisualMotif: "Clean product frames",
+            planSummary: "Two-slide launch story.",
+            slides: [
+                PlannedSlide(index: 0, text: "Start here", textPosition: .center, imagePrompt: "Generated hook", selectedVisualSummary: "Hook visual", usesProductImage: false),
+                PlannedSlide(index: 1, text: "Ship faster", textPosition: .center, imagePrompt: "Generated proof", selectedVisualSummary: "Proof visual", usesProductImage: false)
+            ],
+            caption: "Try Flick Pro",
+            hashtags: ["flick"]
+        )
+        var requestCount = 0
+
+        CapturingURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url?.path, "/v1/responses")
+            requestCount += 1
+
+            let outputData: Data
+            switch requestCount {
+            case 1:
+                outputData = try JSONEncoder.flick.encode(styleGuide)
+            case 2:
+                outputData = try JSONEncoder.flick.encode(responsePlan)
+            default:
+                XCTFail("Unexpected OpenAI request \(requestCount)")
+                outputData = Data("{}".utf8)
+            }
+
+            let outputText = try XCTUnwrap(String(data: outputData, encoding: .utf8))
+            let responseData = try JSONSerialization.data(withJSONObject: ["output_text": outputText])
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                responseData
+            )
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CapturingURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = OpenAIClient(
+            credentials: ["OPENAI_API_KEY": "test-key"],
+            urlSession: session
+        )
+        let repository = InMemoryFlickRepository(state: FlickEmptyState.make())
+        let model = FlickAppModel(
+            repository: repository,
+            configuration: .current,
+            openAIClientFactory: { _ in client }
+        )
+
+        await model.createAISlideshow(
+            brief: "",
+            from: makeExampleSlideshowTemplate(slideCount: 2)
+        )
+
+        let draft = try XCTUnwrap(model.activeCreateDraft)
+        XCTAssertEqual(draft.tikTokSettings?.title, "Launch Flick Pro")
+        XCTAssertEqual(repository.state.drafts.first?.tikTokSettings?.title, "Launch Flick Pro")
     }
 
     func testOpenAIImageGenerationRequestsJpegOutput() async throws {

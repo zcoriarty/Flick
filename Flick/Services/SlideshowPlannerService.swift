@@ -36,6 +36,7 @@ struct SlideshowPlannerService {
                 \(productImageInstructions(for: productImage, templateSlideCount: template.slideCount))
 
                 Create a complete slideshow plan with exactly \(expectedSlideCount) planned slides.
+                Create a concise one-line TikTok post title for the post settings title field.
                 Flick will render all text separately, so generated image prompts must forbid readable text, captions, logos, watermarks, fake UI text, and gibberish.
                 Set each slide's textPosition to center and keep the centered text area low-detail.
                 """
@@ -182,6 +183,7 @@ struct SlideshowPlannerService {
         "additionalProperties": false,
         "required": [
             "title",
+            "tikTokTitle",
             "topic",
             "audience",
             "goal",
@@ -196,6 +198,7 @@ struct SlideshowPlannerService {
         ],
         "properties": [
             "title": ["type": "string"],
+            "tikTokTitle": ["type": "string"],
             "topic": ["type": "string"],
             "audience": ["type": "string"],
             "goal": ["type": "string"],

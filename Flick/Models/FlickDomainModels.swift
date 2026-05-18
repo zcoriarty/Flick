@@ -812,3 +812,69 @@ private extension Array where Element: Hashable {
         return filter { seen.insert($0).inserted }
     }
 }
+
+extension FlickOverviewState {
+    mutating func refreshDerivedState(now: Date = Date(), calendar: Calendar = .current) {
+        analyticsPerformance = Self.analyticsPerformance(
+            posts: publishedPosts,
+            snapshots: analyticsSnapshots
+        )
+        dashboard.scheduledTodayCount = publishingJobs.filter { job in
+            calendar.isDate(job.scheduledAt, inSameDayAs: now) && job.status.isScheduledDashboardStatus
+        }.count
+        dashboard.awaitingApprovalCount = publishingJobs.filter { $0.status == .awaitingApproval }.count
+        dashboard.failedJobCount = publishingJobs.filter { $0.status == .failed }.count
+        dashboard.bestRecentPost = analyticsPerformance.first
+    }
+
+    private static func analyticsPerformance(
+        posts: [PublishedPost],
+        snapshots: [AnalyticsSnapshot]
+    ) -> [AnalyticsPostPerformance] {
+        let latestSnapshotsByPostID = Dictionary(grouping: snapshots, by: \.publishedPostID)
+            .compactMapValues { snapshots in
+                snapshots.max { $0.capturedAt < $1.capturedAt }
+            }
+
+        return posts.compactMap { post in
+            guard let snapshot = latestSnapshotsByPostID[post.id] else { return nil }
+            let savesPerView = snapshot.views > 0 ? Double(snapshot.saves) / Double(snapshot.views) : 0
+
+            return AnalyticsPostPerformance(
+                id: post.id,
+                title: post.dashboardTitle,
+                platform: post.platform,
+                views: snapshot.views,
+                engagementRate: snapshot.engagementRate,
+                savesPerView: savesPerView,
+                publishedAt: post.publishedAt,
+                tags: post.trendTags
+            )
+        }
+        .sorted {
+            if $0.views == $1.views {
+                return $0.publishedAt > $1.publishedAt
+            }
+            return $0.views > $1.views
+        }
+    }
+}
+
+private extension PublishingJobStatus {
+    var isScheduledDashboardStatus: Bool {
+        switch self {
+        case .queued, .awaitingApproval, .approved, .rendering, .uploadingMedia, .publishing:
+            true
+        case .draft, .awaitingUserCompletion, .published, .failed, .canceled, .paused:
+            false
+        }
+    }
+}
+
+private extension PublishedPost {
+    var dashboardTitle: String {
+        let trimmedCaption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedCaption.isEmpty else { return "\(platform.displayName) post" }
+        return trimmedCaption
+    }
+}
