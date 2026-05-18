@@ -31,7 +31,6 @@ final class CoreDataFlickRepository: FlickRepository {
         state.analyticsSnapshots = try fetchAnalyticsSnapshots()
         state.refreshDerivedState()
         state.dashboard.syncHealth.iCloudAvailable = await cloudAvailability()
-        state.dashboard.syncHealth.pendingChanges = context.hasChanges ? 1 : 0
         return state
     }
 

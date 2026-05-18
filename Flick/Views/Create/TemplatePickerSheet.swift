@@ -69,18 +69,13 @@ struct TemplatePickerSheet: View {
             }
             .flickSettingsListStyle()
             .searchable(text: $searchText, prompt: "Search templates")
-            .toolbarTitleDisplayMode(.inline)
+            .flickToolbarTitle("Select Template")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
                         dismiss()
                     }
                 }
-                ToolbarItem(placement: .principal) {
-                    Text("Select Template")
-                        .font(.system(.body, weight: .semibold))
-                }
-                .sharedBackgroundVisibility(.hidden)
             }
         }
         .presentationDetents([.large])
@@ -116,7 +111,7 @@ private struct TemplatePickerRow: View {
 
             Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                 .font(.title3)
-                .foregroundStyle(isSelected ? Color.indigo : Color.secondary.opacity(0.6))
+                .foregroundStyle(isSelected ? FlickStyle.appTint : Color.secondary.opacity(0.6))
         }
         .padding(.vertical, 4)
         .contentShape(.rect)

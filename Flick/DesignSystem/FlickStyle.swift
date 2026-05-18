@@ -6,7 +6,7 @@
 import SwiftUI
 
 enum FlickStyle {
-    static let appTint: Color = .indigo
+    static let appTint: Color = .accentColor
     static let cardCornerRadius: CGFloat = 18
     static let controlCornerRadius: CGFloat = 12
     static let sectionSpacing: CGFloat = 20

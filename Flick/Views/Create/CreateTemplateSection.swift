@@ -58,7 +58,7 @@ struct CreateTemplateSection: View {
                 FlickSettingsActionRow(
                     title: selectedTemplate == nil ? "Select template" : "Change template",
                     systemImage: "rectangle.stack.badge.play",
-                    iconColor: .indigo,
+                    iconColor: FlickStyle.appTint,
                     value: "\(selectableTemplateCount) available",
                     action: selectAction
                 )
@@ -138,7 +138,7 @@ private struct SelectedTemplateRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 HStack(spacing: 8) {
-                    StatusBadge(title: template.niche, tint: .indigo, systemImage: "tag")
+                    StatusBadge(title: template.niche, tint: FlickStyle.appTint, systemImage: "tag")
                     Text("\(template.slideCount) slides")
                         .font(.caption)
                         .foregroundStyle(.secondary)

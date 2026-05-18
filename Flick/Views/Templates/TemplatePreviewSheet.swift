@@ -29,7 +29,7 @@ struct TemplatePreviewSheet: View {
             .padding(FlickStyle.pagePadding)
         }
         .flickAppBackground()
-        .toolbarTitleDisplayMode(.inline)
+        .flickToolbarTitle("Template")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Close", systemImage: "xmark") {
@@ -37,11 +37,6 @@ struct TemplatePreviewSheet: View {
                 }
                 .keyboardShortcut(.cancelAction)
             }
-            ToolbarItem(placement: .principal) {
-                Text("Template")
-                    .font(.system(.body, weight: .semibold))
-            }
-            .sharedBackgroundVisibility(.hidden)
             ToolbarItem(placement: .primaryAction) {
                 Button("Use Template", systemImage: "wand.and.sparkles") {
                     appModel.createDraft(from: template)
@@ -65,7 +60,7 @@ struct TemplatePreviewSheet: View {
 
                 Spacer(minLength: 12)
 
-                StatusBadge(title: template.niche, tint: .indigo, systemImage: "tag")
+                StatusBadge(title: template.niche, tint: FlickStyle.appTint, systemImage: "tag")
             }
 
             Text(displayProduct)
@@ -149,7 +144,7 @@ struct TemplatePreviewSheet: View {
                                 .frame(width: 58)
                                 .overlay {
                                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .stroke(slide.id == selectedSlideID ? Color.indigo : Color.clear, lineWidth: 3)
+                                        .stroke(slide.id == selectedSlideID ? FlickStyle.appTint : Color.clear, lineWidth: 3)
                                 }
                                 .overlay(alignment: .bottomLeading) {
                                     Text("\(slide.index)")

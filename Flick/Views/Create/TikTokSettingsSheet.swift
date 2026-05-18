@@ -34,18 +34,13 @@ struct TikTokSettingsSheet: View {
                 }
             }
             .flickSettingsListStyle()
-            .toolbarTitleDisplayMode(.inline)
+            .flickToolbarTitle("TikTok Settings")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") {
                         dismiss()
                     }
                 }
-                ToolbarItem(placement: .principal) {
-                    Text("TikTok Settings")
-                        .font(.system(.body, weight: .semibold))
-                }
-                .sharedBackgroundVisibility(.hidden)
             }
         }
         .presentationDetents([.large])
@@ -159,7 +154,7 @@ struct TikTokSettingsSheet: View {
             FlickSettingsRow(
                 title: "Disclose video content",
                 systemImage: "megaphone",
-                iconColor: .indigo
+                iconColor: FlickStyle.appTint
             ) {
                 Toggle("Disclose video content", isOn: $disclosesVideoContent)
                     .labelsHidden()

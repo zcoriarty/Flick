@@ -54,8 +54,7 @@ struct CreatePublishProgressSheet: View {
                 }
             }
             .flickSettingsListStyle()
-            .navigationTitle("Publishing")
-            .toolbarTitleDisplayMode(.inline)
+            .flickToolbarTitle("Publishing")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {

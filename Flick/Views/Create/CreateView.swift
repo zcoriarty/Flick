@@ -26,9 +26,6 @@ struct CreateView: View {
     @State private var selectedProductImageAssetID: UUID?
     @State private var presentedSheet: CreateSheet?
     @State private var selectedSlideID: UUID?
-    @State private var isAutonomous = false
-    @State private var postTime = Date()
-    @State private var selectedWeekdays: Set<CreateWeekday> = [CreateWeekday.current]
     @State private var slideEditorDetent: PresentationDetent = .large
 
     private var tiktokAccountName: String? {
@@ -43,8 +40,6 @@ struct CreateView: View {
         }
 
         List {
-            CreateAutomationModeSection(isAutonomous: $isAutonomous)
-
             CreateTemplateSection(
                 loadState: templateLoadState,
                 selectedTemplate: selectedTemplate,
@@ -56,7 +51,6 @@ struct CreateView: View {
             CreateProductImageSection(
                 products: appModel.overview.products,
                 productImageAssets: selectableProductImageAssets(in: appModel),
-                isAutonomous: isAutonomous,
                 selectedProductID: $selectedProductID,
                 selectedProductImageAssetID: $selectedProductImageAssetID
             )
@@ -83,13 +77,6 @@ struct CreateView: View {
                         message: "Select a template and analyze it to start editing slides, or open Drafts to resume an unposted draft."
                     )
                 }
-            }
-
-            if isAutonomous {
-                CreateCadenceSection(
-                    postTime: $postTime,
-                    selectedWeekdays: $selectedWeekdays
-                )
             }
 
             if let currentDraftID, let currentDraftIndex {
@@ -133,8 +120,7 @@ struct CreateView: View {
         .flickSettingsListStyle()
         .scrollDismissesKeyboard(.interactively)
         .dismissKeyboardOnTap()
-        .navigationTitle("Create")
-        .toolbarTitleDisplayMode(.inline)
+        .flickToolbarTitle("Create")
         .toolbar {
             #if os(iOS)
             ToolbarItem(placement: .topBarLeading) {
@@ -402,7 +388,7 @@ struct CreateView: View {
             asset.productIDs.contains(selectedProductID)
         }
         guard !imageAssets.isEmpty else { return false }
-        return isAutonomous || selectedProductImageAssetID.map { selectedAssetID in
+        return selectedProductImageAssetID.map { selectedAssetID in
             imageAssets.contains { $0.id == selectedAssetID }
         } == true
     }
@@ -424,13 +410,8 @@ struct CreateView: View {
         let productImages = selectableProductImageAssets(in: appModel).filter { asset in
             asset.productIDs.contains(selectedProductID)
         }
-        let asset: MediaAsset?
-        if isAutonomous {
-            asset = productImages.randomElement()
-        } else {
-            asset = selectedProductImageAssetID.flatMap { selectedAssetID in
-                productImages.first { $0.id == selectedAssetID }
-            }
+        let asset = selectedProductImageAssetID.flatMap { selectedAssetID in
+            productImages.first { $0.id == selectedAssetID }
         }
 
         guard let asset else { return nil }
@@ -453,7 +434,6 @@ struct CreateView: View {
     }
 
     private func canPublishManualPost(in appModel: FlickAppModel) -> Bool {
-        guard !isAutonomous else { return false }
         guard let draft = appModel.activeCreateDraft else { return false }
         let assetsByID = Dictionary(uniqueKeysWithValues: appModel.overview.assets.map { ($0.id, $0) })
         return draft.hasCompletedCreateImages(assetsByID: assetsByID)

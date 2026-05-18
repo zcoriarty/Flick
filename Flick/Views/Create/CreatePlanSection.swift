@@ -129,7 +129,7 @@ private struct CreatePlanRow: View {
             HStack(spacing: 12) {
                 Image(systemName: systemImage)
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(.indigo)
+                    .foregroundStyle(FlickStyle.appTint)
                     .frame(width: 24)
 
                 VStack(alignment: .leading, spacing: 3) {
@@ -184,8 +184,7 @@ private struct CreatePlanBriefingSheet: View {
                 .padding(.top, 18)
             }
             .background(Color.clear)
-            .navigationTitle("Briefing")
-            .navigationBarTitleDisplayMode(.inline)
+            .flickToolbarTitle("Briefing")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
@@ -211,8 +210,7 @@ private struct CreatePlanTextSheet: View {
     var body: some View {
         NavigationStack {
             CreatePlainSheetTextEditor(text: $text, placeholder: placeholder)
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
+            .flickToolbarTitle(title)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
@@ -252,8 +250,7 @@ private struct CreateStyleGuideSheet: View {
                     }
                 }
             }
-            .navigationTitle("Style Guide")
-            .navigationBarTitleDisplayMode(.inline)
+            .flickToolbarTitle("Style Guide")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
@@ -279,7 +276,7 @@ private struct StyleGuideFieldRow: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: field.systemImage)
-                    .foregroundStyle(.indigo)
+                    .foregroundStyle(FlickStyle.appTint)
                     .frame(width: 22)
 
                 VStack(alignment: .leading, spacing: 3) {
@@ -313,8 +310,7 @@ private struct StyleGuideFieldEditor: View {
     var body: some View {
         NavigationStack {
             CreatePlainSheetTextEditor(text: textBinding, placeholder: field.placeholder)
-            .navigationTitle(field.title)
-            .navigationBarTitleDisplayMode(.inline)
+            .flickToolbarTitle(field.title)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
@@ -344,14 +340,23 @@ private struct CreatePlainSheetTextField: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            TextField(placeholder, text: $text, axis: axis)
+            textField
                 .textFieldStyle(.plain)
-                .textInputAutocapitalization(.sentences)
                 .lineLimit(axis == .vertical ? 2...5 : 1...1)
                 .padding(.vertical, 14)
 
             Divider()
         }
+    }
+
+    @ViewBuilder
+    private var textField: some View {
+        #if os(iOS)
+        TextField(placeholder, text: $text, axis: axis)
+            .textInputAutocapitalization(.sentences)
+        #else
+        TextField(placeholder, text: $text, axis: axis)
+        #endif
     }
 }
 

@@ -23,8 +23,7 @@ struct ProductView: View {
             )
         }
         .flickSettingsListStyle()
-        .navigationTitle("Products")
-        .toolbarTitleDisplayMode(.inline)
+        .flickToolbarTitle("Products")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("New Product", systemImage: "plus") {
@@ -144,8 +143,7 @@ private struct ProductDetailView: View {
                 .flickSettingsListStyle()
             }
         }
-        .navigationTitle(product?.name ?? "Product")
-        .toolbarTitleDisplayMode(.inline)
+        .flickToolbarTitle(product?.name ?? "Product")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 if product != nil {
@@ -316,8 +314,12 @@ private struct ProductEditorSheet: View {
         NavigationStack {
             List {
                 Section("Product") {
+                    #if os(iOS)
                     TextField("Name", text: $name)
                         .textInputAutocapitalization(.words)
+                    #else
+                    TextField("Name", text: $name)
+                    #endif
 
                     TextField("Notes", text: $summary, axis: .vertical)
                         .lineLimit(3...6)
@@ -332,8 +334,7 @@ private struct ProductEditorSheet: View {
                 }
             }
             .flickSettingsListStyle()
-            .navigationTitle("New Product")
-            .toolbarTitleDisplayMode(.inline)
+            .flickToolbarTitle("New Product")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", systemImage: "xmark") {
@@ -459,7 +460,7 @@ private struct ProductMediaDetailSheet: View {
                 }
             }
             .flickSettingsListStyle()
-            .toolbarTitleDisplayMode(.inline)
+            .flickToolbarTitle("Media Details")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Delete", systemImage: "trash", role: .destructive) {
@@ -469,11 +470,6 @@ private struct ProductMediaDetailSheet: View {
                     }
                     .disabled(asset == nil)
                 }
-                ToolbarItem(placement: .principal) {
-                    Text("Media Details")
-                        .font(.system(.body, weight: .semibold))
-                }
-                .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Confirm", systemImage: "checkmark") {
                         dismiss()
@@ -556,7 +552,7 @@ private struct ProductMediaDetailSheet: View {
             FlickSettingsValueRow(
                 title: "File Size",
                 systemImage: "doc",
-                iconColor: .indigo,
+                iconColor: FlickStyle.appTint,
                 value: asset.productFileSize
             )
         }

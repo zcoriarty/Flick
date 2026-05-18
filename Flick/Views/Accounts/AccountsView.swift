@@ -28,14 +28,8 @@ struct AccountsView: View {
                 PlatformPublishSettingsView(platform: platform, accounts: accounts(for: platform))
             }
         }
-        .toolbarTitleDisplayMode(.inline)
+        .flickToolbarTitle("Accounts")
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("Accounts")
-                    .font(.system(.body, weight: .semibold))
-            }
-            .sharedBackgroundVisibility(.hidden)
-
             if appModel.canManageAccounts {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {

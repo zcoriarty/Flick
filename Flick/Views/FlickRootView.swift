@@ -36,10 +36,6 @@ struct FlickRootView: View {
                 }
             }
 
-            Tab(FlickSection.analytics.title, systemImage: FlickSection.analytics.systemImage, value: FlickSection.analytics) {
-                AnalyticsView()
-            }
-
             Tab(FlickSection.accounts.title, systemImage: FlickSection.accounts.systemImage, value: FlickSection.accounts) {
                 AccountsView()
             }

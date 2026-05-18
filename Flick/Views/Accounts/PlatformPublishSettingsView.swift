@@ -20,14 +20,7 @@ struct PlatformPublishSettingsView: View {
             postOptionsSection
         }
         .flickSettingsListStyle()
-        .toolbarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("\(platform.displayName) Publish Settings")
-                    .font(.system(.body, weight: .semibold))
-            }
-            .sharedBackgroundVisibility(.hidden)
-        }
+        .flickToolbarTitle("\(platform.displayName) Publish Settings")
     }
 
     private var platformSection: some View {
@@ -152,7 +145,7 @@ struct PlatformPublishSettingsView: View {
                 FlickSettingsValueRow(
                     title: "Commercial flags",
                     systemImage: "tag",
-                    iconColor: .indigo,
+                    iconColor: FlickStyle.appTint,
                     value: "Brand organic per job",
                     valueLineLimit: 2
                 )

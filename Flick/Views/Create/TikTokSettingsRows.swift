@@ -77,7 +77,7 @@ struct TikTokChecklistRow: View {
 
                     Image(systemName: isOn ? "checkmark.square.fill" : "square")
                         .font(.title3)
-                        .foregroundStyle(isOn ? Color.indigo : Color.secondary)
+                        .foregroundStyle(isOn ? FlickStyle.appTint : Color.secondary)
                 }
             }
         }

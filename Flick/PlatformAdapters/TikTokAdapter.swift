@@ -193,13 +193,6 @@ struct TikTokAdapter: SocialPlatformAdapter {
         )
     }
 
-    func fetchAnalytics(for post: PublishedPost) async throws -> AnalyticsSnapshot {
-        guard post.platform == .tiktok else {
-            throw PlatformAdapterError.futurePlatform(post.platform)
-        }
-        throw PlatformAdapterError.missingAccountToken
-    }
-
     func fetchPublishStatus(publishID: String, account: ConnectedAccount) async throws -> TikTokPublishStatusResult {
         guard account.platform == .tiktok else {
             throw PlatformAdapterError.futurePlatform(account.platform)

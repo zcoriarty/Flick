@@ -11,50 +11,38 @@ struct DashboardView: View {
     var body: some View {
         dashboardContent
             .flickScrollablePage()
-            .toolbarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Dashboard")
-                        .font(.system(.body, weight: .semibold))
-                }
-                .sharedBackgroundVisibility(.hidden)
-                
-                ToolbarItem(placement: .secondaryAction) {
-                    Button("Refresh", systemImage: "arrow.clockwise") {
-                        Task { await appModel.refresh() }
-                    }
-                }
+            .refreshable {
+                await appModel.refresh()
             }
-        
+            .flickToolbarTitle("Dashboard")
     }
 
     private var dashboardContent: some View {
         VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
             metricGrid
             tiktokPublishing
-            workerAndSync
+            syncStatus
             apiHealth
             accountHealth
-            bestPost
         }
     }
 
     private var metricGrid: some View {
         ResponsiveGrid(minimum: 170) {
             MetricTile(
-                title: "Scheduled today",
-                value: appModel.overview.dashboard.scheduledTodayCount.formatted(),
-                systemImage: "calendar",
-                tint: .blue
-            )
-            MetricTile(
-                title: "Awaiting approval",
-                value: appModel.overview.dashboard.awaitingApprovalCount.formatted(),
-                systemImage: "checkmark.seal",
+                title: "Draft uploads",
+                value: awaitingTikTokJobs.count.formatted(),
+                systemImage: "bell.badge",
                 tint: .orange
             )
             MetricTile(
-                title: "Failed jobs",
+                title: "Published posts",
+                value: publishedTikTokPostCount.formatted(),
+                systemImage: "checkmark.seal",
+                tint: .green
+            )
+            MetricTile(
+                title: "Failed publishes",
                 value: appModel.overview.dashboard.failedJobCount.formatted(),
                 systemImage: "exclamationmark.triangle",
                 tint: .red
@@ -116,13 +104,12 @@ struct DashboardView: View {
         )
     }
 
-    private var workerAndSync: some View {
-        ResponsiveGrid(minimum: 280) {
-            WorkerStatusPanel(status: appModel.overview.dashboard.workerStatus) {
-                appModel.toggleAutomationPaused()
-            }
-            SyncStatusPanel(syncHealth: appModel.overview.dashboard.syncHealth)
-        }
+    private var publishedTikTokPostCount: Int {
+        appModel.overview.publishedPosts.filter { $0.platform == .tiktok }.count
+    }
+
+    private var syncStatus: some View {
+        SyncStatusPanel(syncHealth: appModel.overview.dashboard.syncHealth)
     }
 
     private var apiHealth: some View {
@@ -188,52 +175,6 @@ struct DashboardView: View {
         }
     }
 
-    @ViewBuilder
-    private var bestPost: some View {
-        if let post = appModel.overview.dashboard.bestRecentPost {
-            VStack(alignment: .leading, spacing: 10) {
-                SectionTitle(title: "Best recent post", subtitle: "Current winner for remixing", systemImage: "trophy")
-                FlickGlassCard(interactive: true) {
-                    HStack(alignment: .top, spacing: 16) {
-                        Image(systemName: "play.rectangle.fill")
-                            .font(.largeTitle)
-                            .foregroundStyle(.purple)
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(post.title)
-                                .font(.title3.weight(.semibold))
-                            HStack(spacing: 12) {
-                                Text("\(post.views.formatted()) views")
-                                Text(post.engagementRate, format: .percent.precision(.fractionLength(1)))
-                                Text("\(post.savesPerView.formatted(.number.precision(.fractionLength(3)))) saves/view")
-                            }
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            HStack {
-                                ForEach(post.tags) { tag in
-                                    TagChip(tag: tag)
-                                }
-                            }
-                        }
-                        Spacer(minLength: 0)
-                        Button("Remix", systemImage: "arrow.triangle.2.circlepath") {
-                            if let draft = appModel.overview.drafts.first {
-                                appModel.duplicateDraft(draft)
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            VStack(alignment: .leading, spacing: 10) {
-                SectionTitle(title: "Best recent post", subtitle: "Current winner for remixing", systemImage: "trophy")
-                FlickEmptyStateCard(
-                    title: "No published posts yet",
-                    message: "After real posts are published and analytics snapshots are collected, the current winner will appear here.",
-                    systemImage: "trophy"
-                )
-            }
-        }
-    }
 }
 
 private struct TikTokPublishingJobRow: View {
@@ -308,64 +249,14 @@ private extension PublishedPost {
     }
 }
 
-private struct WorkerStatusPanel: View {
-    var status: WorkerStatus
-    var toggleAutomation: () -> Void
-
-    var body: some View {
-        FlickGlassCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Label("Mac worker", systemImage: "desktopcomputer")
-                        .font(.headline)
-                    Spacer()
-                    StatusBadge(title: status.isOnline ? "Online" : "Offline", tint: status.isOnline ? .green : .red, systemImage: "circle.fill")
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(status.deviceName)
-                        .font(.subheadline.weight(.semibold))
-                    Text(status.isPrimary ? "Primary automation worker" : "No primary worker configured")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if status.isOnline {
-                        Text("Last seen \(status.lastSeenAt, style: .relative) ago")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                if status.isPrimary {
-                    Button(status.automationPaused ? "Resume automation" : "Pause automation", systemImage: status.automationPaused ? "play.fill" : "pause.fill") {
-                        toggleAutomation()
-                    }
-                    .modifier(WorkerAutomationButtonStyle(isPaused: status.automationPaused))
-                }
-            }
-        }
-    }
-}
-
-private struct WorkerAutomationButtonStyle: ViewModifier {
-    var isPaused: Bool
-
-    func body(content: Content) -> some View {
-        if isPaused {
-            content.buttonStyle(.glassProminent)
-        } else {
-            content
-        }
-    }
-}
-
 private struct SyncStatusPanel: View {
     var syncHealth: SyncHealth
 
     var body: some View {
         FlickGlassCard {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Label("CloudKit sync", systemImage: "icloud")
+                    Label("iCloud account", systemImage: "icloud")
                         .font(.headline)
                     Spacer()
                     StatusBadge(
@@ -375,24 +266,10 @@ private struct SyncStatusPanel: View {
                     )
                 }
 
-                Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 8) {
-                    GridRow {
-                        Text("Import")
-                            .foregroundStyle(.secondary)
-                        Text(syncHealth.lastCloudKitImport.map { RelativeDateTimeFormatter.short.localizedString(for: $0, relativeTo: Date()) } ?? "Never")
-                    }
-                    GridRow {
-                        Text("Export")
-                            .foregroundStyle(.secondary)
-                        Text(syncHealth.lastCloudKitExport.map { RelativeDateTimeFormatter.short.localizedString(for: $0, relativeTo: Date()) } ?? "Never")
-                    }
-                    GridRow {
-                        Text("Pending")
-                            .foregroundStyle(.secondary)
-                        Text(syncHealth.pendingChanges.formatted())
-                    }
-                }
-                .font(.caption)
+                Text(syncHealth.iCloudAvailable ? "CloudKit access is available for this iCloud account." : "Sign into iCloud and enable iCloud Drive to sync app data.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

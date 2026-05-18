@@ -42,7 +42,6 @@ protocol SocialPlatformPublishing {
     var platform: SocialPlatform { get }
     func validateAccount(_ account: ConnectedAccount) async throws -> PlatformAccountStatus
     func publish(_ job: PublishingJob, media: PreparedPlatformMedia) async throws -> PublishResult
-    func fetchAnalytics(for post: PublishedPost) async throws -> AnalyticsSnapshot
 }
 
 protocol SocialPlatformAdapter: SocialPlatformPublishing {

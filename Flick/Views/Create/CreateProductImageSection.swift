@@ -8,7 +8,6 @@ import SwiftUI
 struct CreateProductImageSection: View {
     var products: [FlickProduct]
     var productImageAssets: [MediaAsset]
-    var isAutonomous: Bool
     @Binding var selectedProductID: UUID?
     @Binding var selectedProductImageAssetID: UUID?
 
@@ -32,16 +31,6 @@ struct CreateProductImageSection: View {
                             title: "No product images",
                             message: "Add an image to \(selectedProduct.name) before analyzing with this product."
                         )
-                    } else if isAutonomous {
-                        FlickSettingsRow(
-                            title: "Product image",
-                            systemImage: "shuffle",
-                            iconColor: .blue
-                        ) {
-                            Text(randomImageValue)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
                     } else {
                         manualImageGrid
                     }
@@ -53,11 +42,6 @@ struct CreateProductImageSection: View {
         }
         .onChange(of: productImageAssets) { _, _ in
             reconcileSelectedProductImage()
-        }
-        .onChange(of: isAutonomous) { _, isAutonomous in
-            if isAutonomous {
-                selectedProductImageAssetID = nil
-            }
         }
     }
 
@@ -125,11 +109,6 @@ struct CreateProductImageSection: View {
         return productImageAssets.filter { asset in
             asset.productIDs.contains(selectedProductID)
         }
-    }
-
-    private var randomImageValue: String {
-        let count = selectedProductImageAssets.count
-        return "\(count) \(count == 1 ? "image" : "images")"
     }
 
     private func reconcileSelectedProductImage() {

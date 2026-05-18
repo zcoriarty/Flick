@@ -23,13 +23,7 @@ struct FuturePlatformAdapter: SocialPlatformAdapter {
     }
 
     func publish(_ job: PublishingJob, media: PreparedPlatformMedia) async throws -> PublishResult {
-        _ = job
         _ = media
-        throw PlatformAdapterError.futurePlatform(platform)
-    }
-
-    func fetchAnalytics(for post: PublishedPost) async throws -> AnalyticsSnapshot {
-        _ = post
-        throw PlatformAdapterError.futurePlatform(platform)
+        throw PlatformAdapterError.futurePlatform(job.platform)
     }
 }

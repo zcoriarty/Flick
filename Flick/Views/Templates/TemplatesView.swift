@@ -14,13 +14,8 @@ struct TemplatesView: View {
 
     var body: some View {
         content
-            .toolbarTitleDisplayMode(.inline)
+            .flickToolbarTitle("Templates")
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Templates")
-                        .font(.system(.body, weight: .semibold))
-                }
-                .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .primaryAction) {
                     Button("Reload", systemImage: "arrow.clockwise") {
                         loadTemplates()
@@ -199,7 +194,7 @@ private struct NicheFilterChip: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .foregroundStyle(isSelected ? .white : .primary)
-                .background(isSelected ? Color.indigo : Color.secondary.opacity(0.12), in: .capsule)
+                .background(isSelected ? FlickStyle.appTint : Color.secondary.opacity(0.12), in: .capsule)
         }
         .buttonStyle(.plain)
     }

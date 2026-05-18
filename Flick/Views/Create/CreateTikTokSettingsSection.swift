@@ -46,7 +46,7 @@ struct CreateTikTokSettingsSection: View {
                 FlickSettingsRow(
                     title: "Settings",
                     systemImage: "slider.horizontal.3",
-                    iconColor: .indigo
+                    iconColor: FlickStyle.appTint
                 ) {
                     Text(settingsSummary)
                         .foregroundStyle(.secondary)

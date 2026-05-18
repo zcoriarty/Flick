@@ -82,8 +82,7 @@ struct CreateSlideEditor: View {
                     )
                 }
             }
-            .navigationTitle(editorTitle)
-            .navigationBarTitleDisplayMode(.inline)
+            .flickToolbarTitle(editorTitle)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
@@ -174,6 +173,12 @@ private struct CreateSlidePreviewPager: View {
     @Binding var selectedSlideID: UUID?
 
     var body: some View {
+        pager
+            .frame(height: 360)
+    }
+
+    @ViewBuilder
+    private var pager: some View {
         TabView(selection: $selectedSlideID) {
             ForEach(slides) { slide in
                 VStack(spacing: 8) {
@@ -191,8 +196,9 @@ private struct CreateSlidePreviewPager: View {
                 .tag(Optional(slide.id))
             }
         }
+        #if !os(macOS)
         .tabViewStyle(.page(indexDisplayMode: .never))
-        .frame(height: 360)
+        #endif
     }
 }
 
@@ -487,7 +493,7 @@ private struct CreateSlideStyleMenuRow<MenuContent: View>: View {
             FlickSettingsRow(
                 title: title,
                 systemImage: systemImage,
-                iconColor: .indigo
+                iconColor: FlickStyle.appTint
             ) {
                 HStack(spacing: 6) {
                     Text(value)
@@ -521,7 +527,7 @@ private struct CreateSlideColorPickerRow: View {
             FlickSettingsRow(
                 title: title,
                 systemImage: systemImage,
-                iconColor: .indigo
+                iconColor: FlickStyle.appTint
             ) {
                 Text(hex.uppercased())
                     .font(.caption.monospaced())
@@ -540,7 +546,7 @@ private struct CreateSlideSizeSliderRow: View {
             FlickSettingsRow(
                 title: "Size",
                 systemImage: "textformat.size",
-                iconColor: .indigo
+                iconColor: FlickStyle.appTint
             ) {
                 Text(formattedValue)
                     .font(.caption.monospacedDigit())

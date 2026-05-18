@@ -12,18 +12,10 @@ struct SettingsView: View {
         List {
             credentialsSection
             storageSection
-            workerRoleSection
             diagnosticsSection
         }
         .flickSettingsListStyle()
-        .toolbarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("Settings")
-                    .font(.system(.body, weight: .semibold))
-            }
-            .sharedBackgroundVisibility(.hidden)
-        }
+        .flickToolbarTitle("Settings")
     }
 
     private var credentialsSection: some View {
@@ -105,28 +97,13 @@ struct SettingsView: View {
         }
     }
 
-    private var workerRoleSection: some View {
-        Section("Worker role") {
-            if appModel.overview.devices.isEmpty {
-                SettingsMessageRow(
-                    title: "No devices registered",
-                    message: "Device registration will appear here after the app persists real device identity and worker capability state."
-                )
-            } else {
-                ForEach(appModel.overview.devices) { device in
-                    DeviceRow(device: device)
-                }
-            }
-        }
-    }
-
     private var diagnosticsSection: some View {
         Section("Diagnostics") {
             FlickSettingsValueRow(
-                title: "CloudKit sync",
+                title: "iCloud account",
                 systemImage: "icloud",
-                iconColor: .blue,
-                value: "\(appModel.overview.dashboard.syncHealth.pendingChanges) pending changes"
+                iconColor: appModel.overview.dashboard.syncHealth.iCloudAvailable ? .blue : .orange,
+                value: appModel.overview.dashboard.syncHealth.iCloudAvailable ? "Available" : "Unavailable"
             )
             FlickSettingsValueRow(
                 title: "Render directory",
@@ -134,19 +111,6 @@ struct SettingsView: View {
                 iconColor: .orange,
                 value: appModel.configuration.renderDirectory.path(percentEncoded: false),
                 valueLineLimit: nil
-            )
-            FlickSettingsValueRow(
-                title: "Primary worker",
-                systemImage: "desktopcomputer",
-                iconColor: appModel.overview.dashboard.workerStatus.isOnline ? .green : .secondary,
-                value: appModel.overview.dashboard.workerStatus.isOnline ? "Online" : "Offline"
-            )
-            FlickSettingsValueRow(
-                title: "Notifications",
-                systemImage: "bell",
-                iconColor: .purple,
-                value: "Approval, failure, token, analytics, and worker alerts",
-                valueLineLimit: 2
             )
         }
     }
@@ -170,36 +134,10 @@ private struct CredentialsNavigationRow: View {
                 Spacer(minLength: 12)
 
                 StatusBadge(title: "\(storedCount) stored", tint: .blue, systemImage: "key.fill")
-
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-private struct DeviceRow: View {
-    var device: FlickDevice
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(device.name)
-                    .font(.body.weight(.semibold))
-                Spacer(minLength: 12)
-                StatusBadge(title: device.platform.rawValue, tint: device.isPrimaryWorker ? .green : .blue, systemImage: "circle.fill")
-            }
-
-            Text(device.capabilities.joined(separator: ", "))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(3)
-        }
-        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
     }
 }

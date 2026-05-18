@@ -54,8 +54,7 @@ struct CreateDraftsSheet: View {
                 }
             }
             .flickSettingsListStyle()
-            .navigationTitle("Drafts")
-            .toolbarTitleDisplayMode(.inline)
+            .flickToolbarTitle("Drafts")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close", systemImage: "xmark") {

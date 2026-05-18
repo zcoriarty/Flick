@@ -227,15 +227,6 @@ enum PlatformErrorKind: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-enum ApprovalMode: String, CaseIterable, Codable, Identifiable {
-    case manualOnly
-    case approveGeneratedBatch
-    case trustedTemplates
-    case fullyAutonomous
-
-    var id: String { rawValue }
-}
-
 struct FlickWorkspace: Identifiable, Codable, Hashable {
     var id: UUID
     var name: String
@@ -753,21 +744,7 @@ struct CadenceRule: Identifiable, Codable, Hashable {
 }
 
 struct SyncHealth: Codable, Hashable {
-    var lastCloudKitImport: Date?
-    var lastCloudKitExport: Date?
-    var pendingChanges: Int
     var iCloudAvailable: Bool
-    var primaryWorkerOnline: Bool
-    var errors: [String]
-}
-
-struct WorkerStatus: Codable, Hashable {
-    var deviceName: String
-    var isPrimary: Bool
-    var isOnline: Bool
-    var automationPaused: Bool
-    var lastSeenAt: Date
-    var activeJobID: UUID?
 }
 
 struct APIHealthStatus: Identifiable, Codable, Hashable {
@@ -783,7 +760,6 @@ struct DashboardSnapshot: Codable, Hashable {
     var awaitingApprovalCount: Int
     var failedJobCount: Int
     var bestRecentPost: AnalyticsPostPerformance?
-    var workerStatus: WorkerStatus
     var connectedAccounts: [ConnectedAccount]
     var syncHealth: SyncHealth
     var apiHealth: [APIHealthStatus]

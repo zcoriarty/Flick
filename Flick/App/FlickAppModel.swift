@@ -198,11 +198,6 @@ final class FlickAppModel {
         }
     }
 
-    func toggleAutomationPaused() {
-        overview.workspace.automationPaused.toggle()
-        overview.dashboard.workerStatus.automationPaused = overview.workspace.automationPaused
-    }
-
     func connectAccount(platform: SocialPlatform) async {
         guard connectingPlatform == nil else { return }
         guard canManageAccounts else {
@@ -301,7 +296,7 @@ final class FlickAppModel {
         let draft = SlideshowDraft(
             id: UUID(),
             title: "\(template.niche) template - @\(template.profile)",
-            campaignID: overview.campaigns.first?.id,
+            campaignID: nil,
             templateID: templateID,
             slides: slides,
             caption: "Draft based on @\(template.profile)'s \(template.niche.lowercased()) slideshow format.",
@@ -696,8 +691,8 @@ final class FlickAppModel {
                 publishMode: settings.publishMode,
                 requiresApproval: false,
                 approvedAt: now,
-                approvedByDeviceID: overview.devices.first?.id,
-                workerDeviceID: overview.devices.first?.id,
+                approvedByDeviceID: nil,
+                workerDeviceID: nil,
                 workerLeaseExpiresAt: nil,
                 attemptCount: 1,
                 lastAttemptAt: now,
@@ -1037,7 +1032,7 @@ private extension FlickAppModel {
         return SlideshowDraft(
             id: UUID(),
             title: plan.title,
-            campaignID: overview.campaigns.first?.id,
+            campaignID: nil,
             templateID: templateID,
             brief: brief,
             topic: plan.topic,

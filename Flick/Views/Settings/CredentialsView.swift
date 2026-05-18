@@ -43,8 +43,7 @@ struct CredentialsView: View {
             }
         }
         .flickSettingsListStyle()
-        .navigationTitle("Credentials")
-        .navigationBarTitleDisplayMode(.inline)
+        .flickToolbarTitle("Credentials")
         .onAppear(perform: reloadCredentialDrafts)
     }
 

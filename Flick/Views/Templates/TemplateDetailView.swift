@@ -16,13 +16,8 @@ struct TemplateDetailView: View {
             sourceDetails
         }
         .flickScrollablePage()
-        .toolbarTitleDisplayMode(.inline)
+        .flickToolbarTitle(template.title)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(template.title)
-                    .font(.system(.body, weight: .semibold))
-            }
-            .sharedBackgroundVisibility(.hidden)
             ToolbarItem(placement: .primaryAction) {
                 Button("Use Template", systemImage: "wand.and.sparkles") {
                     appModel.createDraft(from: template)
@@ -39,7 +34,7 @@ struct TemplateDetailView: View {
                     .frame(width: 120)
 
                 VStack(alignment: .leading, spacing: 10) {
-                    StatusBadge(title: template.niche, tint: .indigo, systemImage: "tag")
+                    StatusBadge(title: template.niche, tint: FlickStyle.appTint, systemImage: "tag")
                     Text(template.subtitle)
                         .font(.title3.weight(.semibold))
                         .fixedSize(horizontal: false, vertical: true)
