@@ -10,50 +10,194 @@ import UniformTypeIdentifiers
 
 struct ProductView: View {
     @Environment(FlickAppModel.self) private var appModel
-    @State private var selectedMediaItems: [PhotosPickerItem] = []
-    @State private var selectedMediaAsset: MediaAsset?
-    @State private var isImportingMedia = false
+
+    @State private var isProductEditorPresented = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
-            ProductMediaSection(
-                assets: appModel.productMediaAssets,
-                isImporting: isImportingMedia,
-                selectAction: { asset in
-                    selectedMediaAsset = asset
-                }
+        List {
+            ProductListSection(
+                products: appModel.overview.products,
+                mediaCountsByProductID: mediaCountsByProductID,
+                createAction: { isProductEditorPresented = true },
+                deleteAction: deleteProduct
             )
         }
-        .flickScrollablePage()
+        .flickSettingsListStyle()
+        .navigationTitle("Products")
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("Product")
-                    .font(.system(.body, weight: .semibold))
-            }
-            .sharedBackgroundVisibility(.hidden)
             ToolbarItem(placement: .primaryAction) {
-                PhotosPicker(
-                    selection: $selectedMediaItems,
-                    maxSelectionCount: 12,
-                    matching: .any(of: [.images, .videos]),
-                    preferredItemEncoding: .current
-                ) {
-                    Label("Add media", systemImage: "plus")
+                Button("New Product", systemImage: "plus") {
+                    isProductEditorPresented = true
                 }
-                .disabled(isImportingMedia)
+            }
+        }
+        .sheet(isPresented: $isProductEditorPresented) {
+            ProductEditorSheet(
+                saveAction: { name, summary in
+                    try await appModel.createProduct(name: name, summary: summary)
+                },
+                completion: { _ in }
+            )
+        }
+    }
+
+    private var mediaCountsByProductID: [UUID: Int] {
+        appModel.productMediaAssets.reduce(into: [UUID: Int]()) { result, asset in
+            for productID in asset.productIDs {
+                result[productID, default: 0] += 1
+            }
+        }
+    }
+
+    private func deleteProduct(_ product: FlickProduct) {
+        Task {
+            do {
+                try await appModel.deleteProduct(id: product.id)
+            } catch {
+                appModel.lastErrorMessage = error.localizedDescription
+            }
+        }
+    }
+}
+
+private struct ProductMediaDetailSelection: Identifiable {
+    var id: UUID
+}
+
+private struct ProductListSection: View {
+    var products: [FlickProduct]
+    var mediaCountsByProductID: [UUID: Int]
+    var createAction: () -> Void
+    var deleteAction: (FlickProduct) -> Void
+
+    var body: some View {
+        Section {
+            ForEach(products) { product in
+                NavigationLink {
+                    ProductDetailView(productID: product.id)
+                } label: {
+                    FlickSettingsRowLabel(
+                        title: product.name,
+                        systemImage: "shippingbox",
+                        iconColor: .blue,
+                        value: mediaCountText(for: product)
+                    )
+                }
+                .swipeActions(edge: .trailing) {
+                    Button("Delete", systemImage: "trash", role: .destructive) {
+                        deleteAction(product)
+                    }
+                }
+            }
+
+            FlickSettingsActionRow(
+                title: "New Product",
+                systemImage: "plus.circle",
+                iconColor: .green,
+                value: products.isEmpty ? "Create first" : nil,
+                action: createAction
+            )
+        } header: {
+            Text("Products")
+        } footer: {
+            Text("Create a product, then add media inside that product.")
+        }
+    }
+
+    private func mediaCountText(for product: FlickProduct) -> String {
+        let count = mediaCountsByProductID[product.id, default: 0]
+        return "\(count) media"
+    }
+}
+
+private struct ProductDetailView: View {
+    @Environment(FlickAppModel.self) private var appModel
+
+    @State private var selectedMediaItems: [PhotosPickerItem] = []
+    @State private var selectedMediaSelection: ProductMediaDetailSelection?
+    @State private var isImportingMedia = false
+
+    var productID: UUID
+
+    private var product: FlickProduct? {
+        appModel.overview.products.first { $0.id == productID }
+    }
+
+    private var mediaAssets: [MediaAsset] {
+        appModel.productMediaAssets(for: [productID])
+    }
+
+    var body: some View {
+        Group {
+            if let product {
+                productMediaContent(product)
+            } else {
+                List {
+                    Section {
+                        ProductMessageRow(
+                            title: "Product unavailable",
+                            message: "This product may have been removed."
+                        )
+                    }
+                }
+                .flickSettingsListStyle()
+            }
+        }
+        .navigationTitle(product?.name ?? "Product")
+        .toolbarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                if product != nil {
+                    PhotosPicker(
+                        selection: $selectedMediaItems,
+                        maxSelectionCount: 12,
+                        matching: .any(of: [.images, .videos]),
+                        preferredItemEncoding: .current
+                    ) {
+                        Label("Add Media", systemImage: "plus")
+                    }
+                    .disabled(isImportingMedia)
+                }
             }
         }
         .onChange(of: selectedMediaItems) { _, newItems in
             guard !newItems.isEmpty else { return }
             selectedMediaItems = []
+
             Task {
                 await importMediaItems(newItems)
             }
         }
-        .sheet(item: $selectedMediaAsset) { asset in
-            ProductMediaDetailSheet(asset: asset)
+        .sheet(item: $selectedMediaSelection) { selection in
+            ProductMediaDetailSheet(assetID: selection.id)
         }
+    }
+
+    private func productMediaContent(_ product: FlickProduct) -> some View {
+        ScrollView(showsIndicators: false) {
+            LazyVStack(alignment: .leading, spacing: 12) {
+                if isImportingMedia {
+                    ProductImportingIndicator()
+                }
+
+                if mediaAssets.isEmpty {
+                    FlickEmptyStateCard(
+                        title: "No media yet",
+                        message: "Use the toolbar plus button to add images or videos to \(product.name).",
+                        systemImage: "photo.badge.plus"
+                    )
+                } else {
+                    ProductMediaGrid(assets: mediaAssets) { asset in
+                        selectedMediaSelection = ProductMediaDetailSelection(id: asset.id)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        .flickAppBackground()
+        .scrollEdgeEffectStyle(.soft, for: .top)
     }
 
     @MainActor
@@ -71,16 +215,160 @@ struct ProductView: View {
                     guard let movie = try await item.loadTransferable(type: ProductMovieTransfer.self) else {
                         throw ProductMediaImportError.missingData
                     }
-                    try await appModel.addProductMedia(fileURL: movie.fileURL, contentType: contentType)
+                    try await appModel.addProductMedia(fileURL: movie.fileURL, contentType: contentType, productIDs: [productID])
                 } else {
                     guard let image = try await item.loadTransferable(type: ProductImageTransfer.self) else {
                         throw ProductMediaImportError.missingData
                     }
-                    try await appModel.addProductMedia(fileURL: image.fileURL, contentType: contentType)
+                    try await appModel.addProductMedia(fileURL: image.fileURL, contentType: contentType, productIDs: [productID])
                 }
             } catch {
                 appModel.lastErrorMessage = error.localizedDescription
             }
+        }
+    }
+}
+
+private struct ProductImportingIndicator: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            ProgressView()
+            Text("Importing media")
+                .font(.callout.weight(.semibold))
+        }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct ProductMediaGrid: View {
+    var assets: [MediaAsset]
+    var selectAction: (MediaAsset) -> Void
+
+    private let columns = Array(
+        repeating: GridItem(.flexible(), spacing: 12),
+        count: 3
+    )
+
+    var body: some View {
+        LazyVGrid(columns: columns, spacing: 12) {
+            ForEach(assets) { asset in
+                ProductMediaCard(asset: asset) {
+                    selectAction(asset)
+                }
+            }
+        }
+    }
+}
+
+private struct ProductMessageRow: View {
+    var title: String
+    var message: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .foregroundStyle(.primary)
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct ProductSelectionRow: View {
+    var product: FlickProduct
+    var isSelected: Bool
+
+    var body: some View {
+        FlickSettingsRow(
+            title: product.name,
+            systemImage: "shippingbox",
+            iconColor: .blue
+        ) {
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.blue)
+            }
+        }
+    }
+}
+
+private struct ProductEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var name = ""
+    @State private var summary = ""
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    var saveAction: (String, String) async throws -> FlickProduct
+    var completion: (FlickProduct) -> Void
+
+    private var canSave: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSaving
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Product") {
+                    TextField("Name", text: $name)
+                        .textInputAutocapitalization(.words)
+
+                    TextField("Notes", text: $summary, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+
+                if let errorMessage {
+                    Section("Error") {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .flickSettingsListStyle()
+            .navigationTitle("New Product")
+            .toolbarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", systemImage: "xmark") {
+                        dismiss()
+                    }
+                    .disabled(isSaving)
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create", systemImage: "checkmark") {
+                        save()
+                    }
+                    .disabled(!canSave)
+                }
+            }
+        }
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func save() {
+        guard canSave else { return }
+
+        isSaving = true
+        errorMessage = nil
+
+        Task {
+            do {
+                let product = try await saveAction(name, summary)
+                completion(product)
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isSaving = false
         }
     }
 }
@@ -111,48 +399,6 @@ private struct ProductMovieTransfer: Transferable {
 
             try FileManager.default.copyItem(at: receivedFile.file, to: copyURL)
             return ProductMovieTransfer(fileURL: copyURL)
-        }
-    }
-}
-
-private struct ProductMediaSection: View {
-    var assets: [MediaAsset]
-    var isImporting: Bool
-    var selectAction: (MediaAsset) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(
-                title: "Media library",
-                subtitle: "\(assets.count) uploaded asset\(assets.count == 1 ? "" : "s") available for Create",
-                systemImage: "photo.stack"
-            )
-
-            if isImporting {
-                FlickGlassCard {
-                    HStack(spacing: 12) {
-                        ProgressView()
-                        Text("Importing media")
-                            .font(.callout.weight(.semibold))
-                    }
-                }
-            }
-
-            if assets.isEmpty {
-                FlickEmptyStateCard(
-                    title: "No uploaded media",
-                    message: "Add images or videos here so they can be used from the Create tab later.",
-                    systemImage: "photo.badge.plus"
-                )
-            } else {
-                ResponsiveGrid(minimum: 154, spacing: 12) {
-                    ForEach(assets) { asset in
-                        ProductMediaCard(asset: asset) {
-                            selectAction(asset)
-                        }
-                    }
-                }
-            }
         }
     }
 }
@@ -190,23 +436,38 @@ private struct ProductMediaDetailSheet: View {
     @Environment(FlickAppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
 
-    var asset: MediaAsset
+    var assetID: UUID
+
+    private var asset: MediaAsset? {
+        appModel.overview.assets.first { $0.id == assetID }
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                mediaSection
-                overviewSection
-                storageSection
-                timestampsSection
+                if let asset {
+                    mediaSection(asset)
+                    productsSection(asset)
+                    overviewSection(asset)
+                    storageSection(asset)
+                    timestampsSection(asset)
+                } else {
+                    ProductMessageRow(
+                        title: "Media unavailable",
+                        message: "This media item may have been removed."
+                    )
+                }
             }
             .flickSettingsListStyle()
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Delete", systemImage: "trash", role: .destructive) {
-                        deleteAsset()
+                        if let asset {
+                            deleteAsset(asset)
+                        }
                     }
+                    .disabled(asset == nil)
                 }
                 ToolbarItem(placement: .principal) {
                     Text("Media Details")
@@ -224,7 +485,7 @@ private struct ProductMediaDetailSheet: View {
         .presentationDragIndicator(.visible)
     }
 
-    private var mediaSection: some View {
+    private func mediaSection(_ asset: MediaAsset) -> some View {
         Section {
             ProductMediaDetailPreview(asset: asset)
                 .listRowInsets(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
@@ -232,13 +493,47 @@ private struct ProductMediaDetailSheet: View {
         }
     }
 
-    private var overviewSection: some View {
+    private func productsSection(_ asset: MediaAsset) -> some View {
+        Section {
+            if appModel.overview.products.isEmpty {
+                ProductMessageRow(
+                    title: "No products",
+                    message: "Create a product before assigning media."
+                )
+            } else {
+                ForEach(appModel.overview.products) { product in
+                    let isSelected = asset.productIDs.contains(product.id)
+
+                    Button {
+                        toggleProduct(product, for: asset)
+                    } label: {
+                        ProductSelectionRow(product: product, isSelected: isSelected)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isSelected && asset.productIDs.count == 1)
+                }
+            }
+        } header: {
+            Text("Products")
+        } footer: {
+            Text("Media must stay attached to at least one product.")
+        }
+    }
+
+    private func overviewSection(_ asset: MediaAsset) -> some View {
         Section("Overview") {
             FlickSettingsValueRow(
                 title: "Type",
                 systemImage: asset.mediaType.productSystemImage,
                 iconColor: asset.mediaType.productTint,
                 value: asset.mediaType.productDisplayName
+            )
+            FlickSettingsValueRow(
+                title: "Products",
+                systemImage: "shippingbox",
+                iconColor: .blue,
+                value: productSummary(products: appModel.overview.products, productIDs: Set(asset.productIDs)),
+                valueLineLimit: 2
             )
             FlickSettingsValueRow(
                 title: "Source",
@@ -267,7 +562,7 @@ private struct ProductMediaDetailSheet: View {
         }
     }
 
-    private var storageSection: some View {
+    private func storageSection(_ asset: MediaAsset) -> some View {
         Section("Storage") {
             FlickSettingsValueRow(
                 title: "Local Path",
@@ -313,7 +608,7 @@ private struct ProductMediaDetailSheet: View {
         }
     }
 
-    private var timestampsSection: some View {
+    private func timestampsSection(_ asset: MediaAsset) -> some View {
         Section("Timestamps") {
             FlickSettingsValueRow(
                 title: "Created",
@@ -337,7 +632,26 @@ private struct ProductMediaDetailSheet: View {
         }
     }
 
-    private func deleteAsset() {
+    private func toggleProduct(_ product: FlickProduct, for asset: MediaAsset) {
+        var productIDs = Set(asset.productIDs)
+
+        if productIDs.contains(product.id) {
+            guard productIDs.count > 1 else { return }
+            productIDs.remove(product.id)
+        } else {
+            productIDs.insert(product.id)
+        }
+
+        Task {
+            do {
+                try await appModel.updateProductMediaProducts(assetID: asset.id, productIDs: productIDs)
+            } catch {
+                appModel.lastErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func deleteAsset(_ asset: MediaAsset) {
         Task {
             do {
                 try await appModel.removeProductMedia(asset)
@@ -465,6 +779,23 @@ private extension AssetMediaType {
         case .video: .purple
         case .thumbnail: .secondary
         }
+    }
+}
+
+private func productSummary(products: [FlickProduct], productIDs: Set<UUID>) -> String {
+    let names = products
+        .filter { productIDs.contains($0.id) }
+        .map(\.name)
+
+    switch names.count {
+    case 0:
+        return "None"
+    case 1:
+        return names[0]
+    case 2:
+        return names.joined(separator: ", ")
+    default:
+        return "\(names.count) products"
     }
 }
 

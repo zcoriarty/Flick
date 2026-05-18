@@ -284,6 +284,14 @@ struct Campaign: Identifiable, Codable, Hashable {
     var updatedAt: Date
 }
 
+struct FlickProduct: Identifiable, Codable, Hashable {
+    var id: UUID
+    var name: String
+    var summary: String
+    var createdAt: Date
+    var updatedAt: Date
+}
+
 struct TrendTag: Identifiable, Codable, Hashable {
     var id: UUID
     var name: String
@@ -307,8 +315,91 @@ struct MediaAsset: Identifiable, Codable, Hashable {
     var fileSize: Int64?
     var checksum: String?
     var trendTags: [TrendTag]
+    var productIDs: [UUID]
     var createdAt: Date
     var updatedAt: Date
+
+    init(
+        id: UUID,
+        mediaType: AssetMediaType,
+        source: AssetSource,
+        localFilePath: String?,
+        storageBucket: String?,
+        storagePath: String?,
+        publicURL: URL?,
+        signedURLExpiration: Date?,
+        width: Int,
+        height: Int,
+        duration: TimeInterval?,
+        fileSize: Int64?,
+        checksum: String?,
+        trendTags: [TrendTag],
+        productIDs: [UUID] = [],
+        createdAt: Date,
+        updatedAt: Date
+    ) {
+        self.id = id
+        self.mediaType = mediaType
+        self.source = source
+        self.localFilePath = localFilePath
+        self.storageBucket = storageBucket
+        self.storagePath = storagePath
+        self.publicURL = publicURL
+        self.signedURLExpiration = signedURLExpiration
+        self.width = width
+        self.height = height
+        self.duration = duration
+        self.fileSize = fileSize
+        self.checksum = checksum
+        self.trendTags = trendTags
+        self.productIDs = productIDs.uniqued()
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case mediaType
+        case source
+        case localFilePath
+        case storageBucket
+        case storagePath
+        case publicURL
+        case signedURLExpiration
+        case width
+        case height
+        case duration
+        case fileSize
+        case checksum
+        case trendTags
+        case productIDs
+        case createdAt
+        case updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        self.init(
+            id: try container.decode(UUID.self, forKey: .id),
+            mediaType: try container.decode(AssetMediaType.self, forKey: .mediaType),
+            source: try container.decode(AssetSource.self, forKey: .source),
+            localFilePath: try container.decodeIfPresent(String.self, forKey: .localFilePath),
+            storageBucket: try container.decodeIfPresent(String.self, forKey: .storageBucket),
+            storagePath: try container.decodeIfPresent(String.self, forKey: .storagePath),
+            publicURL: try container.decodeIfPresent(URL.self, forKey: .publicURL),
+            signedURLExpiration: try container.decodeIfPresent(Date.self, forKey: .signedURLExpiration),
+            width: try container.decode(Int.self, forKey: .width),
+            height: try container.decode(Int.self, forKey: .height),
+            duration: try container.decodeIfPresent(TimeInterval.self, forKey: .duration),
+            fileSize: try container.decodeIfPresent(Int64.self, forKey: .fileSize),
+            checksum: try container.decodeIfPresent(String.self, forKey: .checksum),
+            trendTags: try container.decode([TrendTag].self, forKey: .trendTags),
+            productIDs: try container.decodeIfPresent([UUID].self, forKey: .productIDs) ?? [],
+            createdAt: try container.decode(Date.self, forKey: .createdAt),
+            updatedAt: try container.decode(Date.self, forKey: .updatedAt)
+        )
+    }
 }
 
 struct SlideTextStyle: Codable, Hashable {
@@ -703,6 +794,7 @@ struct FlickOverviewState: Codable, Hashable {
     var devices: [FlickDevice]
     var accounts: [ConnectedAccount]
     var campaigns: [Campaign]
+    var products: [FlickProduct]
     var assets: [MediaAsset]
     var drafts: [SlideshowDraft]
     var templates: [CreativeTemplate]
@@ -712,4 +804,11 @@ struct FlickOverviewState: Codable, Hashable {
     var analyticsPerformance: [AnalyticsPostPerformance]
     var cadenceRules: [CadenceRule]
     var dashboard: DashboardSnapshot
+}
+
+private extension Array where Element: Hashable {
+    func uniqued() -> [Element] {
+        var seen = Set<Element>()
+        return filter { seen.insert($0).inserted }
+    }
 }

@@ -22,6 +22,7 @@ final class CoreDataFlickRepository: FlickRepository {
 
     func loadOverview() async throws -> FlickOverviewState {
         var state = FlickEmptyState.make()
+        state.products = try fetchProducts()
         state.assets = try fetchAssets()
         state.templates = try fetchTemplates()
         state.drafts = try fetchDrafts(slidesByDraftID: try fetchSlidesByDraftID())
@@ -31,10 +32,17 @@ final class CoreDataFlickRepository: FlickRepository {
     }
 
     func saveOverview(_ state: FlickOverviewState) async throws {
+        try syncProducts(state.products)
         try syncAssets(state.assets)
         try syncTemplates(state.templates)
         try syncDrafts(state.drafts)
         try syncSlides(in: state.drafts)
+        try saveIfNeeded()
+    }
+
+    func upsertProduct(_ product: FlickProduct) async throws {
+        let object = try fetchProduct(id: product.id) ?? insertProductObject()
+        apply(product, to: object)
         try saveIfNeeded()
     }
 
@@ -48,6 +56,24 @@ final class CoreDataFlickRepository: FlickRepository {
         guard let object = try fetchAsset(id: id) else { return }
         context.delete(object)
         try saveIfNeeded()
+    }
+
+    private func syncProducts(_ products: [FlickProduct]) throws {
+        let existingProducts = try context.fetch(productFetchRequest())
+        var existingByID = Dictionary(uniqueKeysWithValues: existingProducts.compactMap { object -> (UUID, NSManagedObject)? in
+            guard let id = object.value(forKey: ProductKey.id) as? UUID else { return nil }
+            return (id, object)
+        })
+        let stateIDs = Set(products.map(\.id))
+
+        for product in products {
+            let object = existingByID.removeValue(forKey: product.id) ?? insertProductObject()
+            apply(product, to: object)
+        }
+
+        for (id, object) in existingByID where !stateIDs.contains(id) {
+            context.delete(object)
+        }
     }
 
     private func syncAssets(_ assets: [MediaAsset]) throws {
@@ -133,6 +159,21 @@ final class CoreDataFlickRepository: FlickRepository {
         return try context.fetch(request).compactMap(MediaAsset.init)
     }
 
+    private func fetchProducts() throws -> [FlickProduct] {
+        let request = productFetchRequest()
+        request.sortDescriptors = [
+            NSSortDescriptor(key: ProductKey.updatedAt, ascending: false)
+        ]
+        return try context.fetch(request).compactMap(FlickProduct.init)
+    }
+
+    private func fetchProduct(id: UUID) throws -> NSManagedObject? {
+        let request = productFetchRequest()
+        request.predicate = NSPredicate(format: "%K == %@", ProductKey.id, id as NSUUID)
+        request.fetchLimit = 1
+        return try context.fetch(request).first
+    }
+
     private func fetchAsset(id: UUID) throws -> NSManagedObject? {
         let request = assetFetchRequest()
         request.predicate = NSPredicate(format: "%K == %@", AssetKey.id, id as NSUUID)
@@ -178,6 +219,10 @@ final class CoreDataFlickRepository: FlickRepository {
         NSFetchRequest<NSManagedObject>(entityName: "CDAsset")
     }
 
+    private func productFetchRequest() -> NSFetchRequest<NSManagedObject> {
+        NSFetchRequest<NSManagedObject>(entityName: "CDProduct")
+    }
+
     private func templateFetchRequest() -> NSFetchRequest<NSManagedObject> {
         NSFetchRequest<NSManagedObject>(entityName: "CDCreativeTemplate")
     }
@@ -192,6 +237,10 @@ final class CoreDataFlickRepository: FlickRepository {
 
     private func insertAssetObject() -> NSManagedObject {
         NSEntityDescription.insertNewObject(forEntityName: "CDAsset", into: context)
+    }
+
+    private func insertProductObject() -> NSManagedObject {
+        NSEntityDescription.insertNewObject(forEntityName: "CDProduct", into: context)
     }
 
     private func insertTemplateObject() -> NSManagedObject {
@@ -221,8 +270,17 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(asset.fileSize, forKey: AssetKey.fileSize)
         object.setValue(asset.checksum, forKey: AssetKey.checksum)
         object.setValue(asset.trendTags.map(\.id.uuidString), asJSONForKey: AssetKey.trendTagIDsJSON)
+        object.setValue(asset.productIDs.map(\.uuidString), asJSONForKey: AssetKey.productIDsJSON)
         object.setValue(asset.createdAt, forKey: AssetKey.createdAt)
         object.setValue(asset.updatedAt, forKey: AssetKey.updatedAt)
+    }
+
+    private func apply(_ product: FlickProduct, to object: NSManagedObject) {
+        object.setValue(product.id, forKey: ProductKey.id)
+        object.setValue(product.name, forKey: ProductKey.name)
+        object.setValue(product.summary, forKey: ProductKey.summary)
+        object.setValue(product.createdAt, forKey: ProductKey.createdAt)
+        object.setValue(product.updatedAt, forKey: ProductKey.updatedAt)
     }
 
     private func apply(_ template: CreativeTemplate, to object: NSManagedObject) {
@@ -305,6 +363,7 @@ private enum AssetKey {
     static let id = "id"
     static let localFilePath = "localFilePath"
     static let mediaType = "mediaType"
+    static let productIDsJSON = "productIDsJSON"
     static let publicURL = "publicURL"
     static let signedURLExpiration = "signedURLExpiration"
     static let source = "source"
@@ -313,6 +372,14 @@ private enum AssetKey {
     static let trendTagIDsJSON = "trendTagIDsJSON"
     static let updatedAt = "updatedAt"
     static let width = "width"
+}
+
+private enum ProductKey {
+    static let createdAt = "createdAt"
+    static let id = "id"
+    static let name = "name"
+    static let summary = "summary"
+    static let updatedAt = "updatedAt"
 }
 
 private enum TemplateKey {
@@ -382,6 +449,8 @@ private extension MediaAsset {
             return nil
         }
 
+        let productIDStrings: [String] = managedObject.decodedJSON([String].self, forKey: AssetKey.productIDsJSON) ?? []
+
         self.init(
             id: id,
             mediaType: mediaType,
@@ -397,8 +466,28 @@ private extension MediaAsset {
             fileSize: managedObject.int64Value(forKey: AssetKey.fileSize),
             checksum: managedObject.value(forKey: AssetKey.checksum) as? String,
             trendTags: [],
+            productIDs: productIDStrings.compactMap(UUID.init(uuidString:)),
             createdAt: managedObject.value(forKey: AssetKey.createdAt) as? Date ?? Date(),
             updatedAt: managedObject.value(forKey: AssetKey.updatedAt) as? Date ?? Date()
+        )
+    }
+}
+
+private extension FlickProduct {
+    init?(managedObject: NSManagedObject) {
+        guard
+            let id = managedObject.value(forKey: ProductKey.id) as? UUID,
+            let name = managedObject.value(forKey: ProductKey.name) as? String
+        else {
+            return nil
+        }
+
+        self.init(
+            id: id,
+            name: name,
+            summary: managedObject.value(forKey: ProductKey.summary) as? String ?? "",
+            createdAt: managedObject.value(forKey: ProductKey.createdAt) as? Date ?? Date(),
+            updatedAt: managedObject.value(forKey: ProductKey.updatedAt) as? Date ?? Date()
         )
     }
 }

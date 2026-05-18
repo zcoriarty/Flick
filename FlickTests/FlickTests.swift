@@ -4,6 +4,7 @@
 //
 
 import CoreData
+import UniformTypeIdentifiers
 import XCTest
 @testable import Flick
 
@@ -126,6 +127,81 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(loadedAsset.id, asset.id)
         XCTAssertEqual(loadedAsset.source, .generated)
         XCTAssertEqual(loadedAsset.publicURL, asset.publicURL)
+    }
+
+    func testCoreDataRoundTripsProductsAndMediaProductLinks() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let persistenceController = PersistenceController(inMemory: true)
+        let repository = CoreDataFlickRepository(
+            context: persistenceController.container.viewContext,
+            cloudAvailability: { false }
+        )
+        let product = makeProduct(name: "Flick Pro", now: now)
+        let asset = makeMediaAsset(
+            source: .uploaded,
+            localFilePath: "/tmp/flick-product-\(UUID().uuidString).jpg",
+            productIDs: [product.id],
+            now: now
+        )
+        var state = FlickEmptyState.make(now: now)
+        state.products = [product]
+        state.assets = [asset]
+
+        try await repository.saveOverview(state)
+        let loaded = try await repository.loadOverview()
+        let loadedProduct = try XCTUnwrap(loaded.products.first)
+        let loadedAsset = try XCTUnwrap(loaded.assets.first)
+
+        XCTAssertEqual(loadedProduct, product)
+        XCTAssertEqual(loadedAsset.productIDs, [product.id])
+    }
+
+    func testAddingProductMediaRequiresAndStoresProductSelection() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let repository = InMemoryFlickRepository(state: FlickEmptyState.make(now: now))
+        let model = FlickAppModel(repository: repository, configuration: .current)
+        let product = try await model.createProduct(name: "Flick Pro", summary: "Launch assets")
+
+        try await model.addProductMedia(
+            data: Data([0xFF, 0xD8, 0xFF]),
+            contentType: .jpeg,
+            productIDs: [product.id]
+        )
+
+        let asset = try XCTUnwrap(model.overview.assets.first)
+        XCTAssertEqual(asset.source, .uploaded)
+        XCTAssertEqual(asset.productIDs, [product.id])
+        XCTAssertEqual(repository.state.assets.first?.productIDs, [product.id])
+    }
+
+    func testDeletingProductRemovesOnlyOwnedMediaAndKeepsSharedMedia() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let deletedProduct = makeProduct(name: "Flick Pro", now: now)
+        let retainedProduct = makeProduct(name: "Flick Lite", now: now)
+        let onlyOwnedAsset = makeMediaAsset(
+            source: .uploaded,
+            productIDs: [deletedProduct.id],
+            now: now
+        )
+        let sharedAsset = makeMediaAsset(
+            source: .uploaded,
+            productIDs: [deletedProduct.id, retainedProduct.id],
+            now: now
+        )
+        var state = FlickEmptyState.make(now: now)
+        state.products = [deletedProduct, retainedProduct]
+        state.assets = [onlyOwnedAsset, sharedAsset]
+        let repository = InMemoryFlickRepository(state: state)
+        let model = FlickAppModel(repository: repository, configuration: .current)
+
+        await model.refresh()
+        try await model.deleteProduct(id: deletedProduct.id)
+
+        XCTAssertEqual(model.overview.products.map(\.id), [retainedProduct.id])
+        XCTAssertEqual(model.overview.assets.map(\.id), [sharedAsset.id])
+        XCTAssertEqual(model.overview.assets.first?.productIDs, [retainedProduct.id])
+        XCTAssertEqual(repository.state.products.map(\.id), [retainedProduct.id])
+        XCTAssertEqual(repository.state.assets.map(\.id), [sharedAsset.id])
     }
 
     func testCoreDataRoundTripsCreateDraftPublishFields() async throws {
@@ -984,6 +1060,7 @@ private func makeMediaAsset(
     publicURL: URL? = nil,
     width: Int = 1024,
     height: Int = 1536,
+    productIDs: [UUID] = [],
     now: Date = Date()
 ) -> MediaAsset {
     MediaAsset(
@@ -1001,6 +1078,22 @@ private func makeMediaAsset(
         fileSize: 1024,
         checksum: nil,
         trendTags: [],
+        productIDs: productIDs,
+        createdAt: now,
+        updatedAt: now
+    )
+}
+
+private func makeProduct(
+    id: UUID = UUID(),
+    name: String = "Flick Pro",
+    summary: String = "Launch assets",
+    now: Date = Date()
+) -> FlickProduct {
+    FlickProduct(
+        id: id,
+        name: name,
+        summary: summary,
         createdAt: now,
         updatedAt: now
     )
@@ -1025,6 +1118,11 @@ private final class InMemoryFlickRepository: FlickRepository {
 
     func saveOverview(_ state: FlickOverviewState) async throws {
         self.state = state
+    }
+
+    func upsertProduct(_ product: FlickProduct) async throws {
+        state.products.removeAll { $0.id == product.id }
+        state.products.insert(product, at: 0)
     }
 
     func upsertAsset(_ asset: MediaAsset) async throws {

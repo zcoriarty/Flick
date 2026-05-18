@@ -58,6 +58,7 @@ enum FlickEmptyState {
             devices: [],
             accounts: [],
             campaigns: [],
+            products: [],
             assets: [],
             drafts: [],
             templates: [],

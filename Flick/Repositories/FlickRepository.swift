@@ -9,6 +9,7 @@ import Foundation
 protocol FlickRepository {
     func loadOverview() async throws -> FlickOverviewState
     func saveOverview(_ state: FlickOverviewState) async throws
+    func upsertProduct(_ product: FlickProduct) async throws
     func upsertAsset(_ asset: MediaAsset) async throws
     func deleteAsset(id: UUID) async throws
 }
@@ -34,6 +35,10 @@ struct EmptyFlickRepository: FlickRepository {
 
     func saveOverview(_ state: FlickOverviewState) async throws {
         _ = state
+    }
+
+    func upsertProduct(_ product: FlickProduct) async throws {
+        _ = product
     }
 
     func upsertAsset(_ asset: MediaAsset) async throws {

@@ -14,6 +14,26 @@ enum MoveDirection {
     case later
 }
 
+enum ProductManagementError: LocalizedError {
+    case missingName
+    case missingProductSelection
+    case unavailableProduct
+    case missingMediaAsset
+
+    var errorDescription: String? {
+        switch self {
+        case .missingName:
+            "Add a product name first."
+        case .missingProductSelection:
+            "Select at least one product before uploading media."
+        case .unavailableProduct:
+            "One of the selected products is no longer available."
+        case .missingMediaAsset:
+            "That media item is no longer available."
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class FlickAppModel {
@@ -76,6 +96,14 @@ final class FlickAppModel {
     var productMediaAssets: [MediaAsset] {
         overview.assets.filter { asset in
             asset.source == .uploaded && (asset.mediaType == .image || asset.mediaType == .video)
+        }
+    }
+
+    func productMediaAssets(for productIDs: Set<UUID>) -> [MediaAsset] {
+        guard !productIDs.isEmpty else { return [] }
+
+        return productMediaAssets.filter { asset in
+            !Set(asset.productIDs).isDisjoint(with: productIDs)
         }
     }
 
@@ -282,17 +310,70 @@ final class FlickAppModel {
         selectedSection = .create
     }
 
-    func addProductMedia(data: Data, contentType: UTType) async throws {
+    func createProduct(name: String, summary: String) async throws -> FlickProduct {
+        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedName.isEmpty else {
+            throw ProductManagementError.missingName
+        }
+
+        let now = Date()
+        let product = FlickProduct(
+            id: UUID(),
+            name: normalizedName,
+            summary: summary.trimmingCharacters(in: .whitespacesAndNewlines),
+            createdAt: now,
+            updatedAt: now
+        )
+
+        overview.products.insert(product, at: 0)
+        do {
+            try await repository.upsertProduct(product)
+            lastErrorMessage = nil
+            return product
+        } catch {
+            overview.products.removeAll { $0.id == product.id }
+            throw error
+        }
+    }
+
+    func deleteProduct(id productID: UUID) async throws {
+        guard overview.products.contains(where: { $0.id == productID }) else { return }
+
+        let previousOverview = overview
+        overview.products.removeAll { $0.id == productID }
+        overview.assets = overview.assets.compactMap { asset in
+            guard asset.productIDs.contains(productID) else { return asset }
+
+            let retainedProductIDs = asset.productIDs.filter { $0 != productID }
+            guard !retainedProductIDs.isEmpty else { return nil }
+
+            var updatedAsset = asset
+            updatedAsset.productIDs = retainedProductIDs
+            updatedAsset.updatedAt = Date()
+            return updatedAsset
+        }
+
+        do {
+            try await repository.saveOverview(overview)
+            lastErrorMessage = nil
+        } catch {
+            overview = previousOverview
+            throw error
+        }
+    }
+
+    func addProductMedia(data: Data, contentType: UTType, productIDs: Set<UUID>) async throws {
         let storedMedia = try localMediaLibrary.store(data: data, contentType: contentType)
-        try await addProductMedia(storedMedia)
+        try await addProductMedia(storedMedia, productIDs: productIDs)
     }
 
-    func addProductMedia(fileURL: URL, contentType: UTType) async throws {
+    func addProductMedia(fileURL: URL, contentType: UTType, productIDs: Set<UUID>) async throws {
         let storedMedia = try localMediaLibrary.store(fileURL: fileURL, contentType: contentType)
-        try await addProductMedia(storedMedia)
+        try await addProductMedia(storedMedia, productIDs: productIDs)
     }
 
-    private func addProductMedia(_ storedMedia: StoredLocalMedia) async throws {
+    private func addProductMedia(_ storedMedia: StoredLocalMedia, productIDs: Set<UUID>) async throws {
+        let resolvedProductIDs = try validateProductIDs(productIDs)
         let now = Date()
         let asset = MediaAsset(
             id: UUID(),
@@ -309,6 +390,7 @@ final class FlickAppModel {
             fileSize: storedMedia.fileSize,
             checksum: nil,
             trendTags: [],
+            productIDs: resolvedProductIDs,
             createdAt: now,
             updatedAt: now
         )
@@ -319,6 +401,25 @@ final class FlickAppModel {
             lastErrorMessage = nil
         } catch {
             overview.assets.removeAll { $0.id == asset.id }
+            throw error
+        }
+    }
+
+    func updateProductMediaProducts(assetID: UUID, productIDs: Set<UUID>) async throws {
+        let resolvedProductIDs = try validateProductIDs(productIDs)
+        guard let assetIndex = overview.assets.firstIndex(where: { $0.id == assetID }) else {
+            throw ProductManagementError.missingMediaAsset
+        }
+
+        let previousAsset = overview.assets[assetIndex]
+        overview.assets[assetIndex].productIDs = resolvedProductIDs
+        overview.assets[assetIndex].updatedAt = Date()
+
+        do {
+            try await repository.upsertAsset(overview.assets[assetIndex])
+            lastErrorMessage = nil
+        } catch {
+            overview.assets[assetIndex] = previousAsset
             throw error
         }
     }
@@ -334,6 +435,19 @@ final class FlickAppModel {
             overview.assets.insert(removedAsset, at: min(index, overview.assets.count))
             throw error
         }
+    }
+
+    private func validateProductIDs(_ productIDs: Set<UUID>) throws -> [UUID] {
+        guard !productIDs.isEmpty else {
+            throw ProductManagementError.missingProductSelection
+        }
+
+        let availableProductIDs = Set(overview.products.map(\.id))
+        guard productIDs.isSubset(of: availableProductIDs) else {
+            throw ProductManagementError.unavailableProduct
+        }
+
+        return overview.products.map(\.id).filter { productIDs.contains($0) }
     }
 
     func persistCreateState() async {
