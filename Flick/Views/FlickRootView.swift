@@ -54,6 +54,11 @@ struct FlickRootView: View {
         .task {
             await appModel.refresh()
         }
+        #if os(macOS) || targetEnvironment(macCatalyst)
+        .task {
+            await appModel.runAutomationWorkerLoop()
+        }
+        #endif
         .onOpenURL { url in
             _ = TikTokOpenSDKURLHandler.handle(url, source: "SwiftUI.onOpenURL")
         }

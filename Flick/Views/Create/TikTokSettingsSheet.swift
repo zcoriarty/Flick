@@ -18,6 +18,7 @@ struct TikTokSettingsSheet: View {
     @Binding var disclosesVideoContent: Bool
     @Binding var promotesYourBrand: Bool
     @Binding var promotesBrandedContent: Bool
+    var allowsDraftUpload = true
 
     var body: some View {
         NavigationStack {
@@ -45,6 +46,11 @@ struct TikTokSettingsSheet: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .onAppear {
+            if !allowsDraftUpload {
+                postAsDraft = false
+            }
+        }
         .onChange(of: selectedVisibility) { _, newValue in
             if newValue == .selfOnly {
                 promotesBrandedContent = false
@@ -93,13 +99,15 @@ struct TikTokSettingsSheet: View {
 
     private var publishingSection: some View {
         Section("Publishing") {
-            FlickSettingsRow(
-                title: "Create TikTok draft",
-                systemImage: "doc.badge.clock",
-                iconColor: .teal
-            ) {
-                Toggle("Create TikTok draft", isOn: $postAsDraft)
-                    .labelsHidden()
+            if allowsDraftUpload {
+                FlickSettingsRow(
+                    title: "Create TikTok draft",
+                    systemImage: "doc.badge.clock",
+                    iconColor: .teal
+                ) {
+                    Toggle("Create TikTok draft", isOn: $postAsDraft)
+                        .labelsHidden()
+                }
             }
 
             if !postAsDraft {

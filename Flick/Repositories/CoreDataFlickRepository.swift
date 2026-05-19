@@ -27,6 +27,7 @@ final class CoreDataFlickRepository: FlickRepository {
         state.assets = try fetchAssets()
         state.templates = try fetchTemplates()
         state.drafts = try fetchDrafts(slidesByDraftID: try fetchSlidesByDraftID())
+        state.automations = try fetchAutomations()
         state.publishingJobs = try fetchPublishingJobs()
         state.publishedPosts = try fetchPublishedPosts()
         state.refreshDerivedState()
@@ -42,6 +43,7 @@ final class CoreDataFlickRepository: FlickRepository {
         try syncTemplates(state.templates)
         try syncDrafts(state.drafts)
         try syncSlides(in: state.drafts)
+        try syncAutomations(state.automations)
         try syncPublishingJobs(state.publishingJobs)
         try syncPublishedPosts(state.publishedPosts)
         try saveIfNeeded()
@@ -188,6 +190,24 @@ final class CoreDataFlickRepository: FlickRepository {
         }
     }
 
+    private func syncAutomations(_ automations: [ContentAutomation]) throws {
+        let existingAutomations = try context.fetch(automationFetchRequest())
+        var existingByID = Dictionary(uniqueKeysWithValues: existingAutomations.compactMap { object -> (UUID, NSManagedObject)? in
+            guard let id = object.value(forKey: AutomationKey.id) as? UUID else { return nil }
+            return (id, object)
+        })
+        let stateIDs = Set(automations.map(\.id))
+
+        for automation in automations {
+            let object = existingByID.removeValue(forKey: automation.id) ?? insertAutomationObject()
+            apply(automation, to: object)
+        }
+
+        for (id, object) in existingByID where !stateIDs.contains(id) {
+            context.delete(object)
+        }
+    }
+
     private func syncPublishingJobs(_ jobs: [PublishingJob]) throws {
         let existingJobs = try context.fetch(publishingJobFetchRequest())
         var existingByID = Dictionary(uniqueKeysWithValues: existingJobs.compactMap { object -> (UUID, NSManagedObject)? in
@@ -288,6 +308,14 @@ final class CoreDataFlickRepository: FlickRepository {
         }
     }
 
+    private func fetchAutomations() throws -> [ContentAutomation] {
+        let request = automationFetchRequest()
+        request.sortDescriptors = [
+            NSSortDescriptor(key: AutomationKey.updatedAt, ascending: false)
+        ]
+        return try context.fetch(request).compactMap(ContentAutomation.init)
+    }
+
     private func fetchPublishingJobs() throws -> [PublishingJob] {
         let request = publishingJobFetchRequest()
         request.sortDescriptors = [
@@ -340,6 +368,10 @@ final class CoreDataFlickRepository: FlickRepository {
         NSFetchRequest<NSManagedObject>(entityName: "CDSlideshowDraft")
     }
 
+    private func automationFetchRequest() -> NSFetchRequest<NSManagedObject> {
+        NSFetchRequest<NSManagedObject>(entityName: "CDContentAutomation")
+    }
+
     private func slideFetchRequest() -> NSFetchRequest<NSManagedObject> {
         NSFetchRequest<NSManagedObject>(entityName: "CDSlide")
     }
@@ -370,6 +402,10 @@ final class CoreDataFlickRepository: FlickRepository {
 
     private func insertSlideObject() -> NSManagedObject {
         NSEntityDescription.insertNewObject(forEntityName: "CDSlide", into: context)
+    }
+
+    private func insertAutomationObject() -> NSManagedObject {
+        NSEntityDescription.insertNewObject(forEntityName: "CDContentAutomation", into: context)
     }
 
     private func insertPublishingJobObject() -> NSManagedObject {
@@ -481,6 +517,24 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(slide.promptVersion, forKey: SlideKey.promptVersion)
         object.setValue(slide.createdAt, forKey: SlideKey.createdAt)
         object.setValue(slide.updatedAt, forKey: SlideKey.updatedAt)
+    }
+
+    private func apply(_ automation: ContentAutomation, to object: NSManagedObject) {
+        object.setValue(automation.id, forKey: AutomationKey.id)
+        object.setValue(automation.name, forKey: AutomationKey.name)
+        object.setValue(automation.templateIDs, asJSONForKey: AutomationKey.templateIDsJSON)
+        object.setValue(automation.productID, forKey: AutomationKey.productID)
+        object.setValue(automation.productImageAssetIDs.map(\.uuidString), asJSONForKey: AutomationKey.productImageAssetIDsJSON)
+        object.setValue(automation.schedule, asJSONForKey: AutomationKey.scheduleJSON)
+        object.setValue(automation.tikTokSettings, asJSONForKey: AutomationKey.tikTokSettingsJSON)
+        object.setValue(automation.targetPlatforms.map(\.rawValue), asJSONForKey: AutomationKey.targetPlatformsJSON)
+        object.setValue(automation.status.rawValue, forKey: AutomationKey.status)
+        object.setValue(automation.nextScheduledAt, forKey: AutomationKey.nextScheduledAt)
+        object.setValue(automation.lastRunAt, forKey: AutomationKey.lastRunAt)
+        object.setValue(automation.lastErrorMessage, forKey: AutomationKey.lastErrorMessage)
+        object.setValue(automation.consecutiveFailureCount, forKey: AutomationKey.consecutiveFailureCount)
+        object.setValue(automation.createdAt, forKey: AutomationKey.createdAt)
+        object.setValue(automation.updatedAt, forKey: AutomationKey.updatedAt)
     }
 
     private func apply(_ job: PublishingJob, to object: NSManagedObject) {
@@ -625,6 +679,24 @@ private enum SlideKey {
     static let text = "text"
     static let textPosition = "textPosition"
     static let textStyleJSON = "textStyleJSON"
+    static let updatedAt = "updatedAt"
+}
+
+private enum AutomationKey {
+    static let consecutiveFailureCount = "consecutiveFailureCount"
+    static let createdAt = "createdAt"
+    static let id = "id"
+    static let lastErrorMessage = "lastErrorMessage"
+    static let lastRunAt = "lastRunAt"
+    static let name = "name"
+    static let nextScheduledAt = "nextScheduledAt"
+    static let productID = "productID"
+    static let productImageAssetIDsJSON = "productImageAssetIDsJSON"
+    static let scheduleJSON = "scheduleJSON"
+    static let status = "status"
+    static let targetPlatformsJSON = "targetPlatformsJSON"
+    static let templateIDsJSON = "templateIDsJSON"
+    static let tikTokSettingsJSON = "tikTokSettingsJSON"
     static let updatedAt = "updatedAt"
 }
 
@@ -845,6 +917,42 @@ private extension Slide {
             promptVersion: max(1, managedObject.integerValue(forKey: SlideKey.promptVersion)),
             createdAt: managedObject.value(forKey: SlideKey.createdAt) as? Date ?? Date(),
             updatedAt: managedObject.value(forKey: SlideKey.updatedAt) as? Date ?? Date()
+        )
+    }
+}
+
+private extension ContentAutomation {
+    init?(managedObject: NSManagedObject) {
+        guard
+            let id = managedObject.value(forKey: AutomationKey.id) as? UUID,
+            let schedule = managedObject.decodedJSON(AutomationSchedule.self, forKey: AutomationKey.scheduleJSON),
+            let tikTokSettings = managedObject.decodedJSON(DraftTikTokSettings.self, forKey: AutomationKey.tikTokSettingsJSON)
+        else {
+            return nil
+        }
+
+        let templateIDs = managedObject.decodedJSON([String].self, forKey: AutomationKey.templateIDsJSON) ?? []
+        let productImageAssetIDStrings = managedObject.decodedJSON([String].self, forKey: AutomationKey.productImageAssetIDsJSON) ?? []
+        let targetPlatformRawValues = managedObject.decodedJSON([String].self, forKey: AutomationKey.targetPlatformsJSON) ?? []
+        let targetPlatforms = targetPlatformRawValues.compactMap(SocialPlatform.init(rawValue:))
+        let statusRawValue = managedObject.value(forKey: AutomationKey.status) as? String
+
+        self.init(
+            id: id,
+            name: managedObject.value(forKey: AutomationKey.name) as? String ?? "",
+            templateIDs: templateIDs,
+            productID: managedObject.value(forKey: AutomationKey.productID) as? UUID,
+            productImageAssetIDs: productImageAssetIDStrings.compactMap(UUID.init(uuidString:)),
+            schedule: schedule,
+            tikTokSettings: tikTokSettings,
+            targetPlatforms: targetPlatforms.isEmpty ? [.tiktok] : targetPlatforms,
+            status: statusRawValue.flatMap(ContentAutomationStatus.init(rawValue:)) ?? .active,
+            nextScheduledAt: managedObject.value(forKey: AutomationKey.nextScheduledAt) as? Date,
+            lastRunAt: managedObject.value(forKey: AutomationKey.lastRunAt) as? Date,
+            lastErrorMessage: managedObject.value(forKey: AutomationKey.lastErrorMessage) as? String,
+            consecutiveFailureCount: managedObject.integerValue(forKey: AutomationKey.consecutiveFailureCount),
+            createdAt: managedObject.value(forKey: AutomationKey.createdAt) as? Date ?? Date(),
+            updatedAt: managedObject.value(forKey: AutomationKey.updatedAt) as? Date ?? Date()
         )
     }
 }

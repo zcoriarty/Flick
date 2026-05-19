@@ -52,6 +52,7 @@ final class FlickAppModel {
     var isPlanningSlideshow = false
     var isGeneratingSlideshowImages = false
     var isPublishingSlideshow = false
+    var isProcessingAutomations = false
     var manualPublishProgress: ManualPublishProgress?
 
     @ObservationIgnored private let repository: FlickRepository
@@ -118,6 +119,10 @@ final class FlickAppModel {
 
     var createDrafts: [SlideshowDraft] {
         overview.drafts.filter(\.isAvailableInCreateDrafts)
+    }
+
+    var activeAutomations: [ContentAutomation] {
+        overview.automations.filter { $0.status == .active }
     }
 
     var activeCreateDraft: SlideshowDraft? {
@@ -517,10 +522,98 @@ final class FlickAppModel {
 
     func persistCreateState() async {
         do {
+            overview.refreshDerivedState()
             try await repository.saveOverview(overview)
             lastErrorMessage = nil
         } catch {
             lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    func upsertAutomation(_ automation: ContentAutomation) async {
+        var automation = automation
+        let now = Date()
+        automation.updatedAt = now
+        if automation.nextScheduledAt == nil {
+            automation.nextScheduledAt = automation.nextOccurrence(after: now)
+        }
+
+        let previousOverview = overview
+        if let existingIndex = overview.automations.firstIndex(where: { $0.id == automation.id }) {
+            automation.createdAt = overview.automations[existingIndex].createdAt
+            overview.automations[existingIndex] = automation
+        } else {
+            overview.automations.insert(automation, at: 0)
+        }
+        overview.refreshDerivedState()
+
+        do {
+            try await repository.saveOverview(overview)
+            createWorkflowMessage = "Automation scheduled."
+            lastErrorMessage = nil
+        } catch {
+            overview = previousOverview
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    func deleteAutomation(id automationID: UUID) async {
+        guard overview.automations.contains(where: { $0.id == automationID }) else { return }
+
+        let previousOverview = overview
+        overview.automations.removeAll { $0.id == automationID }
+        overview.refreshDerivedState()
+
+        do {
+            try await repository.saveOverview(overview)
+            lastErrorMessage = nil
+        } catch {
+            overview = previousOverview
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    func processDueAutomations(now: Date = Date()) async {
+        guard !isProcessingAutomations else { return }
+        isProcessingAutomations = true
+        defer {
+            isProcessingAutomations = false
+        }
+
+        let dueAutomationIDs = overview.automations.compactMap { automation -> UUID? in
+            guard automation.status == .active else { return nil }
+            guard let nextScheduledAt = automation.nextScheduledAt else { return nil }
+            return nextScheduledAt <= now ? automation.id : nil
+        }
+
+        for automationID in dueAutomationIDs {
+            await processDueAutomation(id: automationID, now: now)
+        }
+    }
+
+    private func processDueAutomation(id automationID: UUID, now: Date) async {
+        guard let automation = overview.automations.first(where: { $0.id == automationID }) else { return }
+        let scheduledAt = automation.nextScheduledAt ?? now
+
+        do {
+            try await publishAutomationInstance(automation, scheduledAt: scheduledAt)
+            markAutomation(automationID, succeededAt: now)
+        } catch {
+            markAutomation(automationID, failedAt: now, error: error)
+        }
+
+        do {
+            overview.refreshDerivedState()
+            try await repository.saveOverview(overview)
+        } catch {
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    func runAutomationWorkerLoop(interval: Duration = .seconds(60)) async {
+        while !Task.isCancelled {
+            await processDueAutomations()
+            try? await Task.sleep(for: interval)
         }
     }
 
@@ -544,47 +637,14 @@ final class FlickAppModel {
         }
 
         do {
-            let openAIClient = makeOpenAIClient()
-            let styleGuide = try await TemplateAnalysisService(client: openAIClient).createStyleGuide(from: template)
-            createWorkflowMessage = "Planning slideshow..."
-            let plan = try await SlideshowPlannerService(client: openAIClient).createPlan(
+            let result = try await createAISlideshowResult(
                 brief: planningBrief,
                 template: template,
-                styleGuide: styleGuide,
                 productImage: productImage
             )
-
-            let expectedSlideCount = expectedPlanSlideCount(template: template, productImage: productImage)
-            guard plan.slides.count == expectedSlideCount else {
-                throw SlideshowCreationError.planSlideCountMismatch(expected: expectedSlideCount, actual: plan.slides.count)
-            }
-            try validateProductImagePlacement(in: plan, productImage: productImage)
-
-            let now = Date()
-            let creativeTemplate = CreativeTemplate(
-                id: UUID(),
-                name: "\(styleGuide.styleName.isEmpty ? template.niche : styleGuide.styleName) - @\(template.profile)",
-                description: "AI style guide from @\(template.profile)'s \(template.niche.lowercased()) template.",
-                platform: .tiktok,
-                slideCount: template.slideCount,
-                styleJSON: styleGuide.encodedJSONString(),
-                defaultTextRules: "Generated backgrounds must contain no readable text. Flick renders all text overlays.",
-                tags: [],
-                createdAt: now,
-                updatedAt: now
-            )
-
-            let draft = makeDraft(
-                from: plan,
-                brief: planningBrief,
-                templateID: creativeTemplate.id,
-                productImage: productImage,
-                now: now
-            )
-
-            overview.templates.insert(creativeTemplate, at: 0)
-            overview.drafts.insert(draft, at: 0)
-            activeCreateDraftID = draft.id
+            overview.templates.insert(result.creativeTemplate, at: 0)
+            overview.drafts.insert(result.draft, at: 0)
+            activeCreateDraftID = result.draft.id
             try await repository.saveOverview(overview)
             createWorkflowMessage = "Plan ready. Generate slide images when the text and prompts look right."
             lastErrorMessage = nil
@@ -1017,6 +1077,11 @@ private extension Array where Element == CredentialStatus {
     }
 }
 
+private struct AISlideshowCreationResult {
+    var creativeTemplate: CreativeTemplate
+    var draft: SlideshowDraft
+}
+
 enum SlideshowCreationError: LocalizedError {
     case missingDraft
     case missingStyleGuide
@@ -1051,9 +1116,212 @@ enum ManualPublishError: LocalizedError {
     }
 }
 
+enum AutomationRunError: LocalizedError {
+    case notReady
+    case missingTemplate
+    case missingProductImage
+    case generationFailed(String)
+    case publishFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .notReady:
+            return "Complete the automation templates, product images, cadence, and TikTok settings before it can publish."
+        case .missingTemplate:
+            return "One of the automation templates is no longer available."
+        case .missingProductImage:
+            return "One of the automation product images is no longer available."
+        case let .generationFailed(message):
+            return message.isEmpty ? "Automated slide image generation failed." : message
+        case let .publishFailed(message):
+            return message.isEmpty ? "Automated publishing failed." : message
+        }
+    }
+}
+
 private extension FlickAppModel {
     func makeOpenAIClient() -> OpenAIClient {
         openAIClientFactory(credentialVault.loadValues())
+    }
+
+    func createAISlideshowResult(
+        brief: String,
+        template: ExampleSlideshowTemplate,
+        productImage: SlideshowProductImage?
+    ) async throws -> AISlideshowCreationResult {
+        let openAIClient = makeOpenAIClient()
+        let styleGuide = try await TemplateAnalysisService(client: openAIClient).createStyleGuide(from: template)
+        createWorkflowMessage = "Planning slideshow..."
+        let plan = try await SlideshowPlannerService(client: openAIClient).createPlan(
+            brief: brief,
+            template: template,
+            styleGuide: styleGuide,
+            productImage: productImage
+        )
+
+        let expectedSlideCount = expectedPlanSlideCount(template: template, productImage: productImage)
+        guard plan.slides.count == expectedSlideCount else {
+            throw SlideshowCreationError.planSlideCountMismatch(expected: expectedSlideCount, actual: plan.slides.count)
+        }
+        try validateProductImagePlacement(in: plan, productImage: productImage)
+
+        let now = Date()
+        let creativeTemplate = CreativeTemplate(
+            id: UUID(),
+            name: "\(styleGuide.styleName.isEmpty ? template.niche : styleGuide.styleName) - @\(template.profile)",
+            description: "AI style guide from @\(template.profile)'s \(template.niche.lowercased()) template.",
+            platform: .tiktok,
+            slideCount: template.slideCount,
+            styleJSON: styleGuide.encodedJSONString(),
+            defaultTextRules: "Generated backgrounds must contain no readable text. Flick renders all text overlays.",
+            tags: [],
+            createdAt: now,
+            updatedAt: now
+        )
+
+        let draft = makeDraft(
+            from: plan,
+            brief: brief,
+            templateID: creativeTemplate.id,
+            productImage: productImage,
+            now: now
+        )
+
+        return AISlideshowCreationResult(creativeTemplate: creativeTemplate, draft: draft)
+    }
+
+    func publishAutomationInstance(
+        _ automation: ContentAutomation,
+        scheduledAt: Date
+    ) async throws {
+        guard automation.isReadyToSchedule else {
+            throw AutomationRunError.notReady
+        }
+
+        guard publishingTikTokAccount() != nil else {
+            throw ManualPublishError.missingTikTokAccount
+        }
+
+        let template = try automationTemplate(for: automation, scheduledAt: scheduledAt)
+        let productImage = try automationProductImage(for: automation, scheduledAt: scheduledAt)
+        let planningBrief = templateAnalysisBrief(for: template)
+
+        reloadCredentialConfiguration()
+        isPlanningSlideshow = true
+        createWorkflowMessage = "Creating automated slideshow..."
+        lastErrorMessage = nil
+
+        let result: AISlideshowCreationResult
+        do {
+            result = try await createAISlideshowResult(
+                brief: planningBrief,
+                template: template,
+                productImage: productImage
+            )
+        } catch {
+            isPlanningSlideshow = false
+            throw error
+        }
+        isPlanningSlideshow = false
+
+        overview.templates.insert(result.creativeTemplate, at: 0)
+        overview.drafts.insert(result.draft, at: 0)
+        try await repository.saveOverview(overview)
+
+        await generateMissingSlideImages(for: result.draft.id)
+        guard let generatedDraft = overview.drafts.first(where: { $0.id == result.draft.id }) else {
+            throw SlideshowCreationError.missingDraft
+        }
+
+        let assetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
+        guard generatedDraft.hasCompletedCreateImages(assetsByID: assetsByID) else {
+            throw AutomationRunError.generationFailed(lastErrorMessage ?? "")
+        }
+
+        guard let settings = automation.tikTokSettings.automatedPublishSettings(description: generatedDraft.publishDescription) else {
+            throw AutomationRunError.notReady
+        }
+
+        let didPublish = await publishManualSlideshow(draftID: generatedDraft.id, settings: settings)
+        guard didPublish else {
+            throw AutomationRunError.publishFailed(lastErrorMessage ?? "")
+        }
+    }
+
+    func automationTemplate(
+        for automation: ContentAutomation,
+        scheduledAt: Date
+    ) throws -> ExampleSlideshowTemplate {
+        let templates = try ExampleSlideshowLibrary.load()
+            .flatMap(\.templates)
+            .filter(\.hasDisplayablePreview)
+        let templatesByID = Dictionary(uniqueKeysWithValues: templates.map { ($0.id, $0) })
+        let selectedTemplates = automation.templateIDs.compactMap { templatesByID[$0] }
+        guard !selectedTemplates.isEmpty else {
+            throw AutomationRunError.missingTemplate
+        }
+
+        let index = deterministicIndex(
+            seed: "\(automation.id.uuidString)-template-\(scheduledAt.timeIntervalSince1970)",
+            count: selectedTemplates.count
+        )
+        return selectedTemplates[index]
+    }
+
+    func automationProductImage(
+        for automation: ContentAutomation,
+        scheduledAt: Date
+    ) throws -> SlideshowProductImage {
+        guard
+            let productID = automation.productID,
+            let product = overview.products.first(where: { $0.id == productID })
+        else {
+            throw AutomationRunError.missingProductImage
+        }
+
+        let selectedAssetIDs = Set(automation.productImageAssetIDs)
+        let assets = overview.assets.filter { asset in
+            selectedAssetIDs.contains(asset.id)
+                && asset.productIDs.contains(productID)
+                && asset.mediaType == .image
+                && asset.hasAvailableMediaLocation
+        }
+        guard !assets.isEmpty else {
+            throw AutomationRunError.missingProductImage
+        }
+
+        let index = deterministicIndex(
+            seed: "\(automation.id.uuidString)-product-image-\(scheduledAt.timeIntervalSince1970)",
+            count: assets.count
+        )
+        return SlideshowProductImage(product: product, asset: assets[index])
+    }
+
+    func markAutomation(_ automationID: UUID, succeededAt date: Date) {
+        guard let index = overview.automations.firstIndex(where: { $0.id == automationID }) else { return }
+        overview.automations[index].lastRunAt = date
+        overview.automations[index].lastErrorMessage = nil
+        overview.automations[index].consecutiveFailureCount = 0
+        overview.automations[index].nextScheduledAt = overview.automations[index].nextOccurrence(after: date)
+        overview.automations[index].updatedAt = date
+    }
+
+    func markAutomation(_ automationID: UUID, failedAt date: Date, error: Error) {
+        guard let index = overview.automations.firstIndex(where: { $0.id == automationID }) else { return }
+        overview.automations[index].lastErrorMessage = error.localizedDescription
+        overview.automations[index].consecutiveFailureCount += 1
+        overview.automations[index].nextScheduledAt = overview.automations[index].nextOccurrence(after: date)
+        overview.automations[index].updatedAt = date
+    }
+
+    func deterministicIndex(seed: String, count: Int) -> Int {
+        guard count > 1 else { return 0 }
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in seed.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        return Int(hash % UInt64(count))
     }
 
     func expectedPlanSlideCount(

@@ -57,6 +57,20 @@ struct DashboardView: View {
                 value: publishedTikTokPostCount.formatted()
             )
             FlickSettingsValueRow(
+                title: "Active automations",
+                systemImage: "calendar.badge.clock",
+                iconColor: .teal,
+                value: appModel.overview.dashboard.activeAutomationCount.formatted()
+            )
+            if let nextAutomationPostAt = appModel.overview.dashboard.nextAutomationPostAt {
+                FlickSettingsValueRow(
+                    title: "Next automated post",
+                    systemImage: "clock",
+                    iconColor: .orange,
+                    value: RelativeDateTimeFormatter.dashboardShort.localizedString(for: nextAutomationPostAt, relativeTo: Date())
+                )
+            }
+            FlickSettingsValueRow(
                 title: "Failed publishes",
                 systemImage: "exclamationmark.triangle",
                 iconColor: .red,
@@ -156,5 +170,13 @@ struct DashboardView: View {
 
     private func openAccounts() {
         appModel.selectedSection = .accounts
+    }
+}
+
+private extension RelativeDateTimeFormatter {
+    static var dashboardShort: RelativeDateTimeFormatter {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter
     }
 }

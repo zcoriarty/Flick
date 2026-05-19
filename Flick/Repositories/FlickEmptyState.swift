@@ -11,6 +11,8 @@ enum FlickEmptyState {
 
         let dashboard = DashboardSnapshot(
             failedJobCount: 0,
+            activeAutomationCount: 0,
+            nextAutomationPostAt: nil,
             connectedAccounts: [],
             syncHealth: SyncHealth(
                 iCloudAvailable: true
@@ -24,6 +26,7 @@ enum FlickEmptyState {
             assets: [],
             drafts: [],
             templates: [],
+            automations: [],
             publishingJobs: [],
             publishedPosts: [],
             dashboard: dashboard

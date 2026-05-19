@@ -1,26 +1,26 @@
 //
-//  CreateProductImageSection.swift
+//  CreateAutomationProductImageSection.swift
 //  Flick
 //
 
 import SwiftUI
 
-struct CreateProductImageSection: View {
+struct CreateAutomationProductImageSection: View {
     var products: [FlickProduct]
     var productImageAssets: [MediaAsset]
     @Binding var selectedProductID: UUID?
-    @Binding var selectedProductImageAssetID: UUID?
+    @Binding var selectedProductImageAssetIDs: Set<UUID>
 
     private let gridColumns = [
         GridItem(.adaptive(minimum: 76), spacing: 10, alignment: .top)
     ]
 
     var body: some View {
-        Section("Product") {
+        Section("Product Images") {
             if products.isEmpty {
                 CreateMessageRow(
                     title: "No products",
-                    message: "Create a product before attaching product media to this slideshow."
+                    message: "Create a product before configuring automated posts."
                 )
             } else {
                 productMenu
@@ -29,35 +29,33 @@ struct CreateProductImageSection: View {
                     if selectedProductImageAssets.isEmpty {
                         CreateMessageRow(
                             title: "No product images",
-                            message: "Add an image to \(selectedProduct.name) before analyzing with this product."
+                            message: "Add images to \(selectedProduct.name) before publishing an automation."
                         )
                     } else {
-                        manualImageGrid
+                        imageGrid
                     }
+                } else {
+                    CreateMessageRow(
+                        title: "No product selected",
+                        message: "Select a product and choose the image set Flick can randomize for each post."
+                    )
                 }
             }
         }
         .onChange(of: selectedProductID) { _, _ in
-            selectedProductImageAssetID = nil
+            selectedProductImageAssetIDs.removeAll()
         }
         .onChange(of: productImageAssets) { _, _ in
-            reconcileSelectedProductImage()
+            reconcileSelectedProductImages()
         }
     }
 
     private var productMenu: some View {
         Menu {
-            Button {
-                selectedProductID = nil
-                selectedProductImageAssetID = nil
-            } label: {
-                    CreateProductMenuOptionLabel(title: "None", isSelected: selectedProductID == nil)
-            }
-
             ForEach(products) { product in
                 Button {
                     selectedProductID = product.id
-                    selectedProductImageAssetID = nil
+                    selectedProductImageAssetIDs.removeAll()
                 } label: {
                     CreateProductMenuOptionLabel(title: product.name, isSelected: selectedProductID == product.id)
                 }
@@ -69,7 +67,7 @@ struct CreateProductImageSection: View {
                 iconColor: .blue
             ) {
                 HStack(spacing: 6) {
-                    Text(selectedProduct?.name ?? "None")
+                    Text(selectedProduct?.name ?? "Select")
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
@@ -82,15 +80,15 @@ struct CreateProductImageSection: View {
         .buttonStyle(.plain)
     }
 
-    private var manualImageGrid: some View {
+    private var imageGrid: some View {
         LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 10) {
             ForEach(selectedProductImageAssets) { asset in
                 Button {
-                    selectedProductImageAssetID = asset.id
+                    toggle(asset)
                 } label: {
                     ProductImageChoice(
                         asset: asset,
-                        isSelected: selectedProductImageAssetID == asset.id
+                        isSelected: selectedProductImageAssetIDs.contains(asset.id)
                     )
                 }
                 .buttonStyle(.plain)
@@ -111,49 +109,16 @@ struct CreateProductImageSection: View {
         }
     }
 
-    private func reconcileSelectedProductImage() {
-        guard let selectedProductImageAssetID else { return }
-        guard selectedProductImageAssets.contains(where: { $0.id == selectedProductImageAssetID }) else {
-            self.selectedProductImageAssetID = nil
-            return
-        }
-    }
-}
-
-struct ProductImageChoice: View {
-    var asset: MediaAsset
-    var isSelected: Bool
-
-    var body: some View {
-        VerticalMediaFrame(fileURL: asset.localFileURL, remoteURL: asset.publicURL, cornerRadius: 8, maxPixelSize: 720)
-            .frame(width: 76, height: 136)
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.18), lineWidth: isSelected ? 3 : 1)
-            }
-            .overlay(alignment: .topTrailing) {
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.title3)
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, Color.accentColor)
-                        .padding(5)
-                }
-            }
-            .accessibilityLabel("Product image")
-            .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-    }
-}
-
-struct CreateProductMenuOptionLabel: View {
-    var title: String
-    var isSelected: Bool
-
-    var body: some View {
-        if isSelected {
-            Label(title, systemImage: "checkmark")
+    private func toggle(_ asset: MediaAsset) {
+        if selectedProductImageAssetIDs.contains(asset.id) {
+            selectedProductImageAssetIDs.remove(asset.id)
         } else {
-            Text(title)
+            selectedProductImageAssetIDs.insert(asset.id)
         }
+    }
+
+    private func reconcileSelectedProductImages() {
+        let availableIDs = Set(selectedProductImageAssets.map(\.id))
+        selectedProductImageAssetIDs = selectedProductImageAssetIDs.intersection(availableIDs)
     }
 }

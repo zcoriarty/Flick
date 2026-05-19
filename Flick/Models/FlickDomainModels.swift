@@ -619,6 +619,8 @@ struct APIHealthStatus: Identifiable, Codable, Hashable {
 
 struct DashboardSnapshot: Codable, Hashable {
     var failedJobCount: Int
+    var activeAutomationCount: Int
+    var nextAutomationPostAt: Date?
     var connectedAccounts: [ConnectedAccount]
     var syncHealth: SyncHealth
     var apiHealth: [APIHealthStatus]
@@ -630,6 +632,7 @@ struct FlickOverviewState: Codable, Hashable {
     var assets: [MediaAsset]
     var drafts: [SlideshowDraft]
     var templates: [CreativeTemplate]
+    var automations: [ContentAutomation]
     var publishingJobs: [PublishingJob]
     var publishedPosts: [PublishedPost]
     var dashboard: DashboardSnapshot
@@ -645,5 +648,10 @@ private extension Array where Element: Hashable {
 extension FlickOverviewState {
     mutating func refreshDerivedState() {
         dashboard.failedJobCount = publishingJobs.filter { $0.status == .failed }.count
+        dashboard.activeAutomationCount = automations.filter { $0.status == .active }.count
+        dashboard.nextAutomationPostAt = automations
+            .filter { $0.status == .active }
+            .compactMap(\.nextScheduledAt)
+            .min()
     }
 }

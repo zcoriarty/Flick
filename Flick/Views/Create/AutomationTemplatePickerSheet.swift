@@ -1,15 +1,15 @@
 //
-//  TemplatePickerSheet.swift
+//  AutomationTemplatePickerSheet.swift
 //  Flick
 //
 
 import SwiftUI
 
-struct TemplatePickerSheet: View {
+struct AutomationTemplatePickerSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var collections: [ExampleSlideshowCollection]
-    @Binding var selectedTemplate: ExampleSlideshowTemplate?
+    @Binding var selectedTemplateIDs: Set<String>
     @State private var searchText = ""
 
     private var filteredCollections: [ExampleSlideshowCollection] {
@@ -46,19 +46,18 @@ struct TemplatePickerSheet: View {
                 if filteredCollections.isEmpty {
                     CreateMessageRow(
                         title: "No matching templates",
-                        message: "Adjust the search text to find a template."
+                        message: "Adjust the search text to find templates."
                     )
                 } else {
                     ForEach(filteredCollections) { collection in
                         Section(collection.title) {
                             ForEach(collection.templates) { template in
                                 Button {
-                                    selectedTemplate = template
-                                    dismiss()
+                                    toggle(template)
                                 } label: {
                                     TemplatePickerRow(
                                         template: template,
-                                        isSelected: selectedTemplate?.id == template.id
+                                        isSelected: selectedTemplateIDs.contains(template.id)
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -69,10 +68,10 @@ struct TemplatePickerSheet: View {
             }
             .flickSettingsListStyle()
             .searchable(text: $searchText, prompt: "Search templates")
-            .flickToolbarTitle("Select Template")
+            .flickToolbarTitle("Select Templates")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
                         dismiss()
                     }
                 }
@@ -81,40 +80,12 @@ struct TemplatePickerSheet: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
     }
-}
 
-struct TemplatePickerRow: View {
-    var template: ExampleSlideshowTemplate
-    var isSelected: Bool
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VerticalMediaFrame(fileURL: template.displayablePreviewSlide?.localURL, cornerRadius: 8)
-                .frame(width: 48, height: 86)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(template.subtitle)
-                    .foregroundStyle(.primary)
-                    .font(.body.weight(.semibold))
-                    .lineLimit(2)
-                Text("@\(template.profile)")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Text("\(template.niche) - \(template.slideCount) slides")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 8)
-
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                .font(.title3)
-                .foregroundStyle(isSelected ? FlickStyle.appTint : Color.secondary.opacity(0.6))
+    private func toggle(_ template: ExampleSlideshowTemplate) {
+        if selectedTemplateIDs.contains(template.id) {
+            selectedTemplateIDs.remove(template.id)
+        } else {
+            selectedTemplateIDs.insert(template.id)
         }
-        .padding(.vertical, 4)
-        .contentShape(.rect)
-        .accessibilityElement(children: .combine)
     }
 }

@@ -268,6 +268,97 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(loadedDraft.selectedSongs, selectedSongs)
     }
 
+    func testAutomationScheduleFindsNextFixedOccurrence() throws {
+        let automationID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let calendar = Calendar(identifier: .gregorian)
+        let schedule = AutomationSchedule(
+            weekdays: [.monday, .wednesday],
+            fixedTimes: [
+                AutomationTimeOfDay(hour: 9),
+                AutomationTimeOfDay(hour: 15, minute: 30)
+            ]
+        )
+        let reference = try XCTUnwrap(DateComponents(calendar: calendar, year: 2026, month: 5, day: 18, hour: 10).date)
+        let expected = try XCTUnwrap(DateComponents(calendar: calendar, year: 2026, month: 5, day: 18, hour: 15, minute: 30).date)
+
+        XCTAssertEqual(schedule.nextOccurrence(after: reference, automationID: automationID, calendar: calendar), expected)
+    }
+
+    func testAutomationDefaultNameUsesSelectedFields() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let product = makeProduct(name: "Flick Pro", now: now)
+        let template = makeExampleSlideshowTemplate(slideCount: 2)
+        let automation = ContentAutomation(
+            name: "",
+            templateIDs: [template.id],
+            productID: product.id,
+            productImageAssetIDs: [UUID()],
+            schedule: AutomationSchedule(
+                weekdays: [.monday, .tuesday, .wednesday, .thursday, .friday],
+                fixedTimes: [AutomationTimeOfDay(hour: 12)]
+            ),
+            tikTokSettings: DraftTikTokSettings(title: "Try Flick", privacyLevel: .publicToEveryone),
+            createdAt: now,
+            updatedAt: now
+        )
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        let expectedDate = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: now) ?? now
+        let expectedTime = formatter.string(from: expectedDate)
+
+        XCTAssertEqual(
+            automation.defaultName(templates: [template], products: [product]),
+            "Flick Pro - Productivity - Weekdays - 1 post - \(expectedTime)"
+        )
+    }
+
+    func testCoreDataRoundTripsAutomations() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let persistenceController = PersistenceController(inMemory: true)
+        let repository = CoreDataFlickRepository(
+            context: persistenceController.container.viewContext,
+            cloudAvailability: { false }
+        )
+        let product = makeProduct(now: now)
+        let productImageID = UUID()
+        let nextScheduledAt = Date(timeInterval: 3_600, since: now)
+        let automation = ContentAutomation(
+            name: "Weekday launches",
+            templateIDs: ["template-a", "template-b"],
+            productID: product.id,
+            productImageAssetIDs: [productImageID],
+            schedule: AutomationSchedule(
+                weekdays: [.monday, .wednesday, .friday],
+                fixedTimes: [
+                    AutomationTimeOfDay(hour: 9),
+                    AutomationTimeOfDay(hour: 13),
+                    AutomationTimeOfDay(hour: 17)
+                ]
+            ),
+            tikTokSettings: DraftTikTokSettings(
+                title: "Try Flick",
+                postAsDraft: false,
+                privacyLevel: .publicToEveryone,
+                allowComment: true
+            ),
+            nextScheduledAt: nextScheduledAt,
+            createdAt: now,
+            updatedAt: now
+        )
+        var state = FlickEmptyState.make()
+        state.products = [product]
+        state.automations = [automation]
+
+        try await repository.saveOverview(state)
+        let loaded = try await repository.loadOverview()
+        let loadedAutomation = try XCTUnwrap(loaded.automations.first)
+
+        XCTAssertEqual(loadedAutomation, automation)
+        XCTAssertEqual(loaded.dashboard.activeAutomationCount, 1)
+        XCTAssertEqual(loaded.dashboard.nextAutomationPostAt, nextScheduledAt)
+    }
+
     func testCoreDataRoundTripsPublishingJobsAndPublishedPosts() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let persistenceController = PersistenceController(inMemory: true)
