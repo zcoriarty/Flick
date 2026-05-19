@@ -91,15 +91,24 @@ enum LocalAssetImageLoader {
         return cache
     }()
 
+    private static let failedImageCache: NSCache<NSString, NSNumber> = {
+        let cache = NSCache<NSString, NSNumber>()
+        cache.countLimit = 300
+        return cache
+    }()
+
     static func image(at fileURL: URL, maxPixelSize: Int = 1_920) -> FlickPlatformImage? {
         let normalizedMaxPixelSize = max(1, maxPixelSize)
-        let cacheKey = "\(fileURL.path)#\(normalizedMaxPixelSize)" as NSString
+        let cacheKey = cacheKey(for: fileURL, maxPixelSize: normalizedMaxPixelSize)
         if let cachedImage = imageCache.object(forKey: cacheKey) {
             return cachedImage
         }
+        if failedImageCache.object(forKey: cacheKey) != nil {
+            return nil
+        }
 
-        guard let image = stillImage(at: fileURL, maxPixelSize: normalizedMaxPixelSize)
-            ?? videoFrame(at: fileURL, maxPixelSize: normalizedMaxPixelSize) else {
+        guard let image = loadImage(at: fileURL, maxPixelSize: normalizedMaxPixelSize) else {
+            failedImageCache.setObject(NSNumber(value: true), forKey: cacheKey)
             return nil
         }
 
@@ -107,13 +116,35 @@ enum LocalAssetImageLoader {
         return image
     }
 
-    private static func stillImage(at fileURL: URL, maxPixelSize: Int) -> FlickPlatformImage? {
+    private static func loadImage(at fileURL: URL, maxPixelSize: Int) -> FlickPlatformImage? {
+        switch stillImage(at: fileURL, maxPixelSize: maxPixelSize) {
+        case let .image(image):
+            return image
+        case .unsupportedImage:
+            return nil
+        case .notStillImage:
+            return videoFrame(at: fileURL, maxPixelSize: maxPixelSize)
+        }
+    }
+
+    private static func cacheKey(for fileURL: URL, maxPixelSize: Int) -> NSString {
+        let values = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        let fileSize = values?.fileSize ?? -1
+        let modificationDate = values?.contentModificationDate?.timeIntervalSince1970 ?? -1
+        return "\(fileURL.path)#\(maxPixelSize)#\(fileSize)#\(modificationDate)" as NSString
+    }
+
+    private static func stillImage(at fileURL: URL, maxPixelSize: Int) -> StillImageLoadResult {
+        guard !hasUnsupportedStillImageContainer(at: fileURL) else {
+            return .unsupportedImage
+        }
+
         let sourceOptions = [
             kCGImageSourceShouldCache: false
         ] as CFDictionary
 
         guard let imageSource = CGImageSourceCreateWithURL(fileURL as CFURL, sourceOptions) else {
-            return nil
+            return .notStillImage
         }
 
         let thumbnailOptions = [
@@ -124,14 +155,36 @@ enum LocalAssetImageLoader {
         ] as CFDictionary
 
         guard let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, thumbnailOptions) else {
-            return nil
+            return .unsupportedImage
         }
 
         #if canImport(UIKit)
-        return UIImage(cgImage: cgImage)
+        return .image(UIImage(cgImage: cgImage))
         #elseif canImport(AppKit)
-        return NSImage(cgImage: cgImage, size: CGSize(width: cgImage.width, height: cgImage.height))
+        return .image(NSImage(cgImage: cgImage, size: CGSize(width: cgImage.width, height: cgImage.height)))
         #endif
+    }
+
+    private static func hasUnsupportedStillImageContainer(at fileURL: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: fileURL) else {
+            return false
+        }
+        defer { try? handle.close() }
+
+        guard let header = try? handle.read(upToCount: 12) else {
+            return false
+        }
+
+        let bytes = [UInt8](header)
+        guard bytes.count >= 12 else { return false }
+        let ftyp = Array("ftyp".utf8)
+        guard Array(bytes[4..<8]) == ftyp else { return false }
+
+        // Some bundled sample slides are VVC still-image containers with .jpg names.
+        // ImageIO identifies them as HEIF but logs before returning nil for thumbnails.
+        let unsupportedBrands: Set<String> = ["vvic"]
+        let majorBrand = String(decoding: bytes[8..<12], as: UTF8.self)
+        return unsupportedBrands.contains(majorBrand)
     }
 
     private static func videoFrame(at fileURL: URL, maxPixelSize: Int) -> FlickPlatformImage? {
@@ -154,6 +207,12 @@ enum LocalAssetImageLoader {
 }
 
 #if canImport(UIKit) || canImport(AppKit)
+private enum StillImageLoadResult {
+    case image(FlickPlatformImage)
+    case notStillImage
+    case unsupportedImage
+}
+
 private extension FlickPlatformImage {
     var flickEstimatedCacheCost: Int {
         #if canImport(UIKit)
