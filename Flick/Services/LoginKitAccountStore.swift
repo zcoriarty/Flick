@@ -42,6 +42,11 @@ struct LoginKitAccountStore {
         }
         try saveAccounts(accounts)
     }
+
+    func deleteAccount(id accountID: UUID) throws {
+        let accounts = loadAccounts().filter { $0.id != accountID }
+        try saveAccounts(accounts)
+    }
 }
 
 struct LoginKitTokenBundle: Codable, Hashable {
@@ -68,6 +73,10 @@ struct LoginKitTokenStore {
     func tokenBundle(for account: ConnectedAccount) throws -> LoginKitTokenBundle? {
         guard let data = try store.data(for: key(for: account)) else { return nil }
         return try JSONDecoder.flick.decode(LoginKitTokenBundle.self, from: data)
+    }
+
+    func deleteTokenBundle(for account: ConnectedAccount) throws {
+        try store.delete(key(for: account))
     }
 
     private func key(for account: ConnectedAccount) -> String {

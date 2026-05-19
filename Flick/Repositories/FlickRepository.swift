@@ -9,23 +9,11 @@ import Foundation
 protocol FlickRepository {
     func loadOverview() async throws -> FlickOverviewState
     func saveOverview(_ state: FlickOverviewState) async throws
+    func upsertConnectedAccount(_ account: ConnectedAccount) async throws
+    func deleteConnectedAccount(id: UUID) async throws
     func upsertProduct(_ product: FlickProduct) async throws
     func upsertAsset(_ asset: MediaAsset) async throws
     func deleteAsset(id: UUID) async throws
-}
-
-enum FlickRepositoryError: LocalizedError {
-    case transitionNotAllowed(from: PublishingJobStatus, to: PublishingJobStatus)
-    case missingJob(UUID)
-
-    var errorDescription: String? {
-        switch self {
-        case let .transitionNotAllowed(from, to):
-            "Cannot move a publishing job from \(from.rawValue) to \(to.rawValue)."
-        case let .missingJob(id):
-            "No publishing job exists for \(id.uuidString)."
-        }
-    }
 }
 
 struct EmptyFlickRepository: FlickRepository {
@@ -35,6 +23,14 @@ struct EmptyFlickRepository: FlickRepository {
 
     func saveOverview(_ state: FlickOverviewState) async throws {
         _ = state
+    }
+
+    func upsertConnectedAccount(_ account: ConnectedAccount) async throws {
+        _ = account
+    }
+
+    func deleteConnectedAccount(id: UUID) async throws {
+        _ = id
     }
 
     func upsertProduct(_ product: FlickProduct) async throws {

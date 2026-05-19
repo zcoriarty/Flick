@@ -410,7 +410,7 @@ private struct ProductMediaCard: View {
 
     var body: some View {
         Button(action: action) {
-            VerticalMediaFrame(fileURL: asset.localFileURL, cornerRadius: 0)
+            VerticalMediaFrame(fileURL: asset.localFileURL, remoteURL: asset.publicURL, cornerRadius: 0)
                 .overlay {
                     if asset.mediaType == .video {
                         Image(systemName: "play.circle.fill")
@@ -664,7 +664,7 @@ private struct ProductMediaDetailPreview: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            VerticalMediaFrame(fileURL: asset.localFileURL, cornerRadius: 18, maxPixelSize: 1_920)
+            VerticalMediaFrame(fileURL: asset.localFileURL, remoteURL: asset.publicURL, cornerRadius: 18, maxPixelSize: 1_920)
                 .frame(maxWidth: 360)
                 .overlay {
                     if asset.mediaType == .video {

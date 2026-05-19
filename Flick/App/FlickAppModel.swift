@@ -61,18 +61,21 @@ final class FlickAppModel {
     @ObservationIgnored private let localMediaLibrary = LocalMediaLibrary(directoryName: "ProductMedia")
     @ObservationIgnored private let generatedImageLibrary = LocalMediaLibrary(directoryName: "GeneratedImages")
     @ObservationIgnored private let openAIClientFactory: @MainActor ([String: String]) -> OpenAIClient
+    @ObservationIgnored private let mediaStorageFactory: @MainActor ([String: String]) -> any MediaStorageProviding
     @ObservationIgnored private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.orion.Flick", category: "Publishing")
 
     init(
         repository: FlickRepository,
         configuration: AppConfiguration,
-        openAIClientFactory: @escaping @MainActor ([String: String]) -> OpenAIClient = { OpenAIClient(credentials: $0) }
+        openAIClientFactory: @escaping @MainActor ([String: String]) -> OpenAIClient = { OpenAIClient(credentials: $0) },
+        mediaStorageFactory: @escaping @MainActor ([String: String]) -> any MediaStorageProviding = { R2StorageService(credentials: $0) }
     ) {
         self.repository = repository
         self.configuration = configuration
         self.openAIClientFactory = openAIClientFactory
+        self.mediaStorageFactory = mediaStorageFactory
         self.overview = FlickEmptyState.make()
-        applyAuthorizedAccounts()
+        applyConnectedAccounts()
         applyCredentialHealth()
     }
 
@@ -126,7 +129,7 @@ final class FlickAppModel {
         do {
             overview = try await repository.loadOverview()
             configuration = .current
-            applyAuthorizedAccounts()
+            applyConnectedAccounts()
             applyCredentialHealth()
             overview.refreshDerivedState()
             let didUpdateTikTokStatuses = await refreshTikTokPublishStatuses()
@@ -218,13 +221,56 @@ final class FlickAppModel {
             switch platform {
             case .tiktok:
                 let account = try await tiktokLoginKitClient.authorize(configuration: configuration.tiktok)
-                applyAuthorizedAccounts()
+                try await upsertConnectedAccount(account)
                 accountConnectionMessage = "Connected \(account.displayName)."
             case .instagram, .threads, .x:
                 throw PlatformAdapterError.futurePlatform(platform)
             }
         } catch {
             lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    func upsertConnectedAccount(_ account: ConnectedAccount) async throws {
+        var syncedAccount = account
+        syncedAccount.updatedAt = Date()
+        let previousAccounts = overview.accounts
+
+        if let existingIndex = overview.accounts.firstIndex(where: { $0.id == syncedAccount.id }) {
+            syncedAccount.createdAt = overview.accounts[existingIndex].createdAt
+            overview.accounts[existingIndex] = syncedAccount
+        } else {
+            overview.accounts.append(syncedAccount)
+        }
+        applyConnectedAccounts()
+
+        do {
+            try await repository.upsertConnectedAccount(syncedAccount)
+            lastErrorMessage = nil
+        } catch {
+            overview.accounts = previousAccounts
+            applyConnectedAccounts()
+            throw error
+        }
+    }
+
+    func deleteConnectedAccount(id accountID: UUID) async throws {
+        guard let accountIndex = overview.accounts.firstIndex(where: { $0.id == accountID }) else { return }
+
+        let removedAccount = overview.accounts.remove(at: accountIndex)
+        applyConnectedAccounts()
+
+        do {
+            try await repository.deleteConnectedAccount(id: accountID)
+            if removedAccount.authorizationSource == .loginKit {
+                try? loginKitAccountStore.deleteAccount(id: accountID)
+                try? tiktokLoginKitClient.tokenStore.deleteTokenBundle(for: removedAccount)
+            }
+            lastErrorMessage = nil
+        } catch {
+            overview.accounts.insert(removedAccount, at: min(accountIndex, overview.accounts.count))
+            applyConnectedAccounts()
+            throw error
         }
     }
 
@@ -296,7 +342,6 @@ final class FlickAppModel {
         let draft = SlideshowDraft(
             id: UUID(),
             title: "\(template.niche) template - @\(template.profile)",
-            campaignID: nil,
             templateID: templateID,
             slides: slides,
             caption: "Draft based on @\(template.profile)'s \(template.niche.lowercased()) slideshow format.",
@@ -379,15 +424,31 @@ final class FlickAppModel {
     private func addProductMedia(_ storedMedia: StoredLocalMedia, productIDs: Set<UUID>) async throws {
         let resolvedProductIDs = try validateProductIDs(productIDs)
         let now = Date()
+        let assetID = UUID()
+        let objectPath = productMediaStoragePath(
+            productIDs: resolvedProductIDs,
+            assetID: assetID,
+            contentType: storedMedia.contentType,
+            fileURL: storedMedia.fileURL
+        )
+        let data = try Data(contentsOf: storedMedia.fileURL)
+        let remote = try await mediaStorageFactory(credentialVault.loadValues())
+            .uploadAsset(
+                LocalMediaAsset(
+                    data: data,
+                    contentType: storedMedia.contentType.preferredMIMEType ?? "application/octet-stream"
+                ),
+                path: objectPath
+            )
         let asset = MediaAsset(
-            id: UUID(),
+            id: assetID,
             mediaType: AssetMediaType(contentType: storedMedia.contentType),
             source: .uploaded,
             localFilePath: storedMedia.fileURL.path,
-            storageBucket: nil,
-            storagePath: nil,
-            publicURL: nil,
-            signedURLExpiration: nil,
+            storageBucket: remote.storageBucket,
+            storagePath: remote.storagePath,
+            publicURL: remote.publicURL,
+            signedURLExpiration: remote.signedURLExpiration,
             width: 0,
             height: 0,
             duration: nil,
@@ -686,14 +747,8 @@ final class FlickAppModel {
                 platform: .tiktok,
                 accountID: account.id,
                 draftID: draftID,
-                scheduledAt: now,
                 status: .rendering,
                 publishMode: settings.publishMode,
-                requiresApproval: false,
-                approvedAt: now,
-                approvedByDeviceID: nil,
-                workerDeviceID: nil,
-                workerLeaseExpiresAt: nil,
                 attemptCount: 1,
                 lastAttemptAt: now,
                 lastError: nil,
@@ -905,10 +960,18 @@ final class FlickAppModel {
         }
     }
 
-    private func applyAuthorizedAccounts() {
-        let authorizedAccounts = loginKitAccountStore.loadAccounts()
-        overview.accounts = authorizedAccounts
-        overview.dashboard.connectedAccounts = authorizedAccounts
+    private func applyConnectedAccounts() {
+        overview.accounts = sortedConnectedAccounts(overview.accounts)
+        overview.dashboard.connectedAccounts = overview.accounts
+    }
+
+    private func sortedConnectedAccounts(_ accounts: [ConnectedAccount]) -> [ConnectedAccount] {
+        accounts.sorted {
+            if $0.platform.rawValue == $1.platform.rawValue {
+                return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+            }
+            return $0.platform.displayName < $1.platform.displayName
+        }
     }
 
     private func applyCredentialHealth() {
@@ -1032,7 +1095,6 @@ private extension FlickAppModel {
         return SlideshowDraft(
             id: UUID(),
             title: plan.title,
-            campaignID: nil,
             templateID: templateID,
             brief: brief,
             topic: plan.topic,
@@ -1380,7 +1442,6 @@ private extension FlickAppModel {
                 platformURL: result.platformURL,
                 publishedAt: result.publishedAt,
                 draftID: draft.id,
-                campaignID: draft.campaignID,
                 templateID: draft.templateID,
                 trendTags: [],
                 caption: draft.caption,
@@ -1448,7 +1509,6 @@ private extension FlickAppModel {
                     platformURL: nil,
                     publishedAt: now,
                     draftID: job.draftID,
-                    campaignID: draft?.campaignID,
                     templateID: draft?.templateID,
                     trendTags: [],
                     caption: draft?.caption ?? "",
@@ -1764,6 +1824,34 @@ private extension FlickAppModel {
         fileExtension: String
     ) -> String {
         "\(configuration.storagePaths.generatedImages)/\(draftID.uuidString)/slide-\(String(format: "%02d", slide.index + 1))-v\(slide.promptVersion)-\(settings.width)x\(settings.height)-\(assetID.uuidString).\(fileExtension)"
+    }
+
+    func productMediaStoragePath(
+        productIDs: [UUID],
+        assetID: UUID,
+        contentType: UTType,
+        fileURL: URL
+    ) -> String {
+        let productScope = productIDs.map(\.uuidString).sorted().first ?? "unassigned"
+        let fileExtension = productMediaFileExtension(contentType: contentType, fileURL: fileURL)
+        return "\(configuration.storagePaths.productMedia)/\(productScope)/\(assetID.uuidString).\(fileExtension)"
+    }
+
+    func productMediaFileExtension(contentType: UTType, fileURL: URL) -> String {
+        let existingExtension = fileURL.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !existingExtension.isEmpty {
+            return existingExtension.lowercased()
+        }
+        if let preferredExtension = contentType.preferredFilenameExtension {
+            return preferredExtension.lowercased()
+        }
+        if contentType.conforms(to: .movie) {
+            return "mov"
+        }
+        if contentType.conforms(to: .image) {
+            return "jpg"
+        }
+        return "dat"
     }
 
     func renderedStoragePath(

@@ -22,19 +22,21 @@ final class CoreDataFlickRepository: FlickRepository {
 
     func loadOverview() async throws -> FlickOverviewState {
         var state = FlickEmptyState.make()
+        state.accounts = try fetchConnectedAccounts()
         state.products = try fetchProducts()
         state.assets = try fetchAssets()
         state.templates = try fetchTemplates()
         state.drafts = try fetchDrafts(slidesByDraftID: try fetchSlidesByDraftID())
         state.publishingJobs = try fetchPublishingJobs()
         state.publishedPosts = try fetchPublishedPosts()
-        state.analyticsSnapshots = try fetchAnalyticsSnapshots()
         state.refreshDerivedState()
+        state.dashboard.connectedAccounts = state.accounts
         state.dashboard.syncHealth.iCloudAvailable = await cloudAvailability()
         return state
     }
 
     func saveOverview(_ state: FlickOverviewState) async throws {
+        try syncConnectedAccounts(state.accounts)
         try syncProducts(state.products)
         try syncAssets(state.assets)
         try syncTemplates(state.templates)
@@ -42,7 +44,18 @@ final class CoreDataFlickRepository: FlickRepository {
         try syncSlides(in: state.drafts)
         try syncPublishingJobs(state.publishingJobs)
         try syncPublishedPosts(state.publishedPosts)
-        try syncAnalyticsSnapshots(state.analyticsSnapshots)
+        try saveIfNeeded()
+    }
+
+    func upsertConnectedAccount(_ account: ConnectedAccount) async throws {
+        let object = try fetchConnectedAccount(id: account.id) ?? insertConnectedAccountObject()
+        apply(account, to: object)
+        try saveIfNeeded()
+    }
+
+    func deleteConnectedAccount(id: UUID) async throws {
+        guard let object = try fetchConnectedAccount(id: id) else { return }
+        context.delete(object)
         try saveIfNeeded()
     }
 
@@ -62,6 +75,24 @@ final class CoreDataFlickRepository: FlickRepository {
         guard let object = try fetchAsset(id: id) else { return }
         context.delete(object)
         try saveIfNeeded()
+    }
+
+    private func syncConnectedAccounts(_ accounts: [ConnectedAccount]) throws {
+        let existingAccounts = try context.fetch(connectedAccountFetchRequest())
+        var existingByID = Dictionary(uniqueKeysWithValues: existingAccounts.compactMap { object -> (UUID, NSManagedObject)? in
+            guard let id = object.value(forKey: ConnectedAccountKey.id) as? UUID else { return nil }
+            return (id, object)
+        })
+        let stateIDs = Set(accounts.map(\.id))
+
+        for account in accounts {
+            let object = existingByID.removeValue(forKey: account.id) ?? insertConnectedAccountObject()
+            apply(account, to: object)
+        }
+
+        for (id, object) in existingByID where !stateIDs.contains(id) {
+            context.delete(object)
+        }
     }
 
     private func syncProducts(_ products: [FlickProduct]) throws {
@@ -193,24 +224,6 @@ final class CoreDataFlickRepository: FlickRepository {
         }
     }
 
-    private func syncAnalyticsSnapshots(_ snapshots: [AnalyticsSnapshot]) throws {
-        let existingSnapshots = try context.fetch(analyticsSnapshotFetchRequest())
-        var existingByID = Dictionary(uniqueKeysWithValues: existingSnapshots.compactMap { object -> (UUID, NSManagedObject)? in
-            guard let id = object.value(forKey: AnalyticsSnapshotKey.id) as? UUID else { return nil }
-            return (id, object)
-        })
-        let stateIDs = Set(snapshots.map(\.id))
-
-        for snapshot in snapshots {
-            let object = existingByID.removeValue(forKey: snapshot.id) ?? insertAnalyticsSnapshotObject()
-            apply(snapshot, to: object)
-        }
-
-        for (id, object) in existingByID where !stateIDs.contains(id) {
-            context.delete(object)
-        }
-    }
-
     private func fetchAssets() throws -> [MediaAsset] {
         let request = assetFetchRequest()
         request.sortDescriptors = [
@@ -291,12 +304,24 @@ final class CoreDataFlickRepository: FlickRepository {
         return try context.fetch(request).compactMap(PublishedPost.init)
     }
 
-    private func fetchAnalyticsSnapshots() throws -> [AnalyticsSnapshot] {
-        let request = analyticsSnapshotFetchRequest()
+    private func fetchConnectedAccounts() throws -> [ConnectedAccount] {
+        let request = connectedAccountFetchRequest()
         request.sortDescriptors = [
-            NSSortDescriptor(key: AnalyticsSnapshotKey.capturedAt, ascending: false)
+            NSSortDescriptor(key: ConnectedAccountKey.platform, ascending: true),
+            NSSortDescriptor(key: ConnectedAccountKey.displayName, ascending: true)
         ]
-        return try context.fetch(request).compactMap(AnalyticsSnapshot.init)
+        return try context.fetch(request).compactMap(ConnectedAccount.init)
+    }
+
+    private func fetchConnectedAccount(id: UUID) throws -> NSManagedObject? {
+        let request = connectedAccountFetchRequest()
+        request.predicate = NSPredicate(format: "%K == %@", ConnectedAccountKey.id, id as NSUUID)
+        request.fetchLimit = 1
+        return try context.fetch(request).first
+    }
+
+    private func connectedAccountFetchRequest() -> NSFetchRequest<NSManagedObject> {
+        NSFetchRequest<NSManagedObject>(entityName: "CDConnectedAccount")
     }
 
     private func assetFetchRequest() -> NSFetchRequest<NSManagedObject> {
@@ -327,10 +352,6 @@ final class CoreDataFlickRepository: FlickRepository {
         NSFetchRequest<NSManagedObject>(entityName: "CDPublishedPost")
     }
 
-    private func analyticsSnapshotFetchRequest() -> NSFetchRequest<NSManagedObject> {
-        NSFetchRequest<NSManagedObject>(entityName: "CDAnalyticsSnapshot")
-    }
-
     private func insertAssetObject() -> NSManagedObject {
         NSEntityDescription.insertNewObject(forEntityName: "CDAsset", into: context)
     }
@@ -359,8 +380,25 @@ final class CoreDataFlickRepository: FlickRepository {
         NSEntityDescription.insertNewObject(forEntityName: "CDPublishedPost", into: context)
     }
 
-    private func insertAnalyticsSnapshotObject() -> NSManagedObject {
-        NSEntityDescription.insertNewObject(forEntityName: "CDAnalyticsSnapshot", into: context)
+    private func insertConnectedAccountObject() -> NSManagedObject {
+        NSEntityDescription.insertNewObject(forEntityName: "CDConnectedAccount", into: context)
+    }
+
+    private func apply(_ account: ConnectedAccount, to object: NSManagedObject) {
+        object.setValue(account.id, forKey: ConnectedAccountKey.id)
+        object.setValue(account.platform.rawValue, forKey: ConnectedAccountKey.platform)
+        object.setValue(account.displayName, forKey: ConnectedAccountKey.displayName)
+        object.setValue(account.platformUserID, forKey: ConnectedAccountKey.platformUserID)
+        object.setValue(account.avatarURL, forKey: ConnectedAccountKey.avatarURL)
+        object.setValue(account.scopes, asJSONForKey: ConnectedAccountKey.scopesJSON)
+        object.setValue(account.status.rawValue, forKey: ConnectedAccountKey.status)
+        object.setValue(account.authorizationSource.rawValue, forKey: ConnectedAccountKey.authorizationSource)
+        object.setValue(account.tokenStatus.rawValue, forKey: ConnectedAccountKey.tokenStatus)
+        object.setValue(account.isPublishingEnabled, forKey: ConnectedAccountKey.isPublishingEnabled)
+        object.setValue(account.defaultPrivacyLevel, forKey: ConnectedAccountKey.defaultPrivacyLevel)
+        object.setValue(account.lastValidatedAt, forKey: ConnectedAccountKey.lastValidatedAt)
+        object.setValue(account.createdAt, forKey: ConnectedAccountKey.createdAt)
+        object.setValue(account.updatedAt, forKey: ConnectedAccountKey.updatedAt)
     }
 
     private func apply(_ asset: MediaAsset, to object: NSManagedObject) {
@@ -407,7 +445,6 @@ final class CoreDataFlickRepository: FlickRepository {
     private func apply(_ draft: SlideshowDraft, to object: NSManagedObject) {
         object.setValue(draft.id, forKey: DraftKey.id)
         object.setValue(draft.title, forKey: DraftKey.title)
-        object.setValue(draft.campaignID, forKey: DraftKey.campaignID)
         object.setValue(draft.templateID, forKey: DraftKey.templateID)
         object.setValue(draft.brief, forKey: DraftKey.brief)
         object.setValue(draft.topic, forKey: DraftKey.topic)
@@ -451,14 +488,8 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(job.platform.rawValue, forKey: PublishingJobKey.platform)
         object.setValue(job.accountID, forKey: PublishingJobKey.accountID)
         object.setValue(job.draftID, forKey: PublishingJobKey.draftID)
-        object.setValue(job.scheduledAt, forKey: PublishingJobKey.scheduledAt)
         object.setValue(job.status.rawValue, forKey: PublishingJobKey.status)
         object.setValue(job.publishMode.rawValue, forKey: PublishingJobKey.publishMode)
-        object.setValue(job.requiresApproval, forKey: PublishingJobKey.requiresApproval)
-        object.setValue(job.approvedAt, forKey: PublishingJobKey.approvedAt)
-        object.setValue(job.approvedByDeviceID, forKey: PublishingJobKey.approvedByDeviceID)
-        object.setValue(job.workerDeviceID, forKey: PublishingJobKey.workerDeviceID)
-        object.setValue(job.workerLeaseExpiresAt, forKey: PublishingJobKey.workerLeaseExpiresAt)
         object.setValue(job.attemptCount, forKey: PublishingJobKey.attemptCount)
         object.setValue(job.lastAttemptAt, forKey: PublishingJobKey.lastAttemptAt)
         object.setValue(job.lastError, asJSONForKey: PublishingJobKey.lastErrorJSON)
@@ -475,29 +506,11 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(post.platformURL, forKey: PublishedPostKey.platformURL)
         object.setValue(post.publishedAt, forKey: PublishedPostKey.publishedAt)
         object.setValue(post.draftID, forKey: PublishedPostKey.draftID)
-        object.setValue(post.campaignID, forKey: PublishedPostKey.campaignID)
         object.setValue(post.templateID, forKey: PublishedPostKey.templateID)
         object.setValue(post.trendTags.map(\.id.uuidString), asJSONForKey: PublishedPostKey.trendTagIDsJSON)
         object.setValue(post.caption, forKey: PublishedPostKey.caption)
         object.setValue(post.createdAt, forKey: PublishedPostKey.createdAt)
         object.setValue(post.updatedAt, forKey: PublishedPostKey.updatedAt)
-    }
-
-    private func apply(_ snapshot: AnalyticsSnapshot, to object: NSManagedObject) {
-        object.setValue(snapshot.id, forKey: AnalyticsSnapshotKey.id)
-        object.setValue(snapshot.publishedPostID, forKey: AnalyticsSnapshotKey.publishedPostID)
-        object.setValue(snapshot.capturedAt, forKey: AnalyticsSnapshotKey.capturedAt)
-        object.setValue(snapshot.views, forKey: AnalyticsSnapshotKey.views)
-        object.setValue(snapshot.likes, forKey: AnalyticsSnapshotKey.likes)
-        object.setValue(snapshot.comments, forKey: AnalyticsSnapshotKey.comments)
-        object.setValue(snapshot.shares, forKey: AnalyticsSnapshotKey.shares)
-        object.setValue(snapshot.saves, forKey: AnalyticsSnapshotKey.saves)
-        object.setValue(snapshot.engagementRate, forKey: AnalyticsSnapshotKey.engagementRate)
-        object.setValue(snapshot.watchTime, forKey: AnalyticsSnapshotKey.watchTime)
-        object.setValue(snapshot.completionRate, forKey: AnalyticsSnapshotKey.completionRate)
-        object.setValue(snapshot.profileVisits, forKey: AnalyticsSnapshotKey.profileVisits)
-        object.setValue(snapshot.follows, forKey: AnalyticsSnapshotKey.follows)
-        object.setValue(snapshot.rawJSON, forKey: AnalyticsSnapshotKey.rawJSON)
     }
 
     private func saveIfNeeded() throws {
@@ -536,6 +549,23 @@ private enum AssetKey {
     static let width = "width"
 }
 
+private enum ConnectedAccountKey {
+    static let authorizationSource = "authorizationSource"
+    static let avatarURL = "avatarURL"
+    static let createdAt = "createdAt"
+    static let defaultPrivacyLevel = "defaultPrivacyLevel"
+    static let displayName = "displayName"
+    static let id = "id"
+    static let isPublishingEnabled = "isPublishingEnabled"
+    static let lastValidatedAt = "lastValidatedAt"
+    static let platform = "platform"
+    static let platformUserID = "platformUserID"
+    static let scopesJSON = "scopesJSON"
+    static let status = "status"
+    static let tokenStatus = "tokenStatus"
+    static let updatedAt = "updatedAt"
+}
+
 private enum ProductKey {
     static let createdAt = "createdAt"
     static let id = "id"
@@ -559,7 +589,6 @@ private enum TemplateKey {
 
 private enum DraftKey {
     static let brief = "brief"
-    static let campaignID = "campaignID"
     static let caption = "caption"
     static let createdAt = "createdAt"
     static let exportedImageAssetIDsJSON = "exportedImageAssetIDsJSON"
@@ -601,8 +630,6 @@ private enum SlideKey {
 
 private enum PublishingJobKey {
     static let accountID = "accountID"
-    static let approvedAt = "approvedAt"
-    static let approvedByDeviceID = "approvedByDeviceID"
     static let attemptCount = "attemptCount"
     static let createdAt = "createdAt"
     static let draftID = "draftID"
@@ -612,17 +639,12 @@ private enum PublishingJobKey {
     static let platform = "platform"
     static let platformPublishID = "platformPublishID"
     static let publishMode = "publishMode"
-    static let requiresApproval = "requiresApproval"
-    static let scheduledAt = "scheduledAt"
     static let status = "status"
     static let updatedAt = "updatedAt"
-    static let workerDeviceID = "workerDeviceID"
-    static let workerLeaseExpiresAt = "workerLeaseExpiresAt"
 }
 
 private enum PublishedPostKey {
     static let accountID = "accountID"
-    static let campaignID = "campaignID"
     static let caption = "caption"
     static let createdAt = "createdAt"
     static let draftID = "draftID"
@@ -634,23 +656,6 @@ private enum PublishedPostKey {
     static let templateID = "templateID"
     static let trendTagIDsJSON = "trendTagIDsJSON"
     static let updatedAt = "updatedAt"
-}
-
-private enum AnalyticsSnapshotKey {
-    static let capturedAt = "capturedAt"
-    static let comments = "comments"
-    static let completionRate = "completionRate"
-    static let engagementRate = "engagementRate"
-    static let follows = "follows"
-    static let id = "id"
-    static let likes = "likes"
-    static let profileVisits = "profileVisits"
-    static let publishedPostID = "publishedPostID"
-    static let rawJSON = "rawJSON"
-    static let saves = "saves"
-    static let shares = "shares"
-    static let views = "views"
-    static let watchTime = "watchTime"
 }
 
 private extension MediaAsset {
@@ -708,6 +713,43 @@ private extension FlickProduct {
     }
 }
 
+private extension ConnectedAccount {
+    init?(managedObject: NSManagedObject) {
+        guard
+            let id = managedObject.value(forKey: ConnectedAccountKey.id) as? UUID,
+            let platformRawValue = managedObject.value(forKey: ConnectedAccountKey.platform) as? String,
+            let platform = SocialPlatform(rawValue: platformRawValue),
+            let displayName = managedObject.value(forKey: ConnectedAccountKey.displayName) as? String,
+            let platformUserID = managedObject.value(forKey: ConnectedAccountKey.platformUserID) as? String,
+            let statusRawValue = managedObject.value(forKey: ConnectedAccountKey.status) as? String,
+            let status = AccountStatus(rawValue: statusRawValue),
+            let authorizationSourceRawValue = managedObject.value(forKey: ConnectedAccountKey.authorizationSource) as? String,
+            let authorizationSource = AccountAuthorizationSource(rawValue: authorizationSourceRawValue),
+            let tokenStatusRawValue = managedObject.value(forKey: ConnectedAccountKey.tokenStatus) as? String,
+            let tokenStatus = OAuthTokenStatus(rawValue: tokenStatusRawValue)
+        else {
+            return nil
+        }
+
+        self.init(
+            id: id,
+            platform: platform,
+            displayName: displayName,
+            platformUserID: platformUserID,
+            avatarURL: managedObject.value(forKey: ConnectedAccountKey.avatarURL) as? URL,
+            scopes: managedObject.decodedJSON([String].self, forKey: ConnectedAccountKey.scopesJSON) ?? [],
+            status: status,
+            authorizationSource: authorizationSource,
+            tokenStatus: tokenStatus,
+            isPublishingEnabled: managedObject.boolValue(forKey: ConnectedAccountKey.isPublishingEnabled, defaultValue: false),
+            defaultPrivacyLevel: managedObject.value(forKey: ConnectedAccountKey.defaultPrivacyLevel) as? String ?? "Platform default",
+            lastValidatedAt: managedObject.value(forKey: ConnectedAccountKey.lastValidatedAt) as? Date,
+            createdAt: managedObject.value(forKey: ConnectedAccountKey.createdAt) as? Date ?? Date(),
+            updatedAt: managedObject.value(forKey: ConnectedAccountKey.updatedAt) as? Date ?? Date()
+        )
+    }
+}
+
 private extension CreativeTemplate {
     init?(managedObject: NSManagedObject) {
         guard
@@ -754,7 +796,6 @@ private extension SlideshowDraft {
         self.init(
             id: id,
             title: title,
-            campaignID: managedObject.value(forKey: DraftKey.campaignID) as? UUID,
             templateID: managedObject.value(forKey: DraftKey.templateID) as? UUID,
             brief: managedObject.value(forKey: DraftKey.brief) as? String ?? "",
             topic: managedObject.value(forKey: DraftKey.topic) as? String ?? "",
@@ -829,14 +870,8 @@ private extension PublishingJob {
             platform: platform,
             accountID: accountID,
             draftID: draftID,
-            scheduledAt: managedObject.value(forKey: PublishingJobKey.scheduledAt) as? Date ?? Date(),
             status: status,
             publishMode: publishMode,
-            requiresApproval: managedObject.boolValue(forKey: PublishingJobKey.requiresApproval, defaultValue: true),
-            approvedAt: managedObject.value(forKey: PublishingJobKey.approvedAt) as? Date,
-            approvedByDeviceID: managedObject.value(forKey: PublishingJobKey.approvedByDeviceID) as? UUID,
-            workerDeviceID: managedObject.value(forKey: PublishingJobKey.workerDeviceID) as? UUID,
-            workerLeaseExpiresAt: managedObject.value(forKey: PublishingJobKey.workerLeaseExpiresAt) as? Date,
             attemptCount: managedObject.integerValue(forKey: PublishingJobKey.attemptCount),
             lastAttemptAt: managedObject.value(forKey: PublishingJobKey.lastAttemptAt) as? Date,
             lastError: managedObject.decodedJSON(PlatformFailure.self, forKey: PublishingJobKey.lastErrorJSON),
@@ -868,40 +903,11 @@ private extension PublishedPost {
             platformURL: managedObject.value(forKey: PublishedPostKey.platformURL) as? URL,
             publishedAt: managedObject.value(forKey: PublishedPostKey.publishedAt) as? Date ?? Date(),
             draftID: draftID,
-            campaignID: managedObject.value(forKey: PublishedPostKey.campaignID) as? UUID,
             templateID: managedObject.value(forKey: PublishedPostKey.templateID) as? UUID,
             trendTags: [],
             caption: managedObject.value(forKey: PublishedPostKey.caption) as? String ?? "",
             createdAt: managedObject.value(forKey: PublishedPostKey.createdAt) as? Date ?? Date(),
             updatedAt: managedObject.value(forKey: PublishedPostKey.updatedAt) as? Date ?? Date()
-        )
-    }
-}
-
-private extension AnalyticsSnapshot {
-    init?(managedObject: NSManagedObject) {
-        guard
-            let id = managedObject.value(forKey: AnalyticsSnapshotKey.id) as? UUID,
-            let publishedPostID = managedObject.value(forKey: AnalyticsSnapshotKey.publishedPostID) as? UUID
-        else {
-            return nil
-        }
-
-        self.init(
-            id: id,
-            publishedPostID: publishedPostID,
-            capturedAt: managedObject.value(forKey: AnalyticsSnapshotKey.capturedAt) as? Date ?? Date(),
-            views: managedObject.integerValue(forKey: AnalyticsSnapshotKey.views),
-            likes: managedObject.integerValue(forKey: AnalyticsSnapshotKey.likes),
-            comments: managedObject.integerValue(forKey: AnalyticsSnapshotKey.comments),
-            shares: managedObject.integerValue(forKey: AnalyticsSnapshotKey.shares),
-            saves: managedObject.integerValue(forKey: AnalyticsSnapshotKey.saves),
-            engagementRate: managedObject.doubleValue(forKey: AnalyticsSnapshotKey.engagementRate) ?? 0,
-            watchTime: managedObject.doubleValue(forKey: AnalyticsSnapshotKey.watchTime),
-            completionRate: managedObject.doubleValue(forKey: AnalyticsSnapshotKey.completionRate),
-            profileVisits: managedObject.integerOptionalValue(forKey: AnalyticsSnapshotKey.profileVisits),
-            follows: managedObject.integerOptionalValue(forKey: AnalyticsSnapshotKey.follows),
-            rawJSON: managedObject.value(forKey: AnalyticsSnapshotKey.rawJSON) as? String ?? ""
         )
     }
 }
@@ -913,10 +919,6 @@ private extension NSManagedObject {
 
     func integerValue(forKey key: String) -> Int {
         (value(forKey: key) as? NSNumber)?.intValue ?? 0
-    }
-
-    func integerOptionalValue(forKey key: String) -> Int? {
-        (value(forKey: key) as? NSNumber)?.intValue
     }
 
     func boolValue(forKey key: String, defaultValue: Bool) -> Bool {

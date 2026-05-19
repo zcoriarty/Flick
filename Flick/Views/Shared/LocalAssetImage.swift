@@ -29,6 +29,7 @@ private extension Image {
 
 struct LocalAssetImage: View {
     var fileURL: URL?
+    var remoteURL: URL?
     var contentMode: ContentMode = .fill
     var maxPixelSize: Int = 1_920
 
@@ -39,6 +40,24 @@ struct LocalAssetImage: View {
                 Image(flickPlatformImage: image)
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
+            } else if let remoteURL {
+                AsyncImage(url: remoteURL) { phase in
+                    switch phase {
+                    case let .success(image):
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: contentMode)
+                    case .empty:
+                        ZStack {
+                            placeholder
+                            ProgressView()
+                        }
+                    case .failure:
+                        placeholder
+                    @unknown default:
+                        placeholder
+                    }
+                }
             } else {
                 placeholder
             }

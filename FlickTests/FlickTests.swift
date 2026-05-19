@@ -14,40 +14,17 @@ import UIKit
 
 @MainActor
 final class FlickTests: XCTestCase {
-    func testPublishingStatusTransitionsGuardInvalidJumps() throws {
-        XCTAssertTrue(PublishingJobStatus.awaitingApproval.canTransition(to: .approved))
-        XCTAssertTrue(PublishingJobStatus.approved.canTransition(to: .rendering))
-        XCTAssertTrue(PublishingJobStatus.uploadingMedia.canTransition(to: .publishing))
-        XCTAssertTrue(PublishingJobStatus.publishing.canTransition(to: .awaitingUserCompletion))
-        XCTAssertFalse(PublishingJobStatus.draft.canTransition(to: .published))
-        XCTAssertFalse(PublishingJobStatus.awaitingUserCompletion.canTransition(to: .published))
-        XCTAssertFalse(PublishingJobStatus.published.canTransition(to: .queued))
-    }
-
-    func testSchedulerClaimsOnlyUnleasedEligibleJobs() {
-        let scheduler = PublishingScheduler()
-        let workerDeviceID = UUID()
-        let secondWorkerDeviceID = UUID()
-        let job = makePublishingJob()
-        let claimed = scheduler.claim(job, workerDeviceID: workerDeviceID, leaseDuration: 60)
-
-        XCTAssertEqual(claimed?.workerDeviceID, workerDeviceID)
-        XCTAssertNotNil(claimed?.workerLeaseExpiresAt)
-        XCTAssertNil(claimed.flatMap { scheduler.claim($0, workerDeviceID: secondWorkerDeviceID, leaseDuration: 60) })
-    }
-
     func testLiveAppModelStartsWithoutSeedData() {
         let model = LiveAppModelTestCache.model
 
         XCTAssertTrue(model.overview.drafts.isEmpty)
         XCTAssertTrue(model.overview.publishingJobs.isEmpty)
-        XCTAssertTrue(model.overview.analyticsPerformance.isEmpty)
     }
 
     func testCreateFlowDoesNotAutoSelectPersistedDraftOnRefresh() async {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let draft = makeSlideshowDraft(now: now)
-        var state = FlickEmptyState.make(now: now)
+        var state = FlickEmptyState.make()
         state.drafts = [draft]
 
         let model = FlickAppModel(
@@ -75,7 +52,7 @@ final class FlickTests: XCTestCase {
         var archived = makeSlideshowDraft(now: now)
         archived.status = .archived
 
-        var state = FlickEmptyState.make(now: now)
+        var state = FlickEmptyState.make()
         state.drafts = [published, draft, archived]
 
         let model = FlickAppModel(
@@ -86,15 +63,6 @@ final class FlickTests: XCTestCase {
         await model.refresh()
 
         XCTAssertEqual(model.createDrafts.map(\.id), [draft.id])
-    }
-
-    func testAwaitingUserCompletionIsTerminalForScheduler() {
-        let scheduler = PublishingScheduler()
-        let job = makePublishingJob(status: .awaitingUserCompletion)
-
-        XCTAssertTrue(job.status.isTerminal)
-        XCTAssertNil(scheduler.claim(job, workerDeviceID: UUID(), leaseDuration: 60))
-        XCTAssertTrue(scheduler.dueJobs(from: [job]).isEmpty)
     }
 
     func testCoreDataRoundTripsGeneratedSlideImageAsset() async throws {
@@ -112,7 +80,7 @@ final class FlickTests: XCTestCase {
         )
         let slide = makeSlide(imageAssetID: asset.id, generationStatus: .complete, now: now)
         let draft = makeSlideshowDraft(slides: [slide], now: now)
-        var state = FlickEmptyState.make(now: now)
+        var state = FlickEmptyState.make()
         state.assets = [asset]
         state.drafts = [draft]
 
@@ -143,7 +111,7 @@ final class FlickTests: XCTestCase {
             productIDs: [product.id],
             now: now
         )
-        var state = FlickEmptyState.make(now: now)
+        var state = FlickEmptyState.make()
         state.products = [product]
         state.assets = [asset]
 
@@ -156,10 +124,59 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(loadedAsset.productIDs, [product.id])
     }
 
-    func testAddingProductMediaRequiresAndStoresProductSelection() async throws {
+    func testCoreDataRoundTripsConnectedAccounts() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
-        let repository = InMemoryFlickRepository(state: FlickEmptyState.make(now: now))
+        let persistenceController = PersistenceController(inMemory: true)
+        let repository = CoreDataFlickRepository(
+            context: persistenceController.container.viewContext,
+            cloudAvailability: { false }
+        )
+        let account = makeConnectedAccount(now: now)
+        var state = FlickEmptyState.make()
+        state.accounts = [account]
+
+        try await repository.saveOverview(state)
+        let loaded = try await repository.loadOverview()
+        let loadedAccount = try XCTUnwrap(loaded.accounts.first)
+
+        XCTAssertEqual(loadedAccount, account)
+        XCTAssertEqual(loaded.dashboard.connectedAccounts, [account])
+    }
+
+    func testConnectedAccountUpsertUpdateAndDeleteUseRepository() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let repository = InMemoryFlickRepository(state: FlickEmptyState.make())
         let model = FlickAppModel(repository: repository, configuration: .current)
+        var account = makeConnectedAccount(now: now)
+
+        try await model.upsertConnectedAccount(account)
+
+        XCTAssertEqual(model.overview.accounts.map(\.id), [account.id])
+        XCTAssertEqual(repository.state.accounts.map(\.id), [account.id])
+
+        account.displayName = "@updated"
+        account.isPublishingEnabled = false
+        try await model.upsertConnectedAccount(account)
+
+        XCTAssertEqual(model.overview.accounts.first?.displayName, "@updated")
+        XCTAssertEqual(repository.state.accounts.first?.displayName, "@updated")
+        XCTAssertEqual(repository.state.accounts.first?.isPublishingEnabled, false)
+
+        try await model.deleteConnectedAccount(id: account.id)
+
+        XCTAssertTrue(model.overview.accounts.isEmpty)
+        XCTAssertTrue(model.overview.dashboard.connectedAccounts.isEmpty)
+        XCTAssertTrue(repository.state.accounts.isEmpty)
+    }
+
+    func testAddingProductMediaRequiresAndStoresProductSelection() async throws {
+        let repository = InMemoryFlickRepository(state: FlickEmptyState.make())
+        let mediaStorage = FakeMediaStorage()
+        let model = FlickAppModel(
+            repository: repository,
+            configuration: .current,
+            mediaStorageFactory: { _ in mediaStorage }
+        )
         let product = try await model.createProduct(name: "Flick Pro", summary: "Launch assets")
 
         try await model.addProductMedia(
@@ -169,9 +186,16 @@ final class FlickTests: XCTestCase {
         )
 
         let asset = try XCTUnwrap(model.overview.assets.first)
+        let uploadedPath = try XCTUnwrap(mediaStorage.uploadedPaths.first)
         XCTAssertEqual(asset.source, .uploaded)
         XCTAssertEqual(asset.productIDs, [product.id])
+        XCTAssertEqual(asset.storageBucket, "flick-media")
+        XCTAssertEqual(asset.storagePath, uploadedPath)
+        XCTAssertEqual(asset.publicURL, URL(string: "https://media.example.com/\(uploadedPath)"))
+        XCTAssertEqual(mediaStorage.uploadedContentTypes, ["image/jpeg"])
+        XCTAssertEqual(uploadedPath.hasPrefix("product-media/\(product.id.uuidString)/"), true)
         XCTAssertEqual(repository.state.assets.first?.productIDs, [product.id])
+        XCTAssertEqual(repository.state.assets.first?.publicURL, asset.publicURL)
     }
 
     func testDeletingProductRemovesOnlyOwnedMediaAndKeepsSharedMedia() async throws {
@@ -188,7 +212,7 @@ final class FlickTests: XCTestCase {
             productIDs: [deletedProduct.id, retainedProduct.id],
             now: now
         )
-        var state = FlickEmptyState.make(now: now)
+        var state = FlickEmptyState.make()
         state.products = [deletedProduct, retainedProduct]
         state.assets = [onlyOwnedAsset, sharedAsset]
         let repository = InMemoryFlickRepository(state: state)
@@ -233,7 +257,7 @@ final class FlickTests: XCTestCase {
         var draft = makeSlideshowDraft(now: now)
         draft.tikTokSettings = tikTokSettings
         draft.selectedSongs = selectedSongs
-        var state = FlickEmptyState.make(now: now)
+        var state = FlickEmptyState.make()
         state.drafts = [draft]
 
         try await repository.saveOverview(state)
@@ -244,7 +268,7 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(loadedDraft.selectedSongs, selectedSongs)
     }
 
-    func testCoreDataRoundTripsPublishingJobsPublishedPostsAndAnalytics() async throws {
+    func testCoreDataRoundTripsPublishingJobsAndPublishedPosts() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let persistenceController = PersistenceController(inMemory: true)
         let repository = CoreDataFlickRepository(
@@ -265,34 +289,16 @@ final class FlickTests: XCTestCase {
             platformURL: nil,
             publishedAt: now,
             draftID: draft.id,
-            campaignID: nil,
             templateID: nil,
             trendTags: [],
             caption: "Try Flick",
             createdAt: now,
             updatedAt: now
         )
-        let snapshot = AnalyticsSnapshot(
-            id: UUID(),
-            publishedPostID: post.id,
-            capturedAt: now,
-            views: 1_200,
-            likes: 120,
-            comments: 12,
-            shares: 6,
-            saves: 24,
-            engagementRate: 0.135,
-            watchTime: nil,
-            completionRate: nil,
-            profileVisits: nil,
-            follows: nil,
-            rawJSON: "{}"
-        )
-        var state = FlickEmptyState.make(now: now)
+        var state = FlickEmptyState.make()
         state.drafts = [draft]
         state.publishingJobs = [job]
         state.publishedPosts = [post]
-        state.analyticsSnapshots = [snapshot]
 
         try await repository.saveOverview(state)
         let loaded = try await repository.loadOverview()
@@ -300,9 +306,6 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(loaded.publishingJobs.first?.platformPublishID, "p_inbox_url~v2.123")
         XCTAssertEqual(loaded.publishingJobs.first?.status, .awaitingUserCompletion)
         XCTAssertEqual(loaded.publishedPosts.first?.platformPostID, "7123456789012345678")
-        XCTAssertEqual(loaded.analyticsSnapshots.first?.views, 1_200)
-        XCTAssertEqual(loaded.analyticsPerformance.first?.views, 1_200)
-        XCTAssertEqual(loaded.dashboard.bestRecentPost?.id, post.id)
     }
 
     func testDeletingCreateDraftRemovesDraftSlidesAndDraftOwnedAssetsFromCoreData() async throws {
@@ -336,7 +339,7 @@ final class FlickTests: XCTestCase {
             now: now
         )
         draft.exportedImageAssetIDs = [renderedAsset.id]
-        var state = FlickEmptyState.make(now: now)
+        var state = FlickEmptyState.make()
         state.assets = [generatedAsset, renderedAsset, uploadedAsset]
         state.drafts = [draft]
 
@@ -400,7 +403,7 @@ final class FlickTests: XCTestCase {
         var slide = makeSlide(imageAssetID: asset.id, generationStatus: .failed, now: now)
         slide.generationErrorMessage = "Summary failed after image upload."
         let draft = makeSlideshowDraft(slides: [slide], now: now)
-        var state = FlickEmptyState.make(now: now)
+        var state = FlickEmptyState.make()
         state.assets = [asset]
         state.drafts = [draft]
 
@@ -428,7 +431,7 @@ final class FlickTests: XCTestCase {
         )
         let slide = makeSlide(imageAssetID: asset.id, generationStatus: .complete, now: now)
         let draft = makeSlideshowDraft(slides: [slide], now: now)
-        var state = FlickEmptyState.make(now: now)
+        var state = FlickEmptyState.make()
         state.products = [product]
         state.assets = [asset]
         state.drafts = [draft]
@@ -543,6 +546,7 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(
             paths.all,
             [
+                paths.productMedia,
                 paths.generatedImages,
                 paths.renderedImages,
                 paths.referenceImages,
@@ -1233,21 +1237,15 @@ final class FlickTests: XCTestCase {
     }
 }
 
-private func makePublishingJob(status: PublishingJobStatus = .queued) -> PublishingJob {
+private func makePublishingJob(status: PublishingJobStatus = .rendering) -> PublishingJob {
     let now = Date()
     return PublishingJob(
         id: UUID(),
         platform: .tiktok,
         accountID: UUID(),
         draftID: UUID(),
-        scheduledAt: now,
         status: status,
         publishMode: .photoDirectPost,
-        requiresApproval: true,
-        approvedAt: nil,
-        approvedByDeviceID: nil,
-        workerDeviceID: nil,
-        workerLeaseExpiresAt: nil,
         attemptCount: 0,
         lastAttemptAt: nil,
         lastError: nil,
@@ -1265,7 +1263,6 @@ private func makeSlideshowDraft(
     SlideshowDraft(
         id: id,
         title: "Launch Carousel",
-        campaignID: nil,
         templateID: nil,
         brief: "Launch brief",
         topic: "Product launch",
@@ -1359,6 +1356,30 @@ private func makeProduct(
     )
 }
 
+private func makeConnectedAccount(
+    id: UUID = UUID(),
+    platformUserID: String = "open-id-123",
+    displayName: String = "@flickcreator",
+    now: Date = Date()
+) -> ConnectedAccount {
+    ConnectedAccount(
+        id: id,
+        platform: .tiktok,
+        displayName: displayName,
+        platformUserID: platformUserID,
+        avatarURL: URL(string: "https://example.com/avatar.jpg"),
+        scopes: ["user.info.basic", "video.publish"],
+        status: .connected,
+        authorizationSource: .loginKit,
+        tokenStatus: .valid,
+        isPublishingEnabled: true,
+        defaultPrivacyLevel: TikTokPrivacyLevel.preferredDefault.rawValue,
+        lastValidatedAt: now,
+        createdAt: now,
+        updatedAt: now
+    )
+}
+
 private func makeExampleSlideshowTemplate(slideCount: Int = 2) -> ExampleSlideshowTemplate {
     ExampleSlideshowTemplate(
         id: "template-\(slideCount)",
@@ -1396,6 +1417,30 @@ private func managedObjectCount(entityName: String, in context: NSManagedObjectC
     return try context.count(for: request)
 }
 
+private final class FakeMediaStorage: MediaStorageProviding {
+    private(set) var uploadedPaths: [String] = []
+    private(set) var uploadedContentTypes: [String] = []
+
+    func uploadAsset(_ asset: LocalMediaAsset, path: String) async throws -> RemoteMediaAsset {
+        uploadedPaths.append(path)
+        uploadedContentTypes.append(asset.contentType)
+        return RemoteMediaAsset(
+            storageBucket: "flick-media",
+            storagePath: path,
+            publicURL: URL(string: "https://media.example.com/\(path)"),
+            signedURLExpiration: nil
+        )
+    }
+
+    func publicURL(path: String) throws -> URL {
+        try XCTUnwrap(URL(string: "https://media.example.com/\(path)"))
+    }
+
+    func signedURL(path: String, expiresIn: TimeInterval) async throws -> URL {
+        try XCTUnwrap(URL(string: "https://signed.example.com/\(path)?expires=\(Int(expiresIn))"))
+    }
+}
+
 @MainActor
 private final class InMemoryFlickRepository: FlickRepository {
     var state: FlickOverviewState
@@ -1410,6 +1455,17 @@ private final class InMemoryFlickRepository: FlickRepository {
 
     func saveOverview(_ state: FlickOverviewState) async throws {
         self.state = state
+    }
+
+    func upsertConnectedAccount(_ account: ConnectedAccount) async throws {
+        state.accounts.removeAll { $0.id == account.id }
+        state.accounts.insert(account, at: 0)
+        state.dashboard.connectedAccounts = state.accounts
+    }
+
+    func deleteConnectedAccount(id: UUID) async throws {
+        state.accounts.removeAll { $0.id == id }
+        state.dashboard.connectedAccounts = state.accounts
     }
 
     func upsertProduct(_ product: FlickProduct) async throws {

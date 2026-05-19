@@ -10,6 +10,7 @@ struct VerticalMediaFrame: View {
     static let targetAspectRatio = targetPixelSize.width / targetPixelSize.height
 
     var fileURL: URL?
+    var remoteURL: URL?
     var cornerRadius: CGFloat = 8
     var maxPixelSize: Int = 1_080
 
@@ -20,6 +21,7 @@ struct VerticalMediaFrame: View {
             GeometryReader { proxy in
                 LocalAssetImage(
                     fileURL: fileURL,
+                    remoteURL: remoteURL,
                     contentMode: .fit,
                     maxPixelSize: maxPixelSize
                 )

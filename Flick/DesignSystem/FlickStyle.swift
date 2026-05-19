@@ -84,9 +84,7 @@ extension AccountStatus {
 extension PublishingJobStatus {
     var displayName: String {
         switch self {
-        case .awaitingApproval: "Awaiting approval"
         case .awaitingUserCompletion: "Awaiting draft completion"
-        case .uploadingMedia: "Uploading media"
         default: rawValue.capitalized
         }
     }
@@ -94,11 +92,9 @@ extension PublishingJobStatus {
     var tint: Color {
         switch self {
         case .published: .green
-        case .failed, .canceled: .red
-        case .awaitingApproval, .awaitingUserCompletion, .approved: .orange
-        case .rendering, .uploadingMedia, .publishing: .blue
-        case .paused: .secondary
-        case .draft, .queued: .teal
+        case .failed: .red
+        case .awaitingUserCompletion: .orange
+        case .rendering, .publishing: .blue
         }
     }
 }

@@ -1,21 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="26401" systemVersion="26A" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithCloudKit="true" userDefinedModelVersionIdentifier="">
-    <entity name="CDAnalyticsSnapshot" representedClassName="CDAnalyticsSnapshot" syncable="YES" codeGenerationType="class">
-        <attribute name="capturedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
-        <attribute name="comments" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
-        <attribute name="completionRate" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
-        <attribute name="engagementRate" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
-        <attribute name="follows" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
-        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="likes" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
-        <attribute name="profileVisits" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
-        <attribute name="publishedPostID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="rawJSON" optional="YES" attributeType="String"/>
-        <attribute name="saves" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
-        <attribute name="shares" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
-        <attribute name="views" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
-        <attribute name="watchTime" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
-    </entity>
     <entity name="CDAsset" representedClassName="CDAsset" syncable="YES" codeGenerationType="class">
         <attribute name="checksum" optional="YES" attributeType="String"/>
         <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
@@ -41,16 +25,6 @@
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="metadataJSON" optional="YES" attributeType="String"/>
         <attribute name="summary" optional="YES" attributeType="String"/>
-    </entity>
-    <entity name="CDCampaign" representedClassName="CDCampaign" syncable="YES" codeGenerationType="class">
-        <attribute name="appFeature" optional="YES" attributeType="String"/>
-        <attribute name="audience" optional="YES" attributeType="String"/>
-        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
-        <attribute name="goal" optional="YES" attributeType="String"/>
-        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="name" optional="YES" attributeType="String"/>
-        <attribute name="status" optional="YES" attributeType="String"/>
-        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
     </entity>
     <entity name="CDConnectedAccount" representedClassName="CDConnectedAccount" syncable="YES" codeGenerationType="class">
         <attribute name="avatarURL" optional="YES" attributeType="URI"/>
@@ -80,18 +54,8 @@
         <attribute name="tagIDsJSON" optional="YES" attributeType="String"/>
         <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
     </entity>
-    <entity name="CDDevice" representedClassName="CDDevice" syncable="YES" codeGenerationType="class">
-        <attribute name="appVersion" optional="YES" attributeType="String"/>
-        <attribute name="capabilitiesJSON" optional="YES" attributeType="String"/>
-        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="isPrimaryWorker" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
-        <attribute name="lastSeenAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
-        <attribute name="name" optional="YES" attributeType="String"/>
-        <attribute name="platform" optional="YES" attributeType="String"/>
-    </entity>
     <entity name="CDPublishedPost" representedClassName="CDPublishedPost" syncable="YES" codeGenerationType="class">
         <attribute name="accountID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="campaignID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="caption" optional="YES" attributeType="String"/>
         <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="draftID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
@@ -113,8 +77,6 @@
     </entity>
     <entity name="CDPublishingJob" representedClassName="CDPublishingJob" syncable="YES" codeGenerationType="class">
         <attribute name="accountID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="approvedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
-        <attribute name="approvedByDeviceID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="attemptCount" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
         <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="draftID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
@@ -124,12 +86,8 @@
         <attribute name="platform" optional="YES" attributeType="String"/>
         <attribute name="platformPublishID" optional="YES" attributeType="String"/>
         <attribute name="publishMode" optional="YES" attributeType="String"/>
-        <attribute name="requiresApproval" optional="YES" attributeType="Boolean" defaultValueString="YES" usesScalarValueType="YES"/>
-        <attribute name="scheduledAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="status" optional="YES" attributeType="String"/>
         <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
-        <attribute name="workerDeviceID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="workerLeaseExpiresAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
     </entity>
     <entity name="CDSlide" representedClassName="CDSlide" syncable="YES" codeGenerationType="class">
         <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
@@ -150,7 +108,6 @@
     <entity name="CDSlideshowDraft" representedClassName="CDSlideshowDraft" syncable="YES" codeGenerationType="class">
         <attribute name="audience" optional="YES" attributeType="String"/>
         <attribute name="brief" optional="YES" attributeType="String"/>
-        <attribute name="campaignID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="caption" optional="YES" attributeType="String"/>
         <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="exportedImageAssetIDsJSON" optional="YES" attributeType="String"/>
@@ -199,29 +156,16 @@
         <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="valueJSON" optional="YES" attributeType="String"/>
     </entity>
-    <entity name="CDWorkspace" representedClassName="CDWorkspace" syncable="YES" codeGenerationType="class">
-        <attribute name="automationPaused" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
-        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
-        <attribute name="defaultCadenceJSON" optional="YES" attributeType="String"/>
-        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="name" optional="YES" attributeType="String"/>
-        <attribute name="primaryWorkerDeviceID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
-    </entity>
     <elements>
-        <element name="CDWorkspace" positionX="-558" positionY="-198" width="128" height="134"/>
-        <element name="CDDevice" positionX="-360" positionY="-198" width="128" height="119"/>
         <element name="CDConnectedAccount" positionX="-162" positionY="-198" width="128" height="194"/>
-        <element name="CDCampaign" positionX="36" positionY="-198" width="128" height="134"/>
         <element name="CDTrend" positionX="234" positionY="-198" width="128" height="179"/>
         <element name="CDTrendTag" positionX="432" positionY="-198" width="128" height="104"/>
         <element name="CDAsset" positionX="-558" positionY="36" width="128" height="239"/>
-        <element name="CDSlideshowDraft" positionX="-360" positionY="36" width="128" height="209"/>
+        <element name="CDSlideshowDraft" positionX="-360" positionY="36" width="128" height="194"/>
         <element name="CDSlide" positionX="-162" positionY="36" width="128" height="194"/>
         <element name="CDCreativeTemplate" positionX="36" positionY="36" width="128" height="149"/>
-        <element name="CDPublishingJob" positionX="234" positionY="36" width="128" height="269"/>
-        <element name="CDPublishedPost" positionX="432" positionY="36" width="128" height="194"/>
-        <element name="CDAnalyticsSnapshot" positionX="-558" positionY="330" width="128" height="209"/>
+        <element name="CDPublishingJob" positionX="234" positionY="36" width="128" height="179"/>
+        <element name="CDPublishedPost" positionX="432" positionY="36" width="128" height="179"/>
         <element name="CDAuditEvent" positionX="-360" positionY="330" width="128" height="104"/>
         <element name="CDWorkflowState" positionX="-162" positionY="330" width="128" height="89"/>
         <element name="CDProduct" positionX="36" positionY="330" width="128" height="104"/>

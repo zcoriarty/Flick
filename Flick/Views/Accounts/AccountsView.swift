@@ -19,7 +19,7 @@ struct AccountsView: View {
                 selectedPlatform = platform
             }
             connectionStatus
-            AuthorizedAccountsSection(accounts: authorizedAccounts)
+            AuthorizedAccountsSection(accounts: authorizedAccounts, deleteAction: deleteAccount)
             PlatformAdaptersSection()
         }
         .flickScrollablePage()
@@ -93,6 +93,16 @@ struct AccountsView: View {
             await appModel.connectAccount(platform: platform)
         }
     }
+
+    private func deleteAccount(_ account: ConnectedAccount) {
+        Task {
+            do {
+                try await appModel.deleteConnectedAccount(id: account.id)
+            } catch {
+                appModel.lastErrorMessage = error.localizedDescription
+            }
+        }
+    }
 }
 
 private struct PlatformAccountTilesSection: View {
@@ -158,6 +168,7 @@ private struct PlatformAccountTile: View {
 
 private struct AuthorizedAccountsSection: View {
     var accounts: [ConnectedAccount]
+    var deleteAction: (ConnectedAccount) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -167,7 +178,7 @@ private struct AuthorizedAccountsSection: View {
             } else {
                 ResponsiveGrid(minimum: 320) {
                     ForEach(accounts.sortedForAccountsView) { account in
-                        AccountCard(account: account)
+                        AccountCard(account: account, deleteAction: deleteAction)
                     }
                 }
             }
@@ -223,6 +234,7 @@ private struct PlatformAdapterChip: View {
 
 private struct AccountCard: View {
     var account: ConnectedAccount
+    var deleteAction: (ConnectedAccount) -> Void
 
     var body: some View {
         FlickGlassCard(interactive: account.platform == .tiktok) {
@@ -281,6 +293,13 @@ private struct AccountCard: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
+
+                Button(role: .destructive) {
+                    deleteAction(account)
+                } label: {
+                    Label("Remove", systemImage: "trash")
+                }
+                .buttonStyle(.borderless)
             }
         }
     }

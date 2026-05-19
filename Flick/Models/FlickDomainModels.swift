@@ -25,15 +25,6 @@ enum SocialPlatform: String, CaseIterable, Codable, Identifiable, Hashable {
     }
 }
 
-enum FlickDevicePlatform: String, CaseIterable, Codable, Identifiable {
-    case iPhone
-    case mac
-    case iPad
-    case vision
-
-    var id: String { rawValue }
-}
-
 enum AccountStatus: String, CaseIterable, Codable, Identifiable {
     case connected
     case needsAuth
@@ -58,15 +49,6 @@ enum AccountAuthorizationSource: String, CaseIterable, Codable, Identifiable {
     case loginKit
     case manualImport
     case unavailable
-
-    var id: String { rawValue }
-}
-
-enum CampaignStatus: String, CaseIterable, Codable, Identifiable {
-    case planning
-    case active
-    case paused
-    case archived
 
     var id: String { rawValue }
 }
@@ -153,50 +135,17 @@ enum PublishMode: String, CaseIterable, Codable, Identifiable {
 }
 
 enum PublishingJobStatus: String, CaseIterable, Codable, Identifiable {
-    case draft
-    case queued
-    case awaitingApproval
-    case approved
     case rendering
-    case uploadingMedia
     case publishing
     case awaitingUserCompletion
     case published
     case failed
-    case canceled
-    case paused
 
     var id: String { rawValue }
 
     var isTerminal: Bool {
         switch self {
-        case .awaitingUserCompletion, .published, .failed, .canceled:
-            true
-        default:
-            false
-        }
-    }
-
-    func canTransition(to next: PublishingJobStatus) -> Bool {
-        switch (self, next) {
-        case (.draft, .queued),
-             (.queued, .awaitingApproval),
-             (.queued, .approved),
-             (.awaitingApproval, .approved),
-             (.approved, .rendering),
-             (.rendering, .uploadingMedia),
-             (.uploadingMedia, .publishing),
-             (.publishing, .awaitingUserCompletion),
-             (.publishing, .published),
-             (.publishing, .failed),
-             (.rendering, .failed),
-             (.uploadingMedia, .failed),
-             (.failed, .queued),
-             (.queued, .paused),
-             (.paused, .queued),
-             (.awaitingApproval, .canceled),
-             (.queued, .canceled),
-             (.approved, .canceled):
+        case .awaitingUserCompletion, .published, .failed:
             true
         default:
             false
@@ -227,26 +176,6 @@ enum PlatformErrorKind: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-struct FlickWorkspace: Identifiable, Codable, Hashable {
-    var id: UUID
-    var name: String
-    var defaultCadence: CadenceRule
-    var automationPaused: Bool
-    var primaryWorkerDeviceID: UUID?
-    var createdAt: Date
-    var updatedAt: Date
-}
-
-struct FlickDevice: Identifiable, Codable, Hashable {
-    var id: UUID
-    var name: String
-    var platform: FlickDevicePlatform
-    var isPrimaryWorker: Bool
-    var lastSeenAt: Date
-    var capabilities: [String]
-    var appVersion: String
-}
-
 struct ConnectedAccount: Identifiable, Codable, Hashable {
     var id: UUID
     var platform: SocialPlatform
@@ -260,17 +189,6 @@ struct ConnectedAccount: Identifiable, Codable, Hashable {
     var isPublishingEnabled: Bool
     var defaultPrivacyLevel: String
     var lastValidatedAt: Date?
-    var createdAt: Date
-    var updatedAt: Date
-}
-
-struct Campaign: Identifiable, Codable, Hashable {
-    var id: UUID
-    var name: String
-    var goal: String
-    var appFeature: String
-    var audience: String
-    var status: CampaignStatus
     var createdAt: Date
     var updatedAt: Date
 }
@@ -528,7 +446,6 @@ struct CreativeTemplate: Identifiable, Codable, Hashable {
 struct SlideshowDraft: Identifiable, Codable, Hashable {
     var id: UUID
     var title: String
-    var campaignID: UUID?
     var templateID: UUID?
     var brief: String
     var topic: String
@@ -552,7 +469,6 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
     init(
         id: UUID,
         title: String,
-        campaignID: UUID?,
         templateID: UUID?,
         brief: String = "",
         topic: String = "",
@@ -575,7 +491,6 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
     ) {
         self.id = id
         self.title = title
-        self.campaignID = campaignID
         self.templateID = templateID
         self.brief = brief
         self.topic = topic
@@ -600,7 +515,6 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
     private enum CodingKeys: String, CodingKey {
         case id
         case title
-        case campaignID
         case templateID
         case brief
         case topic
@@ -626,7 +540,6 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         title = try container.decode(String.self, forKey: .title)
-        campaignID = try container.decodeIfPresent(UUID.self, forKey: .campaignID)
         templateID = try container.decodeIfPresent(UUID.self, forKey: .templateID)
         brief = try container.decodeIfPresent(String.self, forKey: .brief) ?? ""
         topic = try container.decodeIfPresent(String.self, forKey: .topic) ?? ""
@@ -660,25 +573,14 @@ struct PublishingJob: Identifiable, Codable, Hashable {
     var platform: SocialPlatform
     var accountID: UUID
     var draftID: UUID
-    var scheduledAt: Date
     var status: PublishingJobStatus
     var publishMode: PublishMode
-    var requiresApproval: Bool
-    var approvedAt: Date?
-    var approvedByDeviceID: UUID?
-    var workerDeviceID: UUID?
-    var workerLeaseExpiresAt: Date?
     var attemptCount: Int
     var lastAttemptAt: Date?
     var lastError: PlatformFailure?
     var platformPublishID: String?
     var createdAt: Date
     var updatedAt: Date
-
-    var isLeaseActive: Bool {
-        guard let workerLeaseExpiresAt else { return false }
-        return workerLeaseExpiresAt > Date()
-    }
 }
 
 struct PlatformFailure: Codable, Hashable {
@@ -696,51 +598,11 @@ struct PublishedPost: Identifiable, Codable, Hashable {
     var platformURL: URL?
     var publishedAt: Date
     var draftID: UUID
-    var campaignID: UUID?
     var templateID: UUID?
     var trendTags: [TrendTag]
     var caption: String
     var createdAt: Date
     var updatedAt: Date
-}
-
-struct AnalyticsSnapshot: Identifiable, Codable, Hashable {
-    var id: UUID
-    var publishedPostID: UUID
-    var capturedAt: Date
-    var views: Int
-    var likes: Int
-    var comments: Int
-    var shares: Int
-    var saves: Int
-    var engagementRate: Double
-    var watchTime: TimeInterval?
-    var completionRate: Double?
-    var profileVisits: Int?
-    var follows: Int?
-    var rawJSON: String
-}
-
-struct AnalyticsPostPerformance: Identifiable, Codable, Hashable {
-    var id: UUID
-    var title: String
-    var platform: SocialPlatform
-    var views: Int
-    var engagementRate: Double
-    var savesPerView: Double
-    var publishedAt: Date
-    var tags: [TrendTag]
-}
-
-struct CadenceRule: Identifiable, Codable, Hashable {
-    var id: UUID
-    var accountID: UUID?
-    var postsPerDay: Int
-    var allowedTimeWindows: [String]
-    var minimumGapMinutes: Int
-    var requireApproval: Bool
-    var maxRetries: Int
-    var pauseOnErrorCount: Int
 }
 
 struct SyncHealth: Codable, Hashable {
@@ -756,29 +618,20 @@ struct APIHealthStatus: Identifiable, Codable, Hashable {
 }
 
 struct DashboardSnapshot: Codable, Hashable {
-    var scheduledTodayCount: Int
-    var awaitingApprovalCount: Int
     var failedJobCount: Int
-    var bestRecentPost: AnalyticsPostPerformance?
     var connectedAccounts: [ConnectedAccount]
     var syncHealth: SyncHealth
     var apiHealth: [APIHealthStatus]
 }
 
 struct FlickOverviewState: Codable, Hashable {
-    var workspace: FlickWorkspace
-    var devices: [FlickDevice]
     var accounts: [ConnectedAccount]
-    var campaigns: [Campaign]
     var products: [FlickProduct]
     var assets: [MediaAsset]
     var drafts: [SlideshowDraft]
     var templates: [CreativeTemplate]
     var publishingJobs: [PublishingJob]
     var publishedPosts: [PublishedPost]
-    var analyticsSnapshots: [AnalyticsSnapshot]
-    var analyticsPerformance: [AnalyticsPostPerformance]
-    var cadenceRules: [CadenceRule]
     var dashboard: DashboardSnapshot
 }
 
@@ -790,67 +643,7 @@ private extension Array where Element: Hashable {
 }
 
 extension FlickOverviewState {
-    mutating func refreshDerivedState(now: Date = Date(), calendar: Calendar = .current) {
-        analyticsPerformance = Self.analyticsPerformance(
-            posts: publishedPosts,
-            snapshots: analyticsSnapshots
-        )
-        dashboard.scheduledTodayCount = publishingJobs.filter { job in
-            calendar.isDate(job.scheduledAt, inSameDayAs: now) && job.status.isScheduledDashboardStatus
-        }.count
-        dashboard.awaitingApprovalCount = publishingJobs.filter { $0.status == .awaitingApproval }.count
+    mutating func refreshDerivedState() {
         dashboard.failedJobCount = publishingJobs.filter { $0.status == .failed }.count
-        dashboard.bestRecentPost = analyticsPerformance.first
-    }
-
-    private static func analyticsPerformance(
-        posts: [PublishedPost],
-        snapshots: [AnalyticsSnapshot]
-    ) -> [AnalyticsPostPerformance] {
-        let latestSnapshotsByPostID = Dictionary(grouping: snapshots, by: \.publishedPostID)
-            .compactMapValues { snapshots in
-                snapshots.max { $0.capturedAt < $1.capturedAt }
-            }
-
-        return posts.compactMap { post in
-            guard let snapshot = latestSnapshotsByPostID[post.id] else { return nil }
-            let savesPerView = snapshot.views > 0 ? Double(snapshot.saves) / Double(snapshot.views) : 0
-
-            return AnalyticsPostPerformance(
-                id: post.id,
-                title: post.dashboardTitle,
-                platform: post.platform,
-                views: snapshot.views,
-                engagementRate: snapshot.engagementRate,
-                savesPerView: savesPerView,
-                publishedAt: post.publishedAt,
-                tags: post.trendTags
-            )
-        }
-        .sorted {
-            if $0.views == $1.views {
-                return $0.publishedAt > $1.publishedAt
-            }
-            return $0.views > $1.views
-        }
-    }
-}
-
-private extension PublishingJobStatus {
-    var isScheduledDashboardStatus: Bool {
-        switch self {
-        case .queued, .awaitingApproval, .approved, .rendering, .uploadingMedia, .publishing:
-            true
-        case .draft, .awaitingUserCompletion, .published, .failed, .canceled, .paused:
-            false
-        }
-    }
-}
-
-private extension PublishedPost {
-    var dashboardTitle: String {
-        let trimmedCaption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedCaption.isEmpty else { return "\(platform.displayName) post" }
-        return trimmedCaption
     }
 }

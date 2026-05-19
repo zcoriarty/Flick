@@ -125,7 +125,7 @@ private struct ProductImageChoice: View {
     var isSelected: Bool
 
     var body: some View {
-        VerticalMediaFrame(fileURL: asset.localFileURL, cornerRadius: 8, maxPixelSize: 720)
+        VerticalMediaFrame(fileURL: asset.localFileURL, remoteURL: asset.publicURL, cornerRadius: 8, maxPixelSize: 720)
             .frame(width: 76, height: 136)
             .overlay {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)

@@ -61,6 +61,13 @@ struct SettingsView: View {
                 valueLineLimit: nil
             )
             FlickSettingsValueRow(
+                title: "Product media path",
+                systemImage: "shippingbox",
+                iconColor: .teal,
+                value: appModel.configuration.storagePaths.productMedia,
+                valueLineLimit: nil
+            )
+            FlickSettingsValueRow(
                 title: "Generated images path",
                 systemImage: "photo",
                 iconColor: .blue,
