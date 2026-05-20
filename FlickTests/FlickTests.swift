@@ -196,10 +196,14 @@ final class FlickTests: XCTestCase {
         let repository = InMemoryFlickRepository(state: FlickEmptyState.make())
         let model = FlickAppModel(repository: repository, configuration: .current)
 
-        let createdModel = try await model.createCreationModel(name: "  Launch Host  ")
+        let createdModel = try await model.createCreationModel(
+            name: "  Launch Host  ",
+            metadata: CreationModelPreset.cottageHost.metadata
+        )
 
         XCTAssertEqual(model.overview.creationModels.map(\.id), [createdModel.id])
         XCTAssertEqual(model.overview.creationModels.first?.name, "Launch Host")
+        XCTAssertEqual(model.overview.creationModels.first?.metadata.styleAndAccessories.aesthetic, "Cottagecore")
         XCTAssertEqual(repository.state.creationModels.first?.name, "Launch Host")
 
         var updatedModel = createdModel
@@ -216,6 +220,21 @@ final class FlickTests: XCTestCase {
 
         XCTAssertTrue(model.overview.creationModels.isEmpty)
         XCTAssertTrue(repository.state.creationModels.isEmpty)
+    }
+
+    func testCreationModelPresetsAndRandomizedMetadataPopulateFields() {
+        let presetMetadata = CreationModelPreset.cottageHost.metadata
+        let randomizedMetadata = CreationModelMetadata.randomized()
+
+        XCTAssertEqual(CreationModelPreset.fromScratch.metadata, CreationModelMetadata())
+        XCTAssertEqual(presetMetadata.identity.ageRange, "41-50")
+        XCTAssertEqual(presetMetadata.styleAndAccessories.aesthetic, "Cottagecore")
+
+        for field in CreationModelField.allCases {
+            let value = field.value(in: randomizedMetadata)
+            XCTAssertFalse(value.isEmpty, "\(field.title) should be populated")
+            XCTAssertTrue(field.options.contains(value), "\(field.title) should use a supported option")
+        }
     }
 
     func testAddingProductMediaRequiresAndStoresProductSelection() async throws {

@@ -451,6 +451,10 @@ final class FlickAppModel {
     }
 
     func createCreationModel(name: String) async throws -> FlickCreationModel {
+        try await createCreationModel(name: name, metadata: CreationModelMetadata())
+    }
+
+    func createCreationModel(name: String, metadata: CreationModelMetadata) async throws -> FlickCreationModel {
         let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedName.isEmpty else {
             throw CreationModelManagementError.missingName
@@ -459,6 +463,7 @@ final class FlickAppModel {
         let now = Date()
         let creationModel = FlickCreationModel(
             name: normalizedName,
+            metadata: metadata,
             createdAt: now,
             updatedAt: now
         )

@@ -101,6 +101,219 @@ struct CreationModelMetadata: Codable, Hashable {
     }
 }
 
+extension CreationModelMetadata {
+    static func randomized() -> CreationModelMetadata {
+        var metadata = CreationModelMetadata()
+
+        for field in CreationModelField.allCases {
+            metadata[keyPath: field.keyPath] = field.options.randomElement() ?? ""
+        }
+
+        return metadata
+    }
+}
+
+enum CreationModelPreset: String, CaseIterable, Identifiable, Hashable {
+    case fromScratch
+    case cottageHost
+    case studioFounder
+    case wellnessCreator
+    case streetwearEditor
+    case fitnessCoach
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .fromScratch: "From Scratch"
+        case .cottageHost: "Cottage Host"
+        case .studioFounder: "Studio Founder"
+        case .wellnessCreator: "Wellness Creator"
+        case .streetwearEditor: "Streetwear Editor"
+        case .fitnessCoach: "Fitness Coach"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .fromScratch:
+            "Blank"
+        case .cottageHost:
+            "Cottagecore"
+        case .studioFounder:
+            "Business casual"
+        case .wellnessCreator:
+            "Coastal"
+        case .streetwearEditor:
+            "Streetwear"
+        case .fitnessCoach:
+            "Athleisure"
+        }
+    }
+
+    var metadata: CreationModelMetadata {
+        switch self {
+        case .fromScratch:
+            return CreationModelMetadata()
+        case .cottageHost:
+            var metadata = CreationModelMetadata()
+            metadata.identity.gender = "Female"
+            metadata.identity.ageRange = "41-50"
+            metadata.ethnicity.ethnicity = "Samoan"
+            metadata.skinDetails.clarity = "Clear"
+            metadata.skinDetails.freckles = "Light Subtle"
+            metadata.skinDetails.moles = "Few Scattered"
+            metadata.skinDetails.underEyes = "Bright"
+            metadata.faceShape.shape = "Oval"
+            metadata.faceDetails.jawline = "Sharp"
+            metadata.faceDetails.cheekbones = "Subtle"
+            metadata.faceDetails.chin = "Receding"
+            metadata.faceDetails.dimples = "Chin Dimple"
+            metadata.faceDetails.lips = "Wide"
+            metadata.hair.color = "Auburn"
+            metadata.hair.style = "Bob"
+            metadata.hair.highlights = "Face Framing Highlights"
+            metadata.eyesAndBrows.shape = "Close Set"
+            metadata.eyesAndBrows.color = "Green"
+            metadata.eyesAndBrows.eyebrows = "Feathered"
+            metadata.noseAndEars.nose = "Straight"
+            metadata.noseAndEars.ears = "Attached Lobe"
+            metadata.body.build = "Athletic"
+            metadata.body.height = "Very Tall"
+            metadata.body.shoulders = "Wide"
+            metadata.styleAndAccessories.aesthetic = "Cottagecore"
+            metadata.styleAndAccessories.glasses = "Prescription Square"
+            metadata.styleAndAccessories.jewelry = "Delicate Chain"
+            metadata.styleAndAccessories.headwear = "None"
+            return metadata
+        case .studioFounder:
+            var metadata = CreationModelMetadata()
+            metadata.identity.gender = "Female"
+            metadata.identity.ageRange = "31-40"
+            metadata.ethnicity.ethnicity = "Mixed"
+            metadata.skinDetails.clarity = "Dewy"
+            metadata.skinDetails.freckles = "None"
+            metadata.skinDetails.moles = "Beauty Mark"
+            metadata.skinDetails.underEyes = "Bright"
+            metadata.faceShape.shape = "Diamond"
+            metadata.faceDetails.jawline = "Defined"
+            metadata.faceDetails.cheekbones = "High"
+            metadata.faceDetails.chin = "Pointed"
+            metadata.faceDetails.dimples = "None"
+            metadata.faceDetails.lips = "Full"
+            metadata.hair.color = "Dark Brown"
+            metadata.hair.style = "Long Wavy"
+            metadata.hair.highlights = "Subtle Highlights"
+            metadata.eyesAndBrows.shape = "Almond"
+            metadata.eyesAndBrows.color = "Brown"
+            metadata.eyesAndBrows.eyebrows = "Arched"
+            metadata.noseAndEars.nose = "Straight"
+            metadata.noseAndEars.ears = "Free Lobe"
+            metadata.body.build = "Slim"
+            metadata.body.height = "Tall"
+            metadata.body.shoulders = "Average"
+            metadata.styleAndAccessories.aesthetic = "Business Casual"
+            metadata.styleAndAccessories.glasses = "Wire Frames"
+            metadata.styleAndAccessories.jewelry = "Layered Necklaces"
+            metadata.styleAndAccessories.headwear = "None"
+            return metadata
+        case .wellnessCreator:
+            var metadata = CreationModelMetadata()
+            metadata.identity.gender = "Non-binary"
+            metadata.identity.ageRange = "25-30"
+            metadata.ethnicity.ethnicity = "Latine"
+            metadata.skinDetails.clarity = "Natural"
+            metadata.skinDetails.freckles = "Medium"
+            metadata.skinDetails.moles = "Few Scattered"
+            metadata.skinDetails.underEyes = "Natural"
+            metadata.faceShape.shape = "Heart"
+            metadata.faceDetails.jawline = "Soft"
+            metadata.faceDetails.cheekbones = "Defined"
+            metadata.faceDetails.chin = "Rounded"
+            metadata.faceDetails.dimples = "Cheek Dimples"
+            metadata.faceDetails.lips = "Bow Shaped"
+            metadata.hair.color = "Brown"
+            metadata.hair.style = "Curly"
+            metadata.hair.highlights = "Balayage"
+            metadata.eyesAndBrows.shape = "Round"
+            metadata.eyesAndBrows.color = "Hazel"
+            metadata.eyesAndBrows.eyebrows = "Natural"
+            metadata.noseAndEars.nose = "Button"
+            metadata.noseAndEars.ears = "Pierced"
+            metadata.body.build = "Average"
+            metadata.body.height = "Average"
+            metadata.body.shoulders = "Sloped"
+            metadata.styleAndAccessories.aesthetic = "Coastal"
+            metadata.styleAndAccessories.glasses = "Round Frames"
+            metadata.styleAndAccessories.jewelry = "Stud Earrings"
+            metadata.styleAndAccessories.headwear = "Headscarf"
+            return metadata
+        case .streetwearEditor:
+            var metadata = CreationModelMetadata()
+            metadata.identity.gender = "Male"
+            metadata.identity.ageRange = "18-24"
+            metadata.ethnicity.ethnicity = "East Asian"
+            metadata.skinDetails.clarity = "Matte"
+            metadata.skinDetails.freckles = "None"
+            metadata.skinDetails.moles = "None"
+            metadata.skinDetails.underEyes = "Soft Shadows"
+            metadata.faceShape.shape = "Square"
+            metadata.faceDetails.jawline = "Square"
+            metadata.faceDetails.cheekbones = "Defined"
+            metadata.faceDetails.chin = "Square"
+            metadata.faceDetails.dimples = "None"
+            metadata.faceDetails.lips = "Natural"
+            metadata.hair.color = "Black"
+            metadata.hair.style = "Short Crop"
+            metadata.hair.highlights = "None"
+            metadata.eyesAndBrows.shape = "Close Set"
+            metadata.eyesAndBrows.color = "Brown"
+            metadata.eyesAndBrows.eyebrows = "Straight"
+            metadata.noseAndEars.nose = "Narrow"
+            metadata.noseAndEars.ears = "Small"
+            metadata.body.build = "Slim"
+            metadata.body.height = "Tall"
+            metadata.body.shoulders = "Narrow"
+            metadata.styleAndAccessories.aesthetic = "Streetwear"
+            metadata.styleAndAccessories.glasses = "Aviators"
+            metadata.styleAndAccessories.jewelry = "Statement Rings"
+            metadata.styleAndAccessories.headwear = "Beanie"
+            return metadata
+        case .fitnessCoach:
+            var metadata = CreationModelMetadata()
+            metadata.identity.gender = "Female"
+            metadata.identity.ageRange = "25-30"
+            metadata.ethnicity.ethnicity = "Black"
+            metadata.skinDetails.clarity = "Clear"
+            metadata.skinDetails.freckles = "None"
+            metadata.skinDetails.moles = "None"
+            metadata.skinDetails.underEyes = "Bright"
+            metadata.faceShape.shape = "Oblong"
+            metadata.faceDetails.jawline = "Defined"
+            metadata.faceDetails.cheekbones = "High"
+            metadata.faceDetails.chin = "Rounded"
+            metadata.faceDetails.dimples = "One-Sided Dimple"
+            metadata.faceDetails.lips = "Full"
+            metadata.hair.color = "Black"
+            metadata.hair.style = "Ponytail"
+            metadata.hair.highlights = "None"
+            metadata.eyesAndBrows.shape = "Upturned"
+            metadata.eyesAndBrows.color = "Brown"
+            metadata.eyesAndBrows.eyebrows = "Thick"
+            metadata.noseAndEars.nose = "Wide"
+            metadata.noseAndEars.ears = "Free Lobe"
+            metadata.body.build = "Athletic"
+            metadata.body.height = "Tall"
+            metadata.body.shoulders = "Wide"
+            metadata.styleAndAccessories.aesthetic = "Athleisure"
+            metadata.styleAndAccessories.glasses = "None"
+            metadata.styleAndAccessories.jewelry = "Hoops"
+            metadata.styleAndAccessories.headwear = "Baseball Cap"
+            return metadata
+        }
+    }
+}
+
 struct CreationModelIdentity: Codable, Hashable {
     var gender = ""
     var ageRange = ""

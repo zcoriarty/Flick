@@ -39,12 +39,9 @@ struct ModelsView: View {
             }
         }
         .sheet(isPresented: $isNewModelSheetPresented) {
-            ModelNameSheet(
-                title: "New Model",
-                initialName: "",
-                confirmTitle: "Create",
-                saveAction: { name in
-                    _ = try await appModel.createCreationModel(name: name)
+            ModelCreateSheet(
+                saveAction: { name, metadata in
+                    _ = try await appModel.createCreationModel(name: name, metadata: metadata)
                 }
             )
         }
@@ -128,6 +125,7 @@ private struct ModelDetailView: View {
             if let model {
                 modelSection(model)
                 overviewSection(model)
+                randomizeSection(model)
             } else {
                 Section {
                     SettingsMessageRow(
@@ -211,11 +209,35 @@ private struct ModelDetailView: View {
         }
     }
 
+    private func randomizeSection(_ model: FlickCreationModel) -> some View {
+        Section {
+            FlickSettingsActionRow(
+                title: "Randomize",
+                systemImage: "shuffle",
+                iconColor: .orange,
+                showsChevron: false,
+                action: { randomizeModel(model) }
+            )
+        }
+    }
+
     private func deleteModel() {
         Task {
             do {
                 try await appModel.deleteCreationModel(id: modelID)
                 dismiss()
+            } catch {
+                appModel.lastErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func randomizeModel(_ model: FlickCreationModel) {
+        Task {
+            do {
+                var updatedModel = model
+                updatedModel.metadata = CreationModelMetadata.randomized()
+                try await appModel.updateCreationModel(updatedModel)
             } catch {
                 appModel.lastErrorMessage = error.localizedDescription
             }
@@ -232,6 +254,127 @@ private enum ModelDetailSheet: Identifiable {
         case .name: "name"
         case let .section(section): "section-\(section.id)"
         }
+    }
+}
+
+private struct ModelCreateSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var name = ""
+    @State private var selectedPreset: CreationModelPreset = .fromScratch
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    var saveAction: (String, CreationModelMetadata) async throws -> Void
+
+    private var canSave: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSaving
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Name") {
+                    #if os(iOS)
+                    TextField("Name", text: $name)
+                        .textInputAutocapitalization(.words)
+                    #else
+                    TextField("Name", text: $name)
+                    #endif
+                }
+
+                Section("Preset") {
+                    ForEach(CreationModelPreset.allCases) { preset in
+                        Button {
+                            selectedPreset = preset
+                        } label: {
+                            ModelPresetRow(
+                                preset: preset,
+                                isSelected: selectedPreset == preset
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                if let errorMessage {
+                    Section("Error") {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .flickSettingsListStyle()
+            .flickToolbarTitle("New Model")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", systemImage: "xmark") {
+                        dismiss()
+                    }
+                    .disabled(isSaving)
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create", systemImage: "checkmark") {
+                        save()
+                    }
+                    .disabled(!canSave)
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func save() {
+        guard canSave else { return }
+
+        isSaving = true
+        errorMessage = nil
+
+        Task {
+            do {
+                try await saveAction(name, selectedPreset.metadata)
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isSaving = false
+        }
+    }
+}
+
+private struct ModelPresetRow: View {
+    var preset: CreationModelPreset
+    var isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: preset.systemImage)
+                .foregroundStyle(preset.tint)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(preset.title)
+                    .foregroundStyle(.primary)
+
+                Text(preset.subtitle)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 12)
+
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(FlickStyle.appTint)
+            }
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -470,6 +613,30 @@ private extension FlickCreationModel {
 
         guard !values.isEmpty else { return "Not set" }
         return values.joined(separator: " / ")
+    }
+}
+
+private extension CreationModelPreset {
+    var systemImage: String {
+        switch self {
+        case .fromScratch: "square.dashed"
+        case .cottageHost: "leaf"
+        case .studioFounder: "briefcase"
+        case .wellnessCreator: "sun.max"
+        case .streetwearEditor: "camera"
+        case .fitnessCoach: "figure.strengthtraining.traditional"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .fromScratch: .secondary
+        case .cottageHost: .green
+        case .studioFounder: .blue
+        case .wellnessCreator: .orange
+        case .streetwearEditor: .purple
+        case .fitnessCoach: .teal
+        }
     }
 }
 
