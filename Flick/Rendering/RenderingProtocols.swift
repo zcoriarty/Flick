@@ -13,6 +13,8 @@ struct RenderOptions: Hashable {
 }
 
 struct ImageRenderOptions: Hashable {
+    static let tikTokPhotoPostMaximumPixelEdge = 1_080
+
     var width: Int
     var height: Int
     var jpegQuality: Double
@@ -29,6 +31,10 @@ struct ImageRenderOptions: Hashable {
 
     var contentType: String {
         "image/jpeg"
+    }
+
+    var fitsTikTokPhotoPostImageSize: Bool {
+        max(width, height) <= Self.tikTokPhotoPostMaximumPixelEdge
     }
 
     init(width: Int = 720, height: Int = 1080, jpegQuality: Double = 0.92) {

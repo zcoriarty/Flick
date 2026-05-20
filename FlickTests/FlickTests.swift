@@ -4,6 +4,7 @@
 //
 
 import CoreData
+import ImageIO
 import UniformTypeIdentifiers
 import XCTest
 @testable import Flick
@@ -1170,11 +1171,13 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(SlideshowImageGenerationSettings.draft.width, 720)
         XCTAssertEqual(SlideshowImageGenerationSettings.draft.height, 1280)
         XCTAssertLessThan(SlideshowImageGenerationSettings.draft.aspectRatio, 1)
+        XCTAssertTrue(SlideshowImageGenerationSettings.draft.isGPTImage2CompatibleCustomSize)
 
         XCTAssertEqual(SlideshowImageGenerationSettings.finalExport.size, "1024x1536")
         XCTAssertEqual(SlideshowImageGenerationSettings.finalExport.width, 1024)
         XCTAssertEqual(SlideshowImageGenerationSettings.finalExport.height, 1536)
         XCTAssertEqual(SlideshowImageGenerationSettings.finalExport.aspectRatio, 2.0 / 3.0)
+        XCTAssertTrue(SlideshowImageGenerationSettings.finalExport.isGPTImage2CompatibleCustomSize)
     }
 
     func testTikTokPhotoPostRenderOptionsUseSupportedFormat() {
@@ -1185,6 +1188,7 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(options.jpegQuality, 0.92)
         XCTAssertEqual(options.contentType, "image/jpeg")
         XCTAssertEqual(options.fileExtension, "jpg")
+        XCTAssertTrue(options.fitsTikTokPhotoPostImageSize)
     }
 
     func testTextOverlayRendererWritesTikTokJpegImages() async throws {
@@ -1214,13 +1218,21 @@ final class FlickTests: XCTestCase {
         var slide = makeSlide(imageAssetID: asset.id, generationStatus: .complete, now: now)
         slide.text = "Launch"
         let draft = makeSlideshowDraft(slides: [slide], now: now)
+        let options = ImageRenderOptions.tikTokPhotoPost
         let renderedImages = try await TextOverlayRenderService(renderDirectory: directory)
-            .renderImages(from: draft, assets: [asset], options: .tikTokPhotoPost)
+            .renderImages(from: draft, assets: [asset], options: options)
         let renderedImage = try XCTUnwrap(renderedImages.first)
         let renderedData = try Data(contentsOf: renderedImage.fileURL)
+        let renderedSource = try XCTUnwrap(CGImageSourceCreateWithData(renderedData as CFData, nil))
+        let decodedImage = try XCTUnwrap(CGImageSourceCreateImageAtIndex(renderedSource, 0, nil))
 
         XCTAssertEqual(renderedImage.contentType, "image/jpeg")
         XCTAssertEqual(renderedImage.fileURL.pathExtension, "jpg")
+        XCTAssertEqual(renderedImage.width, options.width)
+        XCTAssertEqual(renderedImage.height, options.height)
+        XCTAssertEqual(decodedImage.width, options.width)
+        XCTAssertEqual(decodedImage.height, options.height)
+        XCTAssertLessThanOrEqual(max(decodedImage.width, decodedImage.height), ImageRenderOptions.tikTokPhotoPostMaximumPixelEdge)
         XCTAssertEqual(Array(renderedData.prefix(3)), [0xFF, 0xD8, 0xFF])
         #endif
     }

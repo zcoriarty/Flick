@@ -73,6 +73,11 @@ struct GeneratedSlideImage: Hashable {
 }
 
 struct SlideshowImageGenerationSettings: Hashable {
+    static let gptImage2MinimumPixels = 655_360
+    static let gptImage2MaximumPixels = 8_294_400
+    static let gptImage2MaximumEdgeLength = 3_840
+    static let gptImage2MaximumAspectRatio = 3.0
+
     var size: String
     var quality: String
     var width: Int
@@ -80,6 +85,21 @@ struct SlideshowImageGenerationSettings: Hashable {
 
     var aspectRatio: Double {
         Double(width) / Double(height)
+    }
+
+    var isGPTImage2CompatibleCustomSize: Bool {
+        guard width > 0, height > 0, width.isMultiple(of: 16), height.isMultiple(of: 16) else {
+            return false
+        }
+
+        let pixelCount = width * height
+        let longerEdge = max(width, height)
+        let shorterEdge = min(width, height)
+        let edgeRatio = Double(longerEdge) / Double(shorterEdge)
+        return pixelCount >= Self.gptImage2MinimumPixels
+            && pixelCount <= Self.gptImage2MaximumPixels
+            && longerEdge <= Self.gptImage2MaximumEdgeLength
+            && edgeRatio <= Self.gptImage2MaximumAspectRatio
     }
 
     static let draft = SlideshowImageGenerationSettings(

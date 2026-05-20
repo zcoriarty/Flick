@@ -46,14 +46,23 @@ struct TextOverlayRenderService {
                 slide: slide,
                 options: options
             )
+            let renderedDimensions = try decodedImageDimensions(from: renderedData)
+            guard renderedDimensions.width == options.width, renderedDimensions.height == options.height else {
+                throw TextOverlayRenderError.renderedImageSizeMismatch(
+                    expectedWidth: options.width,
+                    expectedHeight: options.height,
+                    actualWidth: renderedDimensions.width,
+                    actualHeight: renderedDimensions.height
+                )
+            }
             let fileURL = renderDirectory.appending(path: "slide-\(String(format: "%02d", slide.index + 1))-\(slide.id.uuidString).\(options.fileExtension)")
             try renderedData.write(to: fileURL, options: [.atomic])
 
             renderedImages.append(
                 RenderedImage(
                     fileURL: fileURL,
-                    width: options.width,
-                    height: options.height,
+                    width: renderedDimensions.width,
+                    height: renderedDimensions.height,
                     contentType: options.contentType,
                     slideID: slide.id
                 )
@@ -103,6 +112,7 @@ enum TextOverlayRenderError: LocalizedError {
     case invalidImage(UUID)
     case rendererUnavailable
     case imageEncodingFailed
+    case renderedImageSizeMismatch(expectedWidth: Int, expectedHeight: Int, actualWidth: Int, actualHeight: Int)
 
     var errorDescription: String? {
         switch self {
@@ -116,8 +126,33 @@ enum TextOverlayRenderError: LocalizedError {
             "Image rendering is unavailable on this platform."
         case .imageEncodingFailed:
             "The rendered slide could not be encoded."
+        case let .renderedImageSizeMismatch(expectedWidth, expectedHeight, actualWidth, actualHeight):
+            "The rendered slide encoded at \(actualWidth)x\(actualHeight), expected \(expectedWidth)x\(expectedHeight)."
         }
     }
+}
+
+private func decodedImageDimensions(from data: Data) throws -> (width: Int, height: Int) {
+    guard
+        let source = CGImageSourceCreateWithData(data as CFData, nil),
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+        let width = imageDimensionValue(properties[kCGImagePropertyPixelWidth]),
+        let height = imageDimensionValue(properties[kCGImagePropertyPixelHeight])
+    else {
+        throw TextOverlayRenderError.imageEncodingFailed
+    }
+
+    return (width, height)
+}
+
+private func imageDimensionValue(_ value: Any?) -> Int? {
+    if let number = value as? NSNumber {
+        return number.intValue
+    }
+    if let intValue = value as? Int {
+        return intValue
+    }
+    return nil
 }
 
 #if canImport(UIKit)
@@ -198,8 +233,30 @@ private func drawOverlayTextUIKit(slide: Slide, canvasSize: CGSize) {
 @MainActor
 private func renderImageDataWithAppKit(background: CGImage, slide: Slide, options: ImageRenderOptions) throws -> Data {
     let size = CGSize(width: options.width, height: options.height)
-    let image = NSImage(size: size)
-    image.lockFocus()
+    guard
+        let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: options.width,
+            pixelsHigh: options.height,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ),
+        let graphicsContext = NSGraphicsContext(bitmapImageRep: bitmap)
+    else {
+        throw TextOverlayRenderError.imageEncodingFailed
+    }
+
+    bitmap.size = size
+    NSGraphicsContext.saveGraphicsState()
+    defer { NSGraphicsContext.restoreGraphicsState() }
+    NSGraphicsContext.current = graphicsContext
+    graphicsContext.imageInterpolation = .high
+
     NSColor.black.setFill()
     NSRect(origin: .zero, size: size).fill()
 
@@ -211,11 +268,6 @@ private func renderImageDataWithAppKit(background: CGImage, slide: Slide, option
             .draw(in: NSRect(origin: .zero, size: size), from: .zero, operation: .sourceOver, fraction: 1)
     } else {
         drawOverlayTextAppKit(slide: slide, canvasSize: size)
-    }
-    image.unlockFocus()
-
-    guard let tiffData = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiffData) else {
-        throw TextOverlayRenderError.imageEncodingFailed
     }
 
     guard let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: options.jpegQuality]) else {
