@@ -45,6 +45,62 @@ struct FlickCreationModel: Identifiable, Codable, Hashable {
     func aiMetadataJSONData() throws -> Data {
         try JSONEncoder.flick.encode(aiMetadata)
     }
+
+    var generationReference: SlideshowCreationModelReference {
+        SlideshowCreationModelReference(model: self)
+    }
+}
+
+struct SlideshowCreationModelReference: Identifiable, Codable, Hashable {
+    var id: UUID
+    var name: String
+    var aiMetadata: CreationModelAIMetadata
+
+    init(id: UUID, name: String, aiMetadata: CreationModelAIMetadata) {
+        self.id = id
+        self.name = name
+        self.aiMetadata = aiMetadata
+    }
+
+    init(model: FlickCreationModel) {
+        self.init(
+            id: model.id,
+            name: model.name,
+            aiMetadata: model.aiMetadata
+        )
+    }
+
+    var metadataSummary: String {
+        let values = [
+            aiMetadata.identity.gender,
+            aiMetadata.identity.ageRange,
+            aiMetadata.ethnicity.ethnicity,
+            aiMetadata.hair.color,
+            aiMetadata.hair.style,
+            aiMetadata.body.build,
+            aiMetadata.styleAndAccessories.aesthetic
+        ]
+        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        guard !values.isEmpty else { return "Not set" }
+        return values.joined(separator: " / ")
+    }
+
+    func aiMetadataJSONString() -> String {
+        guard
+            let data = try? JSONEncoder.flick.encode(aiMetadata),
+            let json = String(data: data, encoding: .utf8)
+        else {
+            return "{}"
+        }
+        return json
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case aiMetadata = "ai_metadata"
+    }
 }
 
 struct CreationModelAIMetadata: Codable, Hashable {

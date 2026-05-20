@@ -164,6 +164,14 @@ private struct MacAutomationDetailHeader: View {
                         tint: .orange
                     )
                 }
+                if let creationModelName = item.creationModelName {
+                    MacAutomationDetailValue(
+                        title: "Model",
+                        value: creationModelName,
+                        systemImage: "person.crop.square",
+                        tint: .purple
+                    )
+                }
             }
 
             if let lastErrorMessage = item.automation.lastErrorMessage, !lastErrorMessage.isEmpty {

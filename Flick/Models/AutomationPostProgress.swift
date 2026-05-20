@@ -12,6 +12,7 @@ struct AutomationPostProgress: Identifiable, Codable, Hashable {
     var title: String
     var templateTitle: String?
     var productName: String?
+    var creationModelName: String?
     var scheduledAt: Date
     var startedAt: Date
     var updatedAt: Date
@@ -54,6 +55,7 @@ struct AutomationPostProgress: Identifiable, Codable, Hashable {
         automationID: UUID,
         title: String,
         productName: String?,
+        creationModelName: String? = nil,
         scheduledAt: Date,
         now: Date = Date()
     ) -> AutomationPostProgress {
@@ -62,6 +64,7 @@ struct AutomationPostProgress: Identifiable, Codable, Hashable {
             automationID: automationID,
             title: title,
             productName: productName,
+            creationModelName: creationModelName,
             scheduledAt: scheduledAt,
             startedAt: now,
             updatedAt: now,

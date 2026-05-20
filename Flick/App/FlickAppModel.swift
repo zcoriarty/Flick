@@ -811,6 +811,7 @@ final class FlickAppModel {
     func createAISlideshow(
         brief: String,
         from template: ExampleSlideshowTemplate,
+        creationModel: SlideshowCreationModelReference? = nil,
         productImage: SlideshowProductImage? = nil
     ) async {
         guard !isPlanningSlideshow else { return }
@@ -831,6 +832,7 @@ final class FlickAppModel {
             let result = try await createAISlideshowResult(
                 brief: planningBrief,
                 template: template,
+                creationModel: creationModel,
                 productImage: productImage
             )
             overview.templates.insert(result.creativeTemplate, at: 0)
@@ -1382,6 +1384,7 @@ private extension FlickAppModel {
             productName: automation.productID.flatMap { productID in
                 overview.products.first { $0.id == productID }?.name
             },
+            creationModelName: automation.creationModel?.name,
             scheduledAt: scheduledAt
         )
         overview.automationPostProgresses.insert(progress, at: 0)
@@ -1410,7 +1413,8 @@ private extension FlickAppModel {
         draftID: UUID? = nil,
         title: String? = nil,
         templateTitle: String? = nil,
-        productName: String? = nil
+        productName: String? = nil,
+        creationModelName: String? = nil
     ) async {
         guard
             let progressID,
@@ -1430,6 +1434,9 @@ private extension FlickAppModel {
         }
         if let productName {
             overview.automationPostProgresses[progressIndex].productName = productName
+        }
+        if let creationModelName {
+            overview.automationPostProgresses[progressIndex].creationModelName = creationModelName
         }
         overview.automationPostProgresses[progressIndex].updatedAt = Date()
         await persistAutomationPostProgresses()
@@ -1513,6 +1520,7 @@ private extension FlickAppModel {
     func createAISlideshowResult(
         brief: String,
         template: ExampleSlideshowTemplate,
+        creationModel: SlideshowCreationModelReference?,
         productImage: SlideshowProductImage?
     ) async throws -> AISlideshowCreationResult {
         let openAIClient = makeOpenAIClient()
@@ -1522,6 +1530,7 @@ private extension FlickAppModel {
             brief: brief,
             template: template,
             styleGuide: styleGuide,
+            creationModel: creationModel,
             productImage: productImage
         )
 
@@ -1549,6 +1558,7 @@ private extension FlickAppModel {
             from: plan,
             brief: brief,
             templateID: creativeTemplate.id,
+            creationModel: creationModel,
             productImage: productImage,
             now: now
         )
@@ -1581,12 +1591,17 @@ private extension FlickAppModel {
             await updateAutomationPostProgress(
                 progressID,
                 templateTitle: template.title,
-                productName: productImage.product.name
+                productName: productImage.product.name,
+                creationModelName: automation.creationModel?.name
             )
             await completeAutomationPostProgressStep(
                 progressID,
                 AutomationPostProgressStepID.selectTemplate,
-                detail: "Selected \(template.title) for \(productImage.product.name)."
+                detail: automationSelectionDetail(
+                    templateTitle: template.title,
+                    productName: productImage.product.name,
+                    creationModel: automation.creationModel
+                )
             )
 
             let planningBrief = templateAnalysisBrief(for: template)
@@ -1606,6 +1621,7 @@ private extension FlickAppModel {
                 result = try await createAISlideshowResult(
                     brief: planningBrief,
                     template: template,
+                    creationModel: automation.creationModel,
                     productImage: productImage
                 )
             } catch {
@@ -1726,6 +1742,18 @@ private extension FlickAppModel {
         return SlideshowProductImage(product: product, asset: availableAssets[index])
     }
 
+    func automationSelectionDetail(
+        templateTitle: String,
+        productName: String,
+        creationModel: SlideshowCreationModelReference?
+    ) -> String {
+        guard let creationModel else {
+            return "Selected \(templateTitle) for \(productName)."
+        }
+
+        return "Selected \(templateTitle) for \(productName) with \(creationModel.name)."
+    }
+
     func markAutomation(_ automationID: UUID, succeededAt date: Date) {
         guard let index = overview.automations.firstIndex(where: { $0.id == automationID }) else { return }
         overview.automations[index].lastRunAt = date
@@ -1790,6 +1818,7 @@ private extension FlickAppModel {
         from plan: PlannedSlideshow,
         brief: String,
         templateID: UUID,
+        creationModel: SlideshowCreationModelReference?,
         productImage: SlideshowProductImage?,
         now: Date
     ) -> SlideshowDraft {
@@ -1819,6 +1848,7 @@ private extension FlickAppModel {
             id: UUID(),
             title: plan.title,
             templateID: templateID,
+            creationModel: creationModel,
             brief: brief,
             topic: plan.topic,
             audience: plan.audience,
@@ -1944,7 +1974,8 @@ private extension FlickAppModel {
 
             let generatedImage = try await ImageGenerationService(client: openAIClient).generateSlideImage(
                 prompt: slide.prompt,
-                settings: settings
+                settings: settings,
+                creationModel: draft.creationModel
             )
             let generatedContentType = UTType(mimeType: generatedImage.contentType) ?? .jpeg
             let storedMedia = try generatedImageLibrary.store(data: generatedImage.data, contentType: generatedContentType)

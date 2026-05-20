@@ -72,6 +72,13 @@ private struct AutomationRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
 
+                if let modelName = automation.creationModel?.name, !modelName.isEmpty {
+                    Text("Model: \(modelName)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
                 if let nextScheduledAt = automation.nextScheduledAt {
                     Text("Next post \(RelativeDateTimeFormatter.automationShort.localizedString(for: nextScheduledAt, relativeTo: Date()))")
                         .font(.caption)

@@ -13,6 +13,7 @@ struct SlideshowPlannerService {
         brief: String,
         template: ExampleSlideshowTemplate,
         styleGuide: TemplateStyleGuide,
+        creationModel: SlideshowCreationModelReference? = nil,
         productImage: SlideshowProductImage? = nil
     ) async throws -> PlannedSlideshow {
         let expectedSlideCount = template.slideCount + (productImage == nil ? 0 : 1)
@@ -32,6 +33,8 @@ struct SlideshowPlannerService {
 
                 Template style guide:
                 \(styleGuide.promptSummary)
+
+                \(creationModelInstructions(for: creationModel))
 
                 \(productImageInstructions(for: productImage, templateSlideCount: template.slideCount))
 
@@ -91,6 +94,8 @@ struct SlideshowPlannerService {
                         Global visual motif: \(draft.globalVisualMotif)
                         Template style:
                         \(styleGuide.promptSummary)
+
+                        \(creationModelInstructions(for: draft.creationModel))
 
                         Slide \(slide.index + 1):
                         - Text rendered by Flick: \(slide.text)
@@ -155,6 +160,8 @@ struct SlideshowPlannerService {
         You are Flick's slideshow planner and prompt writer.
         Normalize the brief, reuse the selected template structurally, and create one cohesive TikTok/Instagram-style image carousel plan.
         Use the existing Flick template as style and pacing reference only.
+        Template people are reference material for pose, camera framing, environment, and background only; never copy their face, hair, skin tone, body, age, gender expression, clothing, or accessories.
+        When a selected creation model is supplied, any visible person in generated slide prompts must match that model JSON and stay visually consistent across slides.
         Do not create image variants or candidate grids.
         Every slide must have editable Flick-rendered overlay text and exactly one vertical portrait image prompt.
         The generated images are backgrounds and must leave clean low-detail room for text overlays.
@@ -166,6 +173,7 @@ struct SlideshowPlannerService {
         """
         Rewrite a single slide image prompt for gpt-image-2.
         Preserve the selected Flick template style guide, slideshow continuity, current text overlay position, and user edit instruction.
+        Preserve the draft's selected creation model whenever one is supplied, and treat template people as pose/environment references only.
         The output prompt must request one vertical portrait social slideshow image and must forbid readable text, captions, logos, watermarks, fake UI text, and gibberish.
         Do not propose variants.
         """
@@ -277,6 +285,29 @@ struct SlideshowPlannerService {
         """
     }
 
+    private func creationModelInstructions(for creationModel: SlideshowCreationModelReference?) -> String {
+        guard let creationModel else {
+            return """
+            No selected creation model was supplied.
+            If a generated slide includes a person, do not copy the person from the template image; use the template only for pose, composition, camera framing, environment, and background.
+            """
+        }
+
+        return """
+        Selected creation model:
+        - Model name: \(creationModel.name)
+        - Model JSON:
+        \(creationModel.aiMetadataJSONString())
+
+        Person identity rules:
+        - Any visible generated person must be based on the selected model JSON.
+        - Keep the selected model's face, hair, skin details, eyes, body, styling, and accessories consistent across slides.
+        - Use template people only for pose, composition, camera framing, environment, and background.
+        - Do not copy the template person's face, hair, skin tone, body, age, gender expression, clothing, or accessories when they differ from the selected model.
+        - Do not force a person into slides where the visual concept does not need one.
+        """
+    }
+
     private func imageURL(for asset: MediaAsset) throws -> String {
         if let localFileURL = asset.localFileURL {
             let data = try Data(contentsOf: localFileURL)
@@ -321,6 +352,8 @@ enum SlideshowPromptBuilder {
         Template style:
         \(styleGuide.promptSummary)
 
+        \(modelIdentityContract(for: draft.creationModel))
+
         Continuity from previous slide:
         \(previousVisualSummary.isEmpty ? "This is the first slide; establish the motif cleanly." : previousVisualSummary)
 
@@ -335,6 +368,27 @@ enum SlideshowPromptBuilder {
         - No logos.
         - No watermarks.
         - No fake UI text or gibberish.
+        """
+    }
+
+    static func modelIdentityContract(for creationModel: SlideshowCreationModelReference?) -> String {
+        guard let creationModel else {
+            return """
+            Person identity:
+            - Use template/source people only for pose, camera framing, environment, and background.
+            - Do not copy a template person's face, hair, skin tone, body, age, gender expression, clothing, or accessories.
+            """
+        }
+
+        return """
+        Selected creation model:
+        \(creationModel.aiMetadataJSONString())
+
+        Person identity:
+        - Any visible generated person must match this selected creation model.
+        - Keep the model's face, hair, skin details, eyes, body, styling, and accessories consistent.
+        - Use template/source people only for pose, camera framing, environment, and background.
+        - Do not copy a template person's face, hair, skin tone, body, age, gender expression, clothing, or accessories when they differ from the model JSON.
         """
     }
 }

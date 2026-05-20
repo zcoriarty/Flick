@@ -147,6 +147,15 @@ struct IOSAutomationDetailView: View {
                     valueLineLimit: 2
                 )
             }
+            if let creationModelName = item.creationModelName {
+                FlickSettingsValueRow(
+                    title: "Model",
+                    systemImage: "person.crop.square",
+                    iconColor: .purple,
+                    value: creationModelName,
+                    valueLineLimit: 2
+                )
+            }
         }
     }
 

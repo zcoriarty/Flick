@@ -72,6 +72,7 @@ struct AutomationDashboardSnapshot: Hashable {
                     productName: automation.productID.flatMap { productID in
                         overview.products.first { $0.id == productID }?.name
                     },
+                    creationModelName: automation.creationModel?.name,
                     targets: targets,
                     publishedPosts: posts,
                     publishingJobs: jobs,
@@ -186,6 +187,7 @@ struct AutomationDashboardItem: Identifiable, Hashable {
     var automation: ContentAutomation
     var displayName: String
     var productName: String?
+    var creationModelName: String?
     var targets: [AutomationTargetSummary]
     var publishedPosts: [PublishedPost]
     var publishingJobs: [PublishingJob]

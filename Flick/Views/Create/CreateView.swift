@@ -24,6 +24,7 @@ struct CreateView: View {
     @State private var isAutomated = false
     @State private var selectedTemplate: ExampleSlideshowTemplate?
     @State private var selectedAutomationTemplateIDs: Set<String> = []
+    @State private var selectedCreationModel: SlideshowCreationModelReference?
     @State private var selectedProductID: UUID?
     @State private var selectedProductImageAssetID: UUID?
     @State private var selectedAutomationProductImageAssetIDs: Set<UUID> = []
@@ -51,131 +52,11 @@ struct CreateView: View {
         }
 
         ZStack {
-            List {
-            CreateAutomationSection(
-                isAutomated: $isAutomated,
-                schedule: $automationSchedule
+            createFormList(
+                in: appModel,
+                currentDraftID: currentDraftID,
+                currentDraftIndex: currentDraftIndex
             )
-
-            if isAutomated {
-                CreateAutomationTemplateSection(
-                    loadState: templateLoadState,
-                    selectedTemplateIDs: $selectedAutomationTemplateIDs,
-                    selectAction: { presentedSheet = .templatePicker },
-                    retryAction: loadTemplates
-                )
-
-                CreateAutomationProductImageSection(
-                    products: appModel.overview.products,
-                    productImageAssets: selectableProductImageAssets(in: appModel),
-                    selectedProductID: $selectedProductID,
-                    selectedProductImageAssetIDs: $selectedAutomationProductImageAssetIDs
-                )
-
-                CreateTikTokSettingsSection(
-                    accountName: tiktokAccountName,
-                    hasConfiguredSettings: automationTikTokSettings.automatedPublishSettings(description: "") != nil,
-                    postAsDraft: automationTikTokSettings.postAsDraft,
-                    selectedVisibility: automationTikTokSettings.selectedAudience,
-                    disclosesVideoContent: automationTikTokSettings.disclosesVideoContent,
-                    promotesYourBrand: automationTikTokSettings.promotesYourBrand,
-                    promotesBrandedContent: automationTikTokSettings.promotesBrandedContent,
-                    action: { presentedSheet = .tikTokSettings }
-                )
-
-                CreateAutomationsSection(
-                    automations: appModel.overview.automations,
-                    templates: allTemplates(in: templateLoadState),
-                    products: appModel.overview.products,
-                    editAction: loadAutomation,
-                    deleteAction: { deleteAutomation($0, using: appModel) }
-                )
-            } else {
-                CreateTemplateSection(
-                    loadState: templateLoadState,
-                    selectedTemplate: selectedTemplate,
-                    selectAction: { presentedSheet = .templatePicker },
-                    clearAction: { selectedTemplate = nil },
-                    retryAction: loadTemplates
-                )
-
-                CreateProductImageSection(
-                    products: appModel.overview.products,
-                    productImageAssets: selectableProductImageAssets(in: appModel),
-                    selectedProductID: $selectedProductID,
-                    selectedProductImageAssetID: $selectedProductImageAssetID
-                )
-
-                AnalyzeTemplateSection(
-                    selectedTemplate: selectedTemplate,
-                    isPlanning: appModel.isPlanningSlideshow,
-                    hasAnalyzedTemplate: currentDraftID != nil,
-                    canAnalyze: canAnalyzeTemplate(in: appModel),
-                    action: analyzeTemplate
-                )
-
-                if let currentDraftID {
-                    CreateDraftWorkflowSections(
-                        appModel: appModel,
-                        draftID: currentDraftID,
-                        selectedSlideID: $selectedSlideID,
-                        openEditorAction: openSlideEditor
-                    )
-                } else {
-                    Section("Slideshow") {
-                        CreateMessageRow(
-                            title: "No slideshow plan yet",
-                            message: "Select a template and analyze it to start editing slides, or open Drafts to resume an unposted draft."
-                        )
-                    }
-                }
-
-                if let currentDraftID, let currentDraftIndex {
-                    let tikTokSettings = appModel.overview.drafts[currentDraftIndex].tikTokSettings
-
-                    CreateSongSection(
-                        selectedSongs: selectedSongsBinding(in: appModel, draftID: currentDraftID),
-                        selectAction: { presentedSheet = .songPicker }
-                    )
-
-                    CreateTikTokSettingsSection(
-                        accountName: tiktokAccountName,
-                        hasConfiguredSettings: tikTokSettings != nil,
-                        postAsDraft: tikTokSettings?.postAsDraft ?? false,
-                        selectedVisibility: tikTokSettings?.selectedAudience,
-                        disclosesVideoContent: tikTokSettings?.disclosesVideoContent ?? false,
-                        promotesYourBrand: tikTokSettings?.promotesYourBrand ?? false,
-                        promotesBrandedContent: tikTokSettings?.promotesBrandedContent ?? false,
-                        action: { presentedSheet = .tikTokSettings }
-                    )
-                } else {
-                    CreateSongSection(
-                        selectedSongs: .constant([]),
-                        selectAction: {}
-                    )
-                    .disabled(true)
-
-                    CreateTikTokSettingsSection(
-                        accountName: tiktokAccountName,
-                        hasConfiguredSettings: false,
-                        postAsDraft: false,
-                        selectedVisibility: nil,
-                        disclosesVideoContent: false,
-                        promotesYourBrand: false,
-                        promotesBrandedContent: false,
-                        action: {}
-                    )
-                    .disabled(true)
-                }
-            }
-            }
-            .id(createFormResetID)
-            .flickSettingsListStyle()
-            .contentMargins(.top, 0, for: .scrollContent)
-            .scrollDismissesKeyboard(.interactively)
-            .dismissKeyboardOnTap()
-            .disabled(showsAutomationStartSuccess)
-            .opacity(showsAutomationStartSuccess ? 0 : 1)
 
             if showsAutomationStartSuccess {
                 CreateAutomationStartSuccessView()
@@ -218,9 +99,11 @@ struct CreateView: View {
             if case .loading = templateLoadState {
                 loadTemplates()
             }
+            syncCreationModelSelectionFromActiveDraft(in: appModel)
             updateSelectedSlide(using: appModel)
         }
         .onChange(of: appModel.activeCreateDraftID) { _, _ in
+            syncCreationModelSelectionFromActiveDraft(in: appModel)
             updateSelectedSlide(using: appModel)
         }
         .onChange(of: appModel.overview.drafts) { _, _ in
@@ -241,6 +124,17 @@ struct CreateView: View {
         .onChange(of: appModel.overview.assets) { _, _ in
             reconcileProductSelection(in: appModel)
             reconcileAutomationProductSelection(in: appModel)
+        }
+        .onChange(of: appModel.overview.creationModels) { _, _ in
+            refreshSelectedCreationModel(in: appModel)
+        }
+        .onChange(of: selectedCreationModel) { _, _ in
+            updateActiveDraftCreationModel(in: appModel)
+        }
+        .onChange(of: isAutomated) { _, newValue in
+            if !newValue {
+                syncCreationModelSelectionFromActiveDraft(in: appModel)
+            }
         }
         .sheet(item: $presentedSheet) { sheet in
             switch sheet {
@@ -263,6 +157,7 @@ struct CreateView: View {
                     selectedDraftID: appModel.activeCreateDraftID,
                     selectAction: { draftID in
                         appModel.selectCreateDraft(id: draftID)
+                        syncCreationModelSelectionFromActiveDraft(in: appModel)
                         updateSelectedSlide(using: appModel)
                     },
                     deleteAction: { draftID in
@@ -365,6 +260,36 @@ struct CreateView: View {
         }
     }
 
+    private func createFormList(
+        in appModel: FlickAppModel,
+        currentDraftID: UUID?,
+        currentDraftIndex: Int?
+    ) -> some View {
+        List {
+            CreateAutomationSection(
+                isAutomated: $isAutomated,
+                schedule: $automationSchedule
+            )
+
+            if isAutomated {
+                automatedSetupSections(in: appModel)
+            } else {
+                manualSetupSections(
+                    in: appModel,
+                    currentDraftID: currentDraftID,
+                    currentDraftIndex: currentDraftIndex
+                )
+            }
+        }
+        .id(createFormResetID)
+        .flickSettingsListStyle()
+        .contentMargins(.top, 0, for: .scrollContent)
+        .scrollDismissesKeyboard(.interactively)
+        .dismissKeyboardOnTap()
+        .disabled(showsAutomationStartSuccess)
+        .opacity(showsAutomationStartSuccess ? 0 : 1)
+    }
+
     private var draftsButton: some View {
         Button("Drafts", systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90") {
             presentedSheet = .drafts
@@ -398,6 +323,149 @@ struct CreateView: View {
                 automationTikTokSettings.privacyLevel = newValue?.privacyLevel
             }
         )
+    }
+
+    @ViewBuilder
+    private func automatedSetupSections(in appModel: FlickAppModel) -> some View {
+        CreateAutomationTemplateSection(
+            loadState: templateLoadState,
+            selectedTemplateIDs: $selectedAutomationTemplateIDs,
+            selectAction: { presentedSheet = .templatePicker },
+            retryAction: loadTemplates
+        )
+
+        CreateModelSection(
+            models: appModel.overview.creationModels,
+            selectedModel: $selectedCreationModel
+        )
+
+        CreateAutomationProductImageSection(
+            products: appModel.overview.products,
+            productImageAssets: selectableProductImageAssets(in: appModel),
+            selectedProductID: $selectedProductID,
+            selectedProductImageAssetIDs: $selectedAutomationProductImageAssetIDs
+        )
+
+        CreateTikTokSettingsSection(
+            accountName: tiktokAccountName,
+            hasConfiguredSettings: automationTikTokSettings.automatedPublishSettings(description: "") != nil,
+            postAsDraft: automationTikTokSettings.postAsDraft,
+            selectedVisibility: automationTikTokSettings.selectedAudience,
+            disclosesVideoContent: automationTikTokSettings.disclosesVideoContent,
+            promotesYourBrand: automationTikTokSettings.promotesYourBrand,
+            promotesBrandedContent: automationTikTokSettings.promotesBrandedContent,
+            action: { presentedSheet = .tikTokSettings }
+        )
+
+        CreateAutomationsSection(
+            automations: appModel.overview.automations,
+            templates: allTemplates(in: templateLoadState),
+            products: appModel.overview.products,
+            editAction: loadAutomation,
+            deleteAction: { deleteAutomation($0, using: appModel) }
+        )
+    }
+
+    @ViewBuilder
+    private func manualSetupSections(
+        in appModel: FlickAppModel,
+        currentDraftID: UUID?,
+        currentDraftIndex: Int?
+    ) -> some View {
+        CreateTemplateSection(
+            loadState: templateLoadState,
+            selectedTemplate: selectedTemplate,
+            selectAction: { presentedSheet = .templatePicker },
+            clearAction: { selectedTemplate = nil },
+            retryAction: loadTemplates
+        )
+
+        CreateModelSection(
+            models: appModel.overview.creationModels,
+            selectedModel: $selectedCreationModel
+        )
+
+        CreateProductImageSection(
+            products: appModel.overview.products,
+            productImageAssets: selectableProductImageAssets(in: appModel),
+            selectedProductID: $selectedProductID,
+            selectedProductImageAssetID: $selectedProductImageAssetID
+        )
+
+        AnalyzeTemplateSection(
+            selectedTemplate: selectedTemplate,
+            isPlanning: appModel.isPlanningSlideshow,
+            hasAnalyzedTemplate: currentDraftID != nil,
+            canAnalyze: canAnalyzeTemplate(in: appModel),
+            action: analyzeTemplate
+        )
+
+        if let currentDraftID {
+            CreateDraftWorkflowSections(
+                appModel: appModel,
+                draftID: currentDraftID,
+                selectedSlideID: $selectedSlideID,
+                openEditorAction: openSlideEditor
+            )
+        } else {
+            Section("Slideshow") {
+                CreateMessageRow(
+                    title: "No slideshow plan yet",
+                    message: "Select a template and analyze it to start editing slides, or open Drafts to resume an unposted draft."
+                )
+            }
+        }
+
+        manualPublishingSettingsSections(
+            in: appModel,
+            currentDraftID: currentDraftID,
+            currentDraftIndex: currentDraftIndex
+        )
+    }
+
+    @ViewBuilder
+    private func manualPublishingSettingsSections(
+        in appModel: FlickAppModel,
+        currentDraftID: UUID?,
+        currentDraftIndex: Int?
+    ) -> some View {
+        if let currentDraftID, let currentDraftIndex {
+            let tikTokSettings = appModel.overview.drafts[currentDraftIndex].tikTokSettings
+
+            CreateSongSection(
+                selectedSongs: selectedSongsBinding(in: appModel, draftID: currentDraftID),
+                selectAction: { presentedSheet = .songPicker }
+            )
+
+            CreateTikTokSettingsSection(
+                accountName: tiktokAccountName,
+                hasConfiguredSettings: tikTokSettings != nil,
+                postAsDraft: tikTokSettings?.postAsDraft ?? false,
+                selectedVisibility: tikTokSettings?.selectedAudience,
+                disclosesVideoContent: tikTokSettings?.disclosesVideoContent ?? false,
+                promotesYourBrand: tikTokSettings?.promotesYourBrand ?? false,
+                promotesBrandedContent: tikTokSettings?.promotesBrandedContent ?? false,
+                action: { presentedSheet = .tikTokSettings }
+            )
+        } else {
+            CreateSongSection(
+                selectedSongs: .constant([]),
+                selectAction: {}
+            )
+            .disabled(true)
+
+            CreateTikTokSettingsSection(
+                accountName: tiktokAccountName,
+                hasConfiguredSettings: false,
+                postAsDraft: false,
+                selectedVisibility: nil,
+                disclosesVideoContent: false,
+                promotesYourBrand: false,
+                promotesBrandedContent: false,
+                action: {}
+            )
+            .disabled(true)
+        }
     }
 
     private func selectedSongsBinding(in appModel: FlickAppModel, draftID: UUID) -> Binding<[SelectedSong]> {
@@ -484,6 +552,7 @@ struct CreateView: View {
         selectedTemplate = nil
         selectedProductID = nil
         selectedProductImageAssetID = nil
+        selectedCreationModel = nil
         selectedSlideID = nil
     }
 
@@ -491,6 +560,7 @@ struct CreateView: View {
         editingAutomationID = nil
         automationName = ""
         selectedAutomationTemplateIDs = []
+        selectedCreationModel = nil
         selectedProductID = nil
         selectedAutomationProductImageAssetIDs = []
         automationSchedule = .default
@@ -511,6 +581,7 @@ struct CreateView: View {
         editingAutomationID = automation.id
         automationName = automation.name
         selectedAutomationTemplateIDs = Set(automation.templateIDs)
+        selectedCreationModel = automation.creationModel
         selectedProductID = automation.productID
         selectedAutomationProductImageAssetIDs = Set(automation.productImageAssetIDs)
         automationSchedule = automation.schedule
@@ -596,6 +667,7 @@ struct CreateView: View {
             templateIDs: Array(selectedAutomationTemplateIDs).sorted(),
             productID: selectedProductID,
             productImageAssetIDs: Array(selectedAutomationProductImageAssetIDs).sorted { $0.uuidString < $1.uuidString },
+            creationModel: selectedCreationModel,
             schedule: schedule,
             tikTokSettings: automationTikTokSettings,
             targetPlatforms: [.tiktok],
@@ -610,7 +682,12 @@ struct CreateView: View {
         guard let selectedTemplate else { return }
         let productImage = selectedProductImageContext(in: appModel)
         Task {
-            await appModel.createAISlideshow(brief: "", from: selectedTemplate, productImage: productImage)
+            await appModel.createAISlideshow(
+                brief: "",
+                from: selectedTemplate,
+                creationModel: selectedCreationModel,
+                productImage: productImage
+            )
             updateSelectedSlide(using: appModel)
         }
     }
@@ -756,6 +833,29 @@ struct CreateView: View {
             return
         }
         selectedSlideID = draft.slides.sorted { $0.index < $1.index }.first?.id
+    }
+
+    private func syncCreationModelSelectionFromActiveDraft(in appModel: FlickAppModel) {
+        guard !isAutomated, let draft = appModel.activeCreateDraft else { return }
+        selectedCreationModel = draft.creationModel
+    }
+
+    private func refreshSelectedCreationModel(in appModel: FlickAppModel) {
+        guard let selectedCreationModel else { return }
+        guard let model = appModel.overview.creationModels.first(where: { $0.id == selectedCreationModel.id }) else {
+            return
+        }
+        self.selectedCreationModel = model.generationReference
+    }
+
+    private func updateActiveDraftCreationModel(in appModel: FlickAppModel) {
+        guard !isAutomated, let draftID = activeDraftID(in: appModel) else { return }
+        guard appModel.overview.drafts.first(where: { $0.id == draftID })?.creationModel != selectedCreationModel else {
+            return
+        }
+        updateDraft(in: appModel, draftID: draftID) { draft in
+            draft.creationModel = selectedCreationModel
+        }
     }
 }
 

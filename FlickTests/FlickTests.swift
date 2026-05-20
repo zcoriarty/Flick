@@ -79,9 +79,11 @@ final class FlickTests: XCTestCase {
             publicURL: URL(string: "https://example.com/generated-slide.png"),
             now: now
         )
+        let creationModel = makeCreationModel(now: now)
         let slide = makeSlide(imageAssetID: asset.id, generationStatus: .complete, now: now)
-        let draft = makeSlideshowDraft(slides: [slide], now: now)
+        let draft = makeSlideshowDraft(slides: [slide], creationModel: creationModel.generationReference, now: now)
         var state = FlickEmptyState.make()
+        state.creationModels = [creationModel]
         state.assets = [asset]
         state.drafts = [draft]
 
@@ -93,6 +95,8 @@ final class FlickTests: XCTestCase {
 
         XCTAssertEqual(loadedSlide.imageAssetID, asset.id)
         XCTAssertEqual(loadedSlide.generationStatus, .complete)
+        XCTAssertEqual(loadedDraft.creationModel?.id, creationModel.id)
+        XCTAssertEqual(loadedDraft.creationModel?.name, creationModel.name)
         XCTAssertEqual(loadedAsset.id, asset.id)
         XCTAssertEqual(loadedAsset.source, .generated)
         XCTAssertEqual(loadedAsset.publicURL, asset.publicURL)
@@ -390,12 +394,14 @@ final class FlickTests: XCTestCase {
         )
         let product = makeProduct(now: now)
         let productImageID = UUID()
+        let creationModel = makeCreationModel(now: now)
         let nextScheduledAt = Date(timeInterval: 3_600, since: now)
         let automation = ContentAutomation(
             name: "Weekday launches",
             templateIDs: ["template-a", "template-b"],
             productID: product.id,
             productImageAssetIDs: [productImageID],
+            creationModel: creationModel.generationReference,
             schedule: AutomationSchedule(
                 weekdays: [.monday, .wednesday, .friday],
                 fixedTimes: [
@@ -416,6 +422,7 @@ final class FlickTests: XCTestCase {
         )
         var state = FlickEmptyState.make()
         state.products = [product]
+        state.creationModels = [creationModel]
         state.automations = [automation]
 
         try await repository.saveOverview(state)
@@ -423,6 +430,8 @@ final class FlickTests: XCTestCase {
         let loadedAutomation = try XCTUnwrap(loaded.automations.first)
 
         XCTAssertEqual(loadedAutomation, automation)
+        XCTAssertEqual(loadedAutomation.creationModel?.name, creationModel.name)
+        XCTAssertTrue(loadedAutomation.creationModel?.aiMetadataJSONString().contains("\"skin_details\"") == true)
         XCTAssertEqual(loaded.dashboard.activeAutomationCount, 1)
         XCTAssertEqual(loaded.dashboard.nextAutomationPostAt, nextScheduledAt)
     }
@@ -439,6 +448,7 @@ final class FlickTests: XCTestCase {
             automationID: automationID,
             title: "Launch Carousel",
             productName: "Flick Pro",
+            creationModelName: "Cottage Host",
             scheduledAt: now,
             now: now
         )
@@ -1478,10 +1488,26 @@ final class FlickTests: XCTestCase {
         XCTAssertTrue(prompt.contains("720x1280 portrait canvas"))
         XCTAssertTrue(prompt.contains("ignore that stale format instruction"))
         XCTAssertTrue(prompt.contains("stale output size"))
+        XCTAssertTrue(prompt.contains("Use template/source people only"))
+    }
+
+    func testGeneratedImagePromptIncludesSelectedCreationModelJSON() {
+        let creationModel = makeCreationModel()
+        let prompt = SlideshowImagePromptFormatter.applyVerticalOutputContract(
+            to: "Create a founder in the same pose as the template.",
+            settings: .draft,
+            creationModel: creationModel.generationReference
+        )
+
+        XCTAssertTrue(prompt.contains("Selected creation model"))
+        XCTAssertTrue(prompt.contains("\"skin_details\""))
+        XCTAssertTrue(prompt.contains("Do not copy a template person's face"))
+        XCTAssertTrue(prompt.contains("Cottagecore"))
     }
 
     func testPlannerRequestsExtraSlideForSelectedProductImage() async throws {
         let product = makeProduct(name: "Flick Pro")
+        let creationModel = makeCreationModel()
         let productImageURL = try XCTUnwrap(URL(string: "https://example.com/product-image.jpg"))
         let productImage = SlideshowProductImage(
             product: product,
@@ -1522,6 +1548,9 @@ final class FlickTests: XCTestCase {
             XCTAssertTrue(promptText.contains("Template slide count to keep: 2"))
             XCTAssertTrue(promptText.contains("Total planned slide count to return: 3"))
             XCTAssertTrue(promptText.contains("TikTok post title"))
+            XCTAssertTrue(promptText.contains("Selected creation model"))
+            XCTAssertTrue(promptText.contains("\"skin_details\""))
+            XCTAssertTrue(promptText.contains("Do not copy the template person's face"))
             XCTAssertTrue(promptText.contains("Keep exactly 2 non-product generated/template slides, plus this one product-image slide."))
             XCTAssertEqual(content.last?["image_url"] as? String, productImageURL.absoluteString)
 
@@ -1546,6 +1575,7 @@ final class FlickTests: XCTestCase {
             brief: "Launch Flick Pro",
             template: makeExampleSlideshowTemplate(slideCount: 2),
             styleGuide: .empty,
+            creationModel: creationModel.generationReference,
             productImage: productImage
         )
 
@@ -1621,15 +1651,20 @@ final class FlickTests: XCTestCase {
             configuration: .current,
             openAIClientFactory: { _ in client }
         )
+        let creationModel = makeCreationModel()
 
         await model.createAISlideshow(
             brief: "",
-            from: makeExampleSlideshowTemplate(slideCount: 2)
+            from: makeExampleSlideshowTemplate(slideCount: 2),
+            creationModel: creationModel.generationReference
         )
 
         let draft = try XCTUnwrap(model.activeCreateDraft)
         XCTAssertEqual(draft.tikTokSettings?.title, "Launch Flick Pro")
+        XCTAssertEqual(draft.creationModel?.id, creationModel.id)
+        XCTAssertEqual(draft.creationModel?.name, creationModel.name)
         XCTAssertEqual(repository.state.drafts.first?.tikTokSettings?.title, "Launch Flick Pro")
+        XCTAssertEqual(repository.state.drafts.first?.creationModel?.id, creationModel.id)
     }
 
     func testOpenAIImageGenerationRequestsJpegOutput() async throws {
@@ -1693,12 +1728,14 @@ private func makePublishingJob(status: PublishingJobStatus = .rendering) -> Publ
 private func makeSlideshowDraft(
     id: UUID = UUID(),
     slides: [Slide]? = nil,
+    creationModel: SlideshowCreationModelReference? = nil,
     now: Date = Date()
 ) -> SlideshowDraft {
     SlideshowDraft(
         id: id,
         title: "Launch Carousel",
         templateID: nil,
+        creationModel: creationModel,
         brief: "Launch brief",
         topic: "Product launch",
         audience: "Creators",

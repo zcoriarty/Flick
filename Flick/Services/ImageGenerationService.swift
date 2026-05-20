@@ -8,18 +8,32 @@ import Foundation
 struct ImageGenerationService {
     var client = OpenAIClient()
 
-    func generateSlideImage(prompt: String, settings: SlideshowImageGenerationSettings) async throws -> GeneratedSlideImage {
+    func generateSlideImage(
+        prompt: String,
+        settings: SlideshowImageGenerationSettings,
+        creationModel: SlideshowCreationModelReference? = nil
+    ) async throws -> GeneratedSlideImage {
         try await client.generateImage(
-            prompt: SlideshowImagePromptFormatter.applyVerticalOutputContract(to: prompt, settings: settings),
+            prompt: SlideshowImagePromptFormatter.applyVerticalOutputContract(
+                to: prompt,
+                settings: settings,
+                creationModel: creationModel
+            ),
             settings: settings
         )
     }
 }
 
 enum SlideshowImagePromptFormatter {
-    static func applyVerticalOutputContract(to prompt: String, settings: SlideshowImageGenerationSettings) -> String {
+    static func applyVerticalOutputContract(
+        to prompt: String,
+        settings: SlideshowImageGenerationSettings,
+        creationModel: SlideshowCreationModelReference? = nil
+    ) -> String {
         """
         \(prompt)
+
+        \(SlideshowPromptBuilder.modelIdentityContract(for: creationModel))
 
         Output format:
         - Generate exactly one vertical portrait image optimized for TikTok, Instagram Reels, and YouTube Shorts.

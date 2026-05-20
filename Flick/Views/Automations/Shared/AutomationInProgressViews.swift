@@ -26,6 +26,13 @@ struct AutomationProgressSummaryRow: View {
                         .lineLimit(2)
                 }
 
+                if let creationModelName = progress.creationModelName, !creationModelName.isEmpty {
+                    Text("Model: \(creationModelName)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
                 ProgressView(value: progress.progressFraction)
                     .progressViewStyle(.linear)
 

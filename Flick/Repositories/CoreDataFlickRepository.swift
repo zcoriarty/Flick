@@ -569,6 +569,8 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(draft.id, forKey: DraftKey.id)
         object.setValue(draft.title, forKey: DraftKey.title)
         object.setValue(draft.templateID, forKey: DraftKey.templateID)
+        object.setValue(draft.creationModel?.id, forKey: DraftKey.creationModelID)
+        object.setValue(draft.creationModel, asJSONForKey: DraftKey.creationModelJSON)
         object.setValue(draft.brief, forKey: DraftKey.brief)
         object.setValue(draft.topic, forKey: DraftKey.topic)
         object.setValue(draft.audience, forKey: DraftKey.audience)
@@ -612,6 +614,8 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(automation.templateIDs, asJSONForKey: AutomationKey.templateIDsJSON)
         object.setValue(automation.productID, forKey: AutomationKey.productID)
         object.setValue(automation.productImageAssetIDs.map(\.uuidString), asJSONForKey: AutomationKey.productImageAssetIDsJSON)
+        object.setValue(automation.creationModel?.id, forKey: AutomationKey.creationModelID)
+        object.setValue(automation.creationModel, asJSONForKey: AutomationKey.creationModelJSON)
         object.setValue(automation.schedule, asJSONForKey: AutomationKey.scheduleJSON)
         object.setValue(automation.tikTokSettings, asJSONForKey: AutomationKey.tikTokSettingsJSON)
         object.setValue(automation.targetPlatforms.map(\.rawValue), asJSONForKey: AutomationKey.targetPlatformsJSON)
@@ -741,6 +745,8 @@ private enum TemplateKey {
 private enum DraftKey {
     static let brief = "brief"
     static let caption = "caption"
+    static let creationModelID = "creationModelID"
+    static let creationModelJSON = "creationModelJSON"
     static let createdAt = "createdAt"
     static let exportedImageAssetIDsJSON = "exportedImageAssetIDsJSON"
     static let globalVisualMotif = "globalVisualMotif"
@@ -781,6 +787,8 @@ private enum SlideKey {
 
 private enum AutomationKey {
     static let consecutiveFailureCount = "consecutiveFailureCount"
+    static let creationModelID = "creationModelID"
+    static let creationModelJSON = "creationModelJSON"
     static let createdAt = "createdAt"
     static let id = "id"
     static let lastErrorMessage = "lastErrorMessage"
@@ -998,6 +1006,7 @@ private extension SlideshowDraft {
             id: id,
             title: title,
             templateID: managedObject.value(forKey: DraftKey.templateID) as? UUID,
+            creationModel: managedObject.decodedJSON(SlideshowCreationModelReference.self, forKey: DraftKey.creationModelJSON),
             brief: managedObject.value(forKey: DraftKey.brief) as? String ?? "",
             topic: managedObject.value(forKey: DraftKey.topic) as? String ?? "",
             audience: managedObject.value(forKey: DraftKey.audience) as? String ?? "",
@@ -1072,6 +1081,7 @@ private extension ContentAutomation {
             templateIDs: templateIDs,
             productID: managedObject.value(forKey: AutomationKey.productID) as? UUID,
             productImageAssetIDs: productImageAssetIDStrings.compactMap(UUID.init(uuidString:)),
+            creationModel: managedObject.decodedJSON(SlideshowCreationModelReference.self, forKey: AutomationKey.creationModelJSON),
             schedule: schedule,
             tikTokSettings: tikTokSettings,
             targetPlatforms: targetPlatforms.isEmpty ? [.tiktok] : targetPlatforms,

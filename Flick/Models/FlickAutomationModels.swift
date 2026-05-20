@@ -228,6 +228,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
     var templateIDs: [String]
     var productID: UUID?
     var productImageAssetIDs: [UUID]
+    var creationModel: SlideshowCreationModelReference?
     var schedule: AutomationSchedule
     var tikTokSettings: DraftTikTokSettings
     var targetPlatforms: [SocialPlatform]
@@ -245,6 +246,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
         templateIDs: [String],
         productID: UUID?,
         productImageAssetIDs: [UUID],
+        creationModel: SlideshowCreationModelReference? = nil,
         schedule: AutomationSchedule,
         tikTokSettings: DraftTikTokSettings,
         targetPlatforms: [SocialPlatform] = [.tiktok],
@@ -261,6 +263,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
         self.templateIDs = templateIDs.uniqued()
         self.productID = productID
         self.productImageAssetIDs = productImageAssetIDs.uniqued()
+        self.creationModel = creationModel
         self.schedule = schedule
         self.tikTokSettings = tikTokSettings
         self.targetPlatforms = targetPlatforms.uniqued()
