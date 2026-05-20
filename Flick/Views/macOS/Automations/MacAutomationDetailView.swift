@@ -30,7 +30,7 @@ struct MacAutomationDetailView: View {
                         if !item.activeProgresses.isEmpty {
                             MacAutomationInProgressSection(progresses: item.activeProgresses)
                         }
-                        MacAutomationDetailPosts(item: item)
+                        MacAutomationDetailPosts(item: item, exampleTemplates: exampleTemplates)
                         MacAutomationDetailRuns(item: item)
                     }
                     .padding(28)
@@ -122,7 +122,7 @@ private struct MacAutomationDetailHeader: View {
                 Spacer(minLength: 20)
 
                 VStack(alignment: .trailing, spacing: 10) {
-                    MacAutomationHeaderMetric(title: "Posts", value: item.publishedPosts.count.formatted())
+                    MacAutomationHeaderMetric(title: "Posts", value: item.postCount.formatted())
                     MacAutomationHeaderMetric(title: "Failures", value: item.automation.consecutiveFailureCount.formatted())
                 }
             }
@@ -231,18 +231,19 @@ private struct MacAutomationDetailValue: View {
 
 private struct MacAutomationDetailPosts: View {
     var item: AutomationDashboardItem
+    var exampleTemplates: [ExampleSlideshowTemplate]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             MacSectionHeader(
                 title: "Posts",
-                subtitle: AutomationDashboardFormatting.postCount(item.publishedPosts.count)
+                subtitle: AutomationDashboardFormatting.postCount(item.postCount)
             )
 
             if item.postPreviews.isEmpty {
                 MacAutomationInlineEmptyState(
                     title: "No posts from this automation yet",
-                    message: "Published posts will appear here after the runner completes an automation."
+                    message: "Created posts will appear here with their current TikTok status."
                 )
             } else {
                 LazyVGrid(
@@ -252,7 +253,11 @@ private struct MacAutomationDetailPosts: View {
                 ) {
                     ForEach(item.postPreviews) { preview in
                         NavigationLink {
-                            MacAutomationPostDetailView(postID: preview.post.id)
+                            MacAutomationPostDetailView(
+                                automationID: item.id,
+                                previewID: preview.id,
+                                exampleTemplates: exampleTemplates
+                            )
                         } label: {
                             MacAutomationPostCard(preview: preview)
                         }
@@ -286,9 +291,14 @@ private struct MacAutomationPostCard: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                Text(AutomationDashboardFormatting.absoluteDate(preview.post.publishedAt))
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                HStack(spacing: 8) {
+                    Label(preview.status.displayName, systemImage: preview.status.systemImage)
+                        .foregroundStyle(preview.status.tint)
+                    Text(AutomationDashboardFormatting.absoluteDate(preview.timelineDate))
+                        .foregroundStyle(.tertiary)
+                }
+                .font(.caption)
+                .lineLimit(1)
             }
         }
         .padding(14)
@@ -384,29 +394,32 @@ private struct MacAutomationInlineEmptyState: View {
 private struct MacAutomationPostDetailView: View {
     @Environment(FlickAppModel.self) private var appModel
 
-    var postID: UUID
+    var automationID: UUID
+    var previewID: UUID
+    var exampleTemplates: [ExampleSlideshowTemplate]
 
-    private var post: PublishedPost? {
-        appModel.overview.publishedPosts.first { $0.id == postID }
-    }
-
-    private var assetsByID: [UUID: MediaAsset] {
-        Dictionary(uniqueKeysWithValues: appModel.overview.assets.map { ($0.id, $0) })
+    private var preview: AutomationPostPreview? {
+        AutomationDashboardSnapshot
+            .make(overview: appModel.overview, exampleTemplates: exampleTemplates)
+            .items
+            .first { $0.id == automationID }?
+            .postPreviews
+            .first { $0.id == previewID }
     }
 
     var body: some View {
         Group {
-            if let post {
+            if let preview {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
-                        postHeader(for: post)
-                        slidesGrid(for: post)
+                        postHeader(for: preview)
+                        slidesGrid(for: preview)
                     }
                     .padding(28)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .flickAppBackground()
-                .navigationTitle(postTitle(for: post))
+                .navigationTitle(preview.displayTitle)
             } else {
                 ContentUnavailableView(
                     "Post unavailable",
@@ -418,18 +431,18 @@ private struct MacAutomationPostDetailView: View {
         }
     }
 
-    private func postHeader(for post: PublishedPost) -> some View {
+    private func postHeader(for preview: AutomationPostPreview) -> some View {
         HStack(alignment: .top, spacing: 24) {
             VerticalMediaFrame(
-                fileURL: previewAsset(for: post)?.localFileURL,
-                remoteURL: previewAsset(for: post)?.publicURL,
+                fileURL: preview.thumbnailAsset?.localFileURL,
+                remoteURL: preview.thumbnailAsset?.publicURL,
                 cornerRadius: 18,
                 maxPixelSize: 1_080
             )
             .frame(width: 240)
 
             VStack(alignment: .leading, spacing: 16) {
-                Text(postTitle(for: post))
+                Text(preview.displayTitle)
                     .font(.largeTitle.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -440,33 +453,73 @@ private struct MacAutomationPostDetailView: View {
                 ) {
                     MacAutomationDetailValue(
                         title: "Platform",
-                        value: post.platform.displayName,
-                        systemImage: post.platform.systemImage,
-                        tint: post.platform.tint
+                        value: preview.platform.displayName,
+                        systemImage: preview.platform.systemImage,
+                        tint: preview.platform.tint
                     )
                     MacAutomationDetailValue(
                         title: "Account",
-                        value: accountName(for: post) ?? "Unknown",
+                        value: preview.accountName ?? "Unknown",
                         systemImage: "person.crop.circle",
                         tint: .blue
                     )
                     MacAutomationDetailValue(
-                        title: "Published",
-                        value: AutomationDashboardFormatting.absoluteDate(post.publishedAt),
-                        systemImage: "clock",
-                        tint: .green
+                        title: "Status",
+                        value: preview.status.displayName,
+                        systemImage: preview.status.systemImage,
+                        tint: preview.status.tint
                     )
                     MacAutomationDetailValue(
-                        title: "Post ID",
-                        value: post.platformPostID,
-                        systemImage: "number",
+                        title: "Created",
+                        value: AutomationDashboardFormatting.absoluteDate(preview.createdAt),
+                        systemImage: "plus.circle",
                         tint: .secondary
                     )
+                    MacAutomationDetailValue(
+                        title: "Updated",
+                        value: AutomationDashboardFormatting.absoluteDate(preview.updatedAt),
+                        systemImage: "arrow.triangle.2.circlepath",
+                        tint: .secondary
+                    )
+                    if let publishedAt = preview.publishedAt {
+                        MacAutomationDetailValue(
+                            title: "Published",
+                            value: AutomationDashboardFormatting.absoluteDate(publishedAt),
+                            systemImage: "clock",
+                            tint: .green
+                        )
+                    }
+                    if let platformPostID = preview.platformPostID?.trimmingCharacters(in: .whitespacesAndNewlines), !platformPostID.isEmpty {
+                        MacAutomationDetailValue(
+                            title: "Platform ID",
+                            value: platformPostID,
+                            systemImage: "number",
+                            tint: .secondary
+                        )
+                    }
                 }
 
-                if let platformURL = post.platformURL {
-                    Link(destination: platformURL) {
-                        Label(platformURL.host ?? platformURL.absoluteString, systemImage: "arrow.up.forward.app")
+                if let failure = preview.lastError {
+                    Label(failure.message, systemImage: "xmark.octagon")
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: 12) {
+                    if let platformURL = preview.platformURL {
+                        Link(destination: platformURL) {
+                            Label(platformURL.host ?? platformURL.absoluteString, systemImage: "arrow.up.forward.app")
+                        }
+                    }
+
+                    if let draft = preview.draft {
+                        Button(
+                            draft.isAvailableInCreateDrafts ? "Open Draft" : "Duplicate to Repost",
+                            systemImage: draft.isAvailableInCreateDrafts ? "square.and.pencil" : "plus.square.on.square"
+                        ) {
+                            openDraftForRepost(draft)
+                        }
                     }
                 }
             }
@@ -477,14 +530,14 @@ private struct MacAutomationPostDetailView: View {
         .background(.thinMaterial, in: .rect(cornerRadius: 24))
     }
 
-    private func slidesGrid(for post: PublishedPost) -> some View {
+    private func slidesGrid(for preview: AutomationPostPreview) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            MacSectionHeader(title: "Slides", subtitle: "\(slides(for: post).count.formatted()) synced")
+            MacSectionHeader(title: "Slides", subtitle: "\(slides(for: preview).count.formatted()) synced")
 
-            if slides(for: post).isEmpty {
+            if slides(for: preview).isEmpty {
                 MacAutomationInlineEmptyState(
                     title: "No local slide detail",
-                    message: "The post is synced, but its generated draft slides are not available on this device."
+                    message: "This post is synced, but its generated draft slides are not available on this device."
                 )
             } else {
                 LazyVGrid(
@@ -492,10 +545,10 @@ private struct MacAutomationPostDetailView: View {
                     alignment: .leading,
                     spacing: 14
                 ) {
-                    ForEach(slides(for: post)) { slide in
+                    ForEach(slides(for: preview)) { slide in
                         MacAutomationSlideTile(
                             slide: slide,
-                            asset: slide.imageAssetID.flatMap { assetsByID[$0] }
+                            asset: slide.imageAssetID.flatMap { previewAssetByID($0) }
                         )
                     }
                 }
@@ -503,34 +556,20 @@ private struct MacAutomationPostDetailView: View {
         }
     }
 
-    private func postTitle(for post: PublishedPost) -> String {
-        let caption = post.caption.trimmingCharacters(in: .whitespacesAndNewlines)
-        return caption.isEmpty ? "\(post.platform.displayName) post" : caption
+    private func slides(for preview: AutomationPostPreview) -> [Slide] {
+        preview.draft?.slides.sorted { $0.index < $1.index } ?? []
     }
 
-    private func accountName(for post: PublishedPost) -> String? {
-        appModel.overview.accounts.first { $0.id == post.accountID }?.displayName
+    private func previewAssetByID(_ id: UUID) -> MediaAsset? {
+        appModel.overview.assets.first { $0.id == id }
     }
 
-    private func draft(for post: PublishedPost) -> SlideshowDraft? {
-        appModel.overview.drafts.first { $0.id == post.draftID }
-    }
-
-    private func slides(for post: PublishedPost) -> [Slide] {
-        draft(for: post)?.slides.sorted { $0.index < $1.index } ?? []
-    }
-
-    private func previewAsset(for post: PublishedPost) -> MediaAsset? {
-        guard let draft = draft(for: post) else { return nil }
-
-        if let asset = draft.exportedImageAssetIDs.compactMap({ assetsByID[$0] }).first {
-            return asset
+    private func openDraftForRepost(_ draft: SlideshowDraft) {
+        if draft.isAvailableInCreateDrafts {
+            appModel.selectCreateDraft(id: draft.id)
+        } else {
+            appModel.duplicateDraft(draft)
         }
-
-        return slides(for: post)
-            .compactMap(\.imageAssetID)
-            .compactMap { assetsByID[$0] }
-            .first
     }
 }
 

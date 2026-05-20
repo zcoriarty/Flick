@@ -99,6 +99,27 @@ extension PublishingJobStatus {
     }
 }
 
+extension AutomationPostPreviewStatus {
+    var tint: Color {
+        switch self {
+        case .published: .green
+        case .failed: .red
+        case .awaitingUserCompletion: .orange
+        case .rendering, .publishing: .blue
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .rendering: "photo.on.rectangle"
+        case .publishing: "paperplane"
+        case .awaitingUserCompletion: "bell.badge"
+        case .published: "checkmark.circle"
+        case .failed: "xmark.octagon"
+        }
+    }
+}
+
 extension AutomationPostProgressStepState {
     var tint: Color {
         switch self {

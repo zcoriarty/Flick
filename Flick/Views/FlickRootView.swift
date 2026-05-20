@@ -58,6 +58,9 @@ struct FlickRootView: View {
         .task {
             await appModel.refreshOnCloudKitStoreChanges()
         }
+        .task {
+            await appModel.runTikTokPublishStatusRefreshLoop()
+        }
         #if os(macOS) || targetEnvironment(macCatalyst)
         .task {
             await appModel.runAutomationWorkerLoop()

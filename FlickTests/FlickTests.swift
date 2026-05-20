@@ -433,6 +433,89 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(item?.activeProgresses.map(\.id), [activeProgress.id])
     }
 
+    func testAutomationDashboardSnapshotShowsFailedCreatedPost() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let product = makeProduct(now: now)
+        let automation = ContentAutomation(
+            name: "Weekday launches",
+            templateIDs: ["template-a"],
+            productID: product.id,
+            productImageAssetIDs: [UUID()],
+            schedule: AutomationSchedule(),
+            tikTokSettings: DraftTikTokSettings(title: "Try Flick", privacyLevel: .publicToEveryone),
+            createdAt: now,
+            updatedAt: now
+        )
+        let draft = makeSlideshowDraft(now: now)
+        var job = makePublishingJob(status: .failed)
+        job.automationID = automation.id
+        job.draftID = draft.id
+        job.lastError = PlatformFailure(
+            kind: .mediaURLInaccessible,
+            message: "TikTok could not access one generated image.",
+            suggestedFix: "Retry after upload finishes.",
+            rawResponse: nil
+        )
+        job.updatedAt = now.addingTimeInterval(60)
+        var state = FlickEmptyState.make()
+        state.products = [product]
+        state.drafts = [draft]
+        state.automations = [automation]
+        state.publishingJobs = [job]
+
+        let snapshot = AutomationDashboardSnapshot.make(overview: state)
+        let item = snapshot.items.first
+        let preview = item?.postPreviews.first
+
+        XCTAssertEqual(snapshot.postCount, 1)
+        XCTAssertEqual(item?.publishedPosts.count, 0)
+        XCTAssertEqual(item?.postCount, 1)
+        XCTAssertEqual(preview?.status, .failed)
+        XCTAssertEqual(preview?.draft?.id, draft.id)
+        XCTAssertEqual(preview?.lastError?.message, "TikTok could not access one generated image.")
+    }
+
+    func testRefreshBackfillsAutomationPostFromCompletedPublishingJob() async {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let product = makeProduct(now: now)
+        let automation = ContentAutomation(
+            name: "Weekday launches",
+            templateIDs: ["template-a"],
+            productID: product.id,
+            productImageAssetIDs: [UUID()],
+            schedule: AutomationSchedule(),
+            tikTokSettings: DraftTikTokSettings(title: "Try Flick", privacyLevel: .publicToEveryone),
+            createdAt: now,
+            updatedAt: now
+        )
+        let draft = makeSlideshowDraft(now: now)
+        var job = makePublishingJob(status: .published)
+        job.automationID = automation.id
+        job.draftID = draft.id
+        job.platformPublishID = "7123456789012345678"
+        job.updatedAt = now
+        var state = FlickEmptyState.make()
+        state.products = [product]
+        state.drafts = [draft]
+        state.automations = [automation]
+        state.publishingJobs = [job]
+        let repository = InMemoryFlickRepository(state: state)
+        let model = FlickAppModel(
+            repository: repository,
+            configuration: .current
+        )
+
+        await model.refresh()
+
+        XCTAssertEqual(model.overview.publishedPosts.count, 1)
+        XCTAssertEqual(model.overview.publishedPosts.first?.automationID, automation.id)
+        XCTAssertEqual(model.overview.publishedPosts.first?.platformPostID, "7123456789012345678")
+
+        let snapshot = AutomationDashboardSnapshot.make(overview: model.overview)
+        XCTAssertEqual(snapshot.items.first?.publishedPosts.count, 1)
+        XCTAssertEqual(snapshot.items.first?.postPreviews.count, 1)
+    }
+
     func testCoreDataRoundTripsPublishingJobsAndPublishedPosts() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let persistenceController = PersistenceController(inMemory: true)
@@ -1148,6 +1231,79 @@ final class FlickTests: XCTestCase {
         XCTAssertFalse(body.contains("disable_comment"))
         XCTAssertFalse(body.contains("brand_content_toggle"))
         XCTAssertFalse(body.contains("brand_organic_toggle"))
+    }
+
+    func testTikTokAdapterDecodesPublishCompleteStatusWithStringPostIDs() async throws {
+        let secretStore = MemorySecretStore()
+        let account = LoginKitAccountMapper.connectedAccount(
+            from: LoginKitAuthorizedUser(
+                platform: .tiktok,
+                openID: "real-open-id",
+                displayName: "@realaccount",
+                avatarURL: nil,
+                scopes: ["user.info.basic", "video.upload"]
+            )
+        )
+        let tokenBundle = LoginKitTokenBundle(
+            platform: .tiktok,
+            platformUserID: account.platformUserID,
+            accessToken: "valid-access-token",
+            refreshToken: "refresh-token",
+            tokenType: "Bearer",
+            scopes: account.scopes,
+            accessTokenExpiresAt: Date(timeIntervalSinceNow: 3_600),
+            refreshTokenExpiresAt: Date(timeIntervalSinceNow: 86_400),
+            updatedAt: Date()
+        )
+        try LoginKitTokenStore(store: secretStore).save(tokenBundle, for: account)
+
+        CapturingURLProtocol.requestHandler = { request in
+            switch request.url?.path.removingTrailingSlash {
+            case "/v2/post/publish/status/fetch":
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer valid-access-token")
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data(
+                        """
+                        {
+                            "data": {
+                                "status": "PUBLISH_COMPLETE",
+                                "publicly_available_post_id": ["7123456789012345678"]
+                            },
+                            "error": {
+                                "code": "ok",
+                                "message": "",
+                                "log_id": "status-log-123"
+                            }
+                        }
+                        """.utf8
+                    )
+                )
+            default:
+                XCTFail("Unexpected request URL: \(request.url?.absoluteString ?? "nil")")
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!,
+                    Data()
+                )
+            }
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CapturingURLProtocol.self]
+        let adapter = TikTokAdapter(
+            configuration: TikTokConfiguration(values: ["TIKTOK_CLIENT_ID": "client-key"]),
+            tokenStore: secretStore,
+            urlSession: URLSession(configuration: configuration)
+        )
+
+        let status = try await adapter.fetchPublishStatus(
+            publishID: "p_inbox_url~v2.123",
+            account: account
+        )
+
+        XCTAssertEqual(status.status, "PUBLISH_COMPLETE")
+        XCTAssertTrue(status.isPublishComplete)
+        XCTAssertEqual(status.publiclyAvailablePostIDs, ["7123456789012345678"])
     }
 
     func testAccountManagementPolicyIsIOSOnly() {

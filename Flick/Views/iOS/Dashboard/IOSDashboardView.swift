@@ -246,7 +246,7 @@ private struct IOSAutomationDashboardRow: View {
                     .lineLimit(2)
 
                 HStack(spacing: 8) {
-                    Label(AutomationDashboardFormatting.postCount(item.publishedPosts.count), systemImage: "photo.stack")
+                    Label(AutomationDashboardFormatting.postCount(item.postCount), systemImage: "photo.stack")
                     Label(item.scheduleSummary, systemImage: "calendar")
                 }
                 .font(.caption)

@@ -119,10 +119,10 @@ struct IOSAutomationDetailView: View {
                 value: item.automation.status.displayName
             )
             FlickSettingsValueRow(
-                title: "Published posts",
+                title: "Posts",
                 systemImage: "photo.stack",
                 iconColor: .green,
-                value: item.publishedPosts.count.formatted()
+                value: item.postCount.formatted()
             )
             FlickSettingsValueRow(
                 title: "Accounts",
@@ -202,14 +202,18 @@ struct IOSAutomationDetailView: View {
             if item.postPreviews.isEmpty {
                 DashboardMessageRow(
                     title: "No posts from this automation yet",
-                    message: "Published posts will appear here after the macOS runner completes an automation.",
+                    message: "Created posts will appear here with their current TikTok status.",
                     systemImage: "photo.stack",
                     iconColor: .secondary
                 )
             } else {
                 ForEach(item.postPreviews) { preview in
                     NavigationLink {
-                        IOSAutomationPostDetailView(postID: preview.post.id)
+                        IOSAutomationPostDetailView(
+                            automationID: item.id,
+                            previewID: preview.id,
+                            exampleTemplates: exampleTemplates
+                        )
                     } label: {
                         IOSAutomationPostRow(preview: preview)
                     }
@@ -308,7 +312,7 @@ private struct IOSAutomationPostRow: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                Text(AutomationDashboardFormatting.relativeDate(preview.post.publishedAt))
+                Text(AutomationDashboardFormatting.relativeDate(preview.timelineDate))
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
@@ -316,7 +320,11 @@ private struct IOSAutomationPostRow: View {
 
             Spacer(minLength: 8)
 
-            StatusBadge(title: "Published", tint: .green, systemImage: "checkmark.circle")
+            StatusBadge(
+                title: preview.status.displayName,
+                tint: preview.status.tint,
+                systemImage: preview.status.systemImage
+            )
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
@@ -325,27 +333,32 @@ private struct IOSAutomationPostRow: View {
 
 private struct IOSAutomationPostDetailView: View {
     @Environment(FlickAppModel.self) private var appModel
+    @Environment(\.dismiss) private var dismiss
 
-    var postID: UUID
+    var automationID: UUID
+    var previewID: UUID
+    var exampleTemplates: [ExampleSlideshowTemplate]
 
-    private var post: PublishedPost? {
-        appModel.overview.publishedPosts.first { $0.id == postID }
-    }
-
-    private var assetsByID: [UUID: MediaAsset] {
-        Dictionary(uniqueKeysWithValues: appModel.overview.assets.map { ($0.id, $0) })
+    private var preview: AutomationPostPreview? {
+        AutomationDashboardSnapshot
+            .make(overview: appModel.overview, exampleTemplates: exampleTemplates)
+            .items
+            .first { $0.id == automationID }?
+            .postPreviews
+            .first { $0.id == previewID }
     }
 
     var body: some View {
         Group {
-            if let post {
+            if let preview {
                 List {
-                    previewSection(for: post)
-                    detailsSection(for: post)
-                    slidesSection(for: post)
+                    previewSection(for: preview)
+                    detailsSection(for: preview)
+                    actionsSection(for: preview)
+                    slidesSection(for: preview)
                 }
                 .flickSettingsListStyle()
-                .flickToolbarTitle(postTitle(for: post))
+                .flickToolbarTitle(preview.displayTitle)
             } else {
                 ContentUnavailableView(
                     "Post unavailable",
@@ -357,13 +370,13 @@ private struct IOSAutomationPostDetailView: View {
         }
     }
 
-    private func previewSection(for post: PublishedPost) -> some View {
+    private func previewSection(for preview: AutomationPostPreview) -> some View {
         Section {
             HStack {
                 Spacer(minLength: 0)
                 VerticalMediaFrame(
-                    fileURL: previewAsset(for: post)?.localFileURL,
-                    remoteURL: previewAsset(for: post)?.publicURL,
+                    fileURL: preview.thumbnailAsset?.localFileURL,
+                    remoteURL: preview.thumbnailAsset?.publicURL,
                     cornerRadius: 14,
                     maxPixelSize: 720
                 )
@@ -374,35 +387,67 @@ private struct IOSAutomationPostDetailView: View {
         }
     }
 
-    private func detailsSection(for post: PublishedPost) -> some View {
+    private func detailsSection(for preview: AutomationPostPreview) -> some View {
         Section("Details") {
             FlickSettingsValueRow(
                 title: "Platform",
-                systemImage: post.platform.systemImage,
-                iconColor: post.platform.tint,
-                value: post.platform.displayName
+                systemImage: preview.platform.systemImage,
+                iconColor: preview.platform.tint,
+                value: preview.platform.displayName
             )
             FlickSettingsValueRow(
                 title: "Account",
                 systemImage: "person.crop.circle",
                 iconColor: .blue,
-                value: accountName(for: post) ?? "Unknown"
+                value: preview.accountName ?? "Unknown"
             )
             FlickSettingsValueRow(
-                title: "Published",
-                systemImage: "clock",
-                iconColor: .green,
-                value: AutomationDashboardFormatting.absoluteDate(post.publishedAt),
-                valueLineLimit: 2
+                title: "Status",
+                systemImage: preview.status.systemImage,
+                iconColor: preview.status.tint,
+                value: preview.status.displayName
             )
             FlickSettingsValueRow(
-                title: "Post ID",
-                systemImage: "number",
+                title: "Created",
+                systemImage: "plus.circle",
                 iconColor: .secondary,
-                value: post.platformPostID,
+                value: AutomationDashboardFormatting.absoluteDate(preview.createdAt),
                 valueLineLimit: 2
             )
-            if let platformURL = post.platformURL {
+            FlickSettingsValueRow(
+                title: "Updated",
+                systemImage: "arrow.triangle.2.circlepath",
+                iconColor: .secondary,
+                value: AutomationDashboardFormatting.absoluteDate(preview.updatedAt),
+                valueLineLimit: 2
+            )
+            if let publishedAt = preview.publishedAt {
+                FlickSettingsValueRow(
+                    title: "Published",
+                    systemImage: "clock",
+                    iconColor: .green,
+                    value: AutomationDashboardFormatting.absoluteDate(publishedAt),
+                    valueLineLimit: 2
+                )
+            }
+            if let platformPostID = preview.platformPostID?.trimmingCharacters(in: .whitespacesAndNewlines), !platformPostID.isEmpty {
+                FlickSettingsValueRow(
+                    title: "Platform ID",
+                    systemImage: "number",
+                    iconColor: .secondary,
+                    value: platformPostID,
+                    valueLineLimit: 2
+                )
+            }
+            if let failure = preview.lastError {
+                DashboardMessageRow(
+                    title: "Failure",
+                    message: failure.message,
+                    systemImage: "xmark.octagon",
+                    iconColor: .red
+                )
+            }
+            if let platformURL = preview.platformURL {
                 Link(destination: platformURL) {
                     FlickSettingsRowLabel(
                         title: "Open post",
@@ -417,54 +462,67 @@ private struct IOSAutomationPostDetailView: View {
         }
     }
 
-    private func slidesSection(for post: PublishedPost) -> some View {
+    private func actionsSection(for preview: AutomationPostPreview) -> some View {
+        Section("Actions") {
+            if let draft = preview.draft {
+                Button {
+                    openDraftForRepost(draft)
+                } label: {
+                    FlickSettingsRowLabel(
+                        title: draft.isAvailableInCreateDrafts ? "Open Draft" : "Duplicate to Repost",
+                        systemImage: draft.isAvailableInCreateDrafts ? "square.and.pencil" : "plus.square.on.square",
+                        iconColor: .blue,
+                        value: draft.isAvailableInCreateDrafts ? "Use this generated post" : "Reuse generated images",
+                        valueLineLimit: 1
+                    )
+                }
+                .buttonStyle(.plain)
+            } else {
+                DashboardMessageRow(
+                    title: "Draft unavailable",
+                    message: "The generated draft for this post is not available on this device.",
+                    systemImage: "photo.badge.exclamationmark",
+                    iconColor: .secondary
+                )
+            }
+        }
+    }
+
+    private func slidesSection(for preview: AutomationPostPreview) -> some View {
         Section("Slides") {
-            if slides(for: post).isEmpty {
+            if slides(for: preview).isEmpty {
                 DashboardMessageRow(
                     title: "No local slide detail",
-                    message: "The post is synced, but its generated draft slides are not available on this device.",
+                    message: "This post is synced, but its generated draft slides are not available on this device.",
                     systemImage: "photo.stack",
                     iconColor: .secondary
                 )
             } else {
-                ForEach(slides(for: post)) { slide in
+                ForEach(slides(for: preview)) { slide in
                     IOSAutomationPostSlideRow(
                         slide: slide,
-                        asset: slide.imageAssetID.flatMap { assetsByID[$0] }
+                        asset: slide.imageAssetID.flatMap { previewAssetByID($0) }
                     )
                 }
             }
         }
     }
 
-    private func postTitle(for post: PublishedPost) -> String {
-        let caption = post.caption.trimmingCharacters(in: .whitespacesAndNewlines)
-        return caption.isEmpty ? "\(post.platform.displayName) post" : caption
+    private func slides(for preview: AutomationPostPreview) -> [Slide] {
+        preview.draft?.slides.sorted { $0.index < $1.index } ?? []
     }
 
-    private func accountName(for post: PublishedPost) -> String? {
-        appModel.overview.accounts.first { $0.id == post.accountID }?.displayName
+    private func previewAssetByID(_ id: UUID) -> MediaAsset? {
+        appModel.overview.assets.first { $0.id == id }
     }
 
-    private func draft(for post: PublishedPost) -> SlideshowDraft? {
-        appModel.overview.drafts.first { $0.id == post.draftID }
-    }
-
-    private func slides(for post: PublishedPost) -> [Slide] {
-        draft(for: post)?.slides.sorted { $0.index < $1.index } ?? []
-    }
-
-    private func previewAsset(for post: PublishedPost) -> MediaAsset? {
-        guard let draft = draft(for: post) else { return nil }
-
-        if let asset = draft.exportedImageAssetIDs.compactMap({ assetsByID[$0] }).first {
-            return asset
+    private func openDraftForRepost(_ draft: SlideshowDraft) {
+        if draft.isAvailableInCreateDrafts {
+            appModel.selectCreateDraft(id: draft.id)
+        } else {
+            appModel.duplicateDraft(draft)
         }
-
-        return slides(for: post)
-            .compactMap(\.imageAssetID)
-            .compactMap { assetsByID[$0] }
-            .first
+        dismiss()
     }
 }
 

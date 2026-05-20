@@ -13,6 +13,10 @@ struct AutomationDashboardSnapshot: Hashable {
         items.filter { $0.automation.status == .active }.count
     }
 
+    var postCount: Int {
+        items.reduce(0) { $0 + $1.postPreviews.count }
+    }
+
     var publishedPostCount: Int {
         items.reduce(0) { $0 + $1.publishedPosts.count }
     }
@@ -51,15 +55,13 @@ struct AutomationDashboardSnapshot: Hashable {
                     for: automation,
                     accounts: overview.accounts
                 )
-                let postPreviews = posts.map { post in
-                    let draft = draftsByID[post.draftID]
-                    return AutomationPostPreview(
-                        post: post,
-                        draft: draft,
-                        accountName: accountsByID[post.accountID]?.displayName,
-                        thumbnailAsset: previewAsset(for: draft, assetsByID: assetsByID)
-                    )
-                }
+                let postPreviews = makePostPreviews(
+                    posts: posts,
+                    jobs: jobs,
+                    draftsByID: draftsByID,
+                    accountsByID: accountsByID,
+                    assetsByID: assetsByID
+                )
 
                 return AutomationDashboardItem(
                     automation: automation,
@@ -96,6 +98,85 @@ struct AutomationDashboardSnapshot: Hashable {
             .compactMap(\.imageAssetID)
             .compactMap { assetsByID[$0] }
             .first
+    }
+
+    private static func makePostPreviews(
+        posts: [PublishedPost],
+        jobs: [PublishingJob],
+        draftsByID: [UUID: SlideshowDraft],
+        accountsByID: [UUID: ConnectedAccount],
+        assetsByID: [UUID: MediaAsset]
+    ) -> [AutomationPostPreview] {
+        var matchedPostIDs = Set<UUID>()
+        var previews = jobs.map { job in
+            let matchingPost = posts.first { post in
+                guard !matchedPostIDs.contains(post.id) else { return false }
+                if let platformPublishID = job.platformPublishID,
+                   !platformPublishID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                   post.platformPostID == platformPublishID {
+                    return true
+                }
+
+                return post.platform == job.platform
+                    && post.accountID == job.accountID
+                    && post.draftID == job.draftID
+                    && post.automationID == job.automationID
+            }
+
+            if let matchingPost {
+                matchedPostIDs.insert(matchingPost.id)
+            }
+
+            let draft = draftsByID[job.draftID]
+            return AutomationPostPreview(
+                id: job.id,
+                post: matchingPost,
+                job: job,
+                draft: draft,
+                platform: matchingPost?.platform ?? job.platform,
+                accountID: matchingPost?.accountID ?? job.accountID,
+                accountName: accountsByID[matchingPost?.accountID ?? job.accountID]?.displayName,
+                thumbnailAsset: previewAsset(for: draft, assetsByID: assetsByID),
+                status: AutomationPostPreviewStatus(jobStatus: job.status),
+                platformPostID: matchingPost?.platformPostID ?? job.platformPublishID,
+                platformURL: matchingPost?.platformURL,
+                publishedAt: matchingPost?.publishedAt ?? (job.status == .published ? job.lastAttemptAt ?? job.updatedAt : nil),
+                createdAt: job.createdAt,
+                updatedAt: job.updatedAt,
+                lastError: job.lastError
+            )
+        }
+
+        let unmatchedPostPreviews = posts
+            .filter { !matchedPostIDs.contains($0.id) }
+            .map { post in
+                let draft = draftsByID[post.draftID]
+                return AutomationPostPreview(
+                    id: post.id,
+                    post: post,
+                    job: nil,
+                    draft: draft,
+                    platform: post.platform,
+                    accountID: post.accountID,
+                    accountName: accountsByID[post.accountID]?.displayName,
+                    thumbnailAsset: previewAsset(for: draft, assetsByID: assetsByID),
+                    status: .published,
+                    platformPostID: post.platformPostID,
+                    platformURL: post.platformURL,
+                    publishedAt: post.publishedAt,
+                    createdAt: post.createdAt,
+                    updatedAt: post.updatedAt,
+                    lastError: nil
+                )
+            }
+
+        previews.append(contentsOf: unmatchedPostPreviews)
+        return previews.sorted { lhs, rhs in
+            if lhs.timelineDate != rhs.timelineDate {
+                return lhs.timelineDate > rhs.timelineDate
+            }
+            return lhs.createdAt > rhs.createdAt
+        }
     }
 }
 
@@ -137,6 +218,10 @@ struct AutomationDashboardItem: Identifiable, Hashable {
 
     var failedJobCount: Int {
         publishingJobs.filter { $0.status == .failed }.count
+    }
+
+    var postCount: Int {
+        postPreviews.count
     }
 }
 
@@ -194,15 +279,28 @@ struct AutomationTargetSummary: Identifiable, Hashable {
 }
 
 struct AutomationPostPreview: Identifiable, Hashable {
-    var id: UUID { post.id }
-
-    var post: PublishedPost
+    var id: UUID
+    var post: PublishedPost?
+    var job: PublishingJob?
     var draft: SlideshowDraft?
+    var platform: SocialPlatform
+    var accountID: UUID
     var accountName: String?
     var thumbnailAsset: MediaAsset?
+    var status: AutomationPostPreviewStatus
+    var platformPostID: String?
+    var platformURL: URL?
+    var publishedAt: Date?
+    var createdAt: Date
+    var updatedAt: Date
+    var lastError: PlatformFailure?
+
+    var timelineDate: Date {
+        publishedAt ?? updatedAt
+    }
 
     var displayTitle: String {
-        let caption = post.caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        let caption = (post?.caption ?? draft?.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !caption.isEmpty {
             return caption
         }
@@ -211,15 +309,53 @@ struct AutomationPostPreview: Identifiable, Hashable {
             return draftTitle
         }
 
-        return "\(post.platform.displayName) post"
+        return "\(platform.displayName) post"
     }
 
     var subtitle: String {
         if let accountName, !accountName.isEmpty {
-            return "\(post.platform.displayName) - \(accountName)"
+            return "\(platform.displayName) - \(accountName)"
         }
 
-        return post.platform.displayName
+        return platform.displayName
+    }
+}
+
+enum AutomationPostPreviewStatus: String, Hashable {
+    case rendering
+    case publishing
+    case awaitingUserCompletion
+    case published
+    case failed
+
+    init(jobStatus: PublishingJobStatus) {
+        switch jobStatus {
+        case .rendering:
+            self = .rendering
+        case .publishing:
+            self = .publishing
+        case .awaitingUserCompletion:
+            self = .awaitingUserCompletion
+        case .published:
+            self = .published
+        case .failed:
+            self = .failed
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .rendering:
+            "Rendering"
+        case .publishing:
+            "Publishing"
+        case .awaitingUserCompletion:
+            "Awaiting TikTok"
+        case .published:
+            "Published"
+        case .failed:
+            "Failed"
+        }
     }
 }
 

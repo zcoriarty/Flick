@@ -219,7 +219,7 @@ struct TikTokAdapter: SocialPlatformAdapter {
             publishID: publishID,
             status: data.status.rawValue,
             failReason: data.failReason,
-            publiclyAvailablePostIDs: (data.publiclyAvailablePostIDs ?? []).map(String.init),
+            publiclyAvailablePostIDs: data.publiclyAvailablePostIDs ?? [],
             rawResponse: snapshot.combinedRawResponse
         )
     }
@@ -265,7 +265,7 @@ struct TikTokAdapter: SocialPlatformAdapter {
                 )
                 logPublishFailure(apiError)
                 throw apiError
-            case .processingUpload, .processingDownload:
+            case .processingUpload, .processingDownload, .unknown:
                 guard attempt < statusPollAttempts else { break }
                 if statusPollIntervalNanoseconds > 0 {
                     try await Task.sleep(nanoseconds: statusPollIntervalNanoseconds)
@@ -740,25 +740,76 @@ private struct TikTokPublishStatusResponse: Decodable {
 private struct TikTokPublishStatusData: Decodable, Hashable {
     var status: TikTokPublishStatus
     var failReason: String?
-    var publiclyAvailablePostIDs: [Int64]?
+    var publiclyAvailablePostIDs: [String]?
     var downloadedBytes: Int64?
     var uploadedBytes: Int64?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        status = try container.decode(TikTokPublishStatus.self, forKey: .status)
+        failReason = try container.decodeIfPresent(String.self, forKey: .failReason)
+        publiclyAvailablePostIDs = try container.decodeTikTokPostIDsIfPresent(forKey: .publiclyAvailablePostIDs)
+            ?? container.decodeTikTokPostIDsIfPresent(forKey: .correctlySpelledPubliclyAvailablePostIDs)
+        downloadedBytes = try container.decodeIfPresent(Int64.self, forKey: .downloadedBytes)
+        uploadedBytes = try container.decodeIfPresent(Int64.self, forKey: .uploadedBytes)
+    }
 
     private enum CodingKeys: String, CodingKey {
         case status
         case failReason = "fail_reason"
         case publiclyAvailablePostIDs = "publicaly_available_post_id"
+        case correctlySpelledPubliclyAvailablePostIDs = "publicly_available_post_id"
         case downloadedBytes = "downloaded_bytes"
         case uploadedBytes = "uploaded_bytes"
     }
 }
 
-private enum TikTokPublishStatus: String, Decodable {
-    case processingUpload = "PROCESSING_UPLOAD"
-    case processingDownload = "PROCESSING_DOWNLOAD"
-    case sendToUserInbox = "SEND_TO_USER_INBOX"
-    case publishComplete = "PUBLISH_COMPLETE"
-    case failed = "FAILED"
+private enum TikTokPublishStatus: Decodable, Hashable {
+    case processingUpload
+    case processingDownload
+    case sendToUserInbox
+    case publishComplete
+    case failed
+    case unknown(String)
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        self = Self(rawValue: try container.decode(String.self))
+    }
+
+    init(rawValue: String) {
+        switch rawValue {
+        case "PROCESSING_UPLOAD":
+            self = .processingUpload
+        case "PROCESSING_DOWNLOAD":
+            self = .processingDownload
+        case "SEND_TO_USER_INBOX":
+            self = .sendToUserInbox
+        case "PUBLISH_COMPLETE":
+            self = .publishComplete
+        case "FAILED":
+            self = .failed
+        default:
+            self = .unknown(rawValue)
+        }
+    }
+
+    var rawValue: String {
+        switch self {
+        case .processingUpload:
+            "PROCESSING_UPLOAD"
+        case .processingDownload:
+            "PROCESSING_DOWNLOAD"
+        case .sendToUserInbox:
+            "SEND_TO_USER_INBOX"
+        case .publishComplete:
+            "PUBLISH_COMPLETE"
+        case .failed:
+            "FAILED"
+        case let .unknown(status):
+            status
+        }
+    }
 }
 
 private struct TikTokPublishStatusSnapshot {
@@ -853,6 +904,43 @@ private extension TikTokManualPublishSettings {
 
     var requiredScope: String {
         postAsDraft ? "video.upload" : "video.publish"
+    }
+}
+
+private enum TikTokPostIDValue: Decodable {
+    case string(String)
+    case uint(UInt64)
+    case int(Int64)
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let string = try? container.decode(String.self) {
+            self = .string(string)
+        } else if let uint = try? container.decode(UInt64.self) {
+            self = .uint(uint)
+        } else {
+            self = .int(try container.decode(Int64.self))
+        }
+    }
+
+    var stringValue: String {
+        switch self {
+        case let .string(value):
+            value
+        case let .uint(value):
+            String(value)
+        case let .int(value):
+            String(value)
+        }
+    }
+}
+
+private extension KeyedDecodingContainer {
+    func decodeTikTokPostIDsIfPresent(forKey key: Key) throws -> [String]? {
+        guard contains(key) else { return nil }
+        return try decode([TikTokPostIDValue].self, forKey: key)
+            .map(\.stringValue)
+            .filter { !$0.isEmpty }
     }
 }
 

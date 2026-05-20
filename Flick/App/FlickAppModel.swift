@@ -158,9 +158,10 @@ final class FlickAppModel {
             applyCredentialHealth()
             overview.refreshDerivedState()
             let didUpdateTikTokStatuses = await refreshTikTokPublishStatuses()
+            let didReconcilePublishedPosts = reconcilePublishedPostsFromCompletedJobs()
             clearActiveCreateDraftIfUnavailable()
             let didPruneProgresses = pruneAutomationPostProgresses()
-            if reconcileCompletedSlideImages() || didUpdateTikTokStatuses || didPruneProgresses {
+            if reconcileCompletedSlideImages() || didUpdateTikTokStatuses || didReconcilePublishedPosts || didPruneProgresses {
                 overview.refreshDerivedState()
                 try await repository.saveOverview(overview)
             }
@@ -309,15 +310,31 @@ final class FlickAppModel {
     }
 
     func duplicateDraft(_ draft: SlideshowDraft) {
+        let now = Date()
         var copy = draft
         copy.id = UUID()
         copy.title = "\(draft.title) remix"
+        copy.slides = draft.slides.map { slide in
+            var copiedSlide = slide
+            copiedSlide.id = UUID()
+            copiedSlide.createdAt = now
+            copiedSlide.updatedAt = now
+            return copiedSlide
+        }
         copy.status = .draft
-        copy.createdAt = Date()
-        copy.updatedAt = Date()
+        copy.createdAt = now
+        copy.updatedAt = now
         overview.drafts.insert(copy, at: 0)
         activeCreateDraftID = copy.id
         selectedSection = .create
+        Task { @MainActor in
+            do {
+                try await repository.saveOverview(overview)
+                lastErrorMessage = nil
+            } catch {
+                lastErrorMessage = error.localizedDescription
+            }
+        }
     }
 
     func createDraft(from template: ExampleSlideshowTemplate) {
@@ -695,6 +712,14 @@ final class FlickAppModel {
         while !Task.isCancelled {
             await processDueAutomations()
             try? await Task.sleep(for: interval)
+        }
+    }
+
+    func runTikTokPublishStatusRefreshLoop(interval: Duration = .seconds(60)) async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: interval)
+            guard !Task.isCancelled else { return }
+            await refreshAndPersistTikTokPublishStatuses()
         }
     }
 
@@ -2048,6 +2073,20 @@ private extension FlickAppModel {
         return didChange
     }
 
+    func refreshAndPersistTikTokPublishStatuses() async {
+        let didUpdateTikTokStatuses = await refreshTikTokPublishStatuses()
+        let didReconcilePublishedPosts = reconcilePublishedPostsFromCompletedJobs()
+        guard didUpdateTikTokStatuses || didReconcilePublishedPosts else { return }
+
+        do {
+            overview.refreshDerivedState()
+            try await repository.saveOverview(overview)
+            lastErrorMessage = nil
+        } catch {
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
     func updatePublishingJob(_ jobID: UUID, status: PublishingJobStatus) {
         guard let jobIndex = overview.publishingJobs.firstIndex(where: { $0.id == jobID }) else { return }
         overview.publishingJobs[jobIndex].status = status
@@ -2091,6 +2130,20 @@ private extension FlickAppModel {
 
     func completeDraftUploadJob(_ jobID: UUID, result: PublishResult) {
         guard let jobIndex = overview.publishingJobs.firstIndex(where: { $0.id == jobID }) else { return }
+        if result.platformStatus == "PUBLISH_COMPLETE" {
+            _ = applyTikTokPublishStatus(
+                TikTokPublishStatusResult(
+                    publishID: result.platformPostID,
+                    status: result.platformStatus ?? "PUBLISH_COMPLETE",
+                    failReason: nil,
+                    publiclyAvailablePostIDs: [],
+                    rawResponse: result.rawResponse
+                ),
+                to: jobID
+            )
+            return
+        }
+
         overview.publishingJobs[jobIndex].status = .awaitingUserCompletion
         overview.publishingJobs[jobIndex].platformPublishID = result.platformPostID
         overview.publishingJobs[jobIndex].lastError = nil
@@ -2160,11 +2213,62 @@ private extension FlickAppModel {
         return true
     }
 
+    @discardableResult
+    func reconcilePublishedPostsFromCompletedJobs() -> Bool {
+        let publishedJobs = overview.publishingJobs.filter { job in
+            job.status == .published
+                && job.platformPublishID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        }
+        guard !publishedJobs.isEmpty else { return false }
+
+        let draftsByID = Dictionary(uniqueKeysWithValues: overview.drafts.map { ($0.id, $0) })
+        let now = Date()
+        var didChange = false
+
+        for job in publishedJobs where !publishedPostExists(for: job) {
+            guard let platformPostID = job.platformPublishID?.trimmingCharacters(in: .whitespacesAndNewlines), !platformPostID.isEmpty else {
+                continue
+            }
+
+            let draft = draftsByID[job.draftID]
+            overview.publishedPosts.insert(
+                PublishedPost(
+                    id: UUID(),
+                    platform: job.platform,
+                    accountID: job.accountID,
+                    automationID: job.automationID,
+                    platformPostID: platformPostID,
+                    platformURL: nil,
+                    publishedAt: job.lastAttemptAt ?? job.updatedAt,
+                    draftID: job.draftID,
+                    templateID: draft?.templateID,
+                    trendTags: [],
+                    caption: draft?.caption ?? "",
+                    createdAt: now,
+                    updatedAt: now
+                ),
+                at: 0
+            )
+            didChange = true
+        }
+
+        return didChange
+    }
+
     func publishedPostExists(platformPostID: String, accountID: UUID) -> Bool {
         overview.publishedPosts.contains { post in
             post.platform == .tiktok
                 && post.accountID == accountID
                 && post.platformPostID == platformPostID
+        }
+    }
+
+    func publishedPostExists(for job: PublishingJob) -> Bool {
+        overview.publishedPosts.contains { post in
+            post.platform == job.platform
+                && post.accountID == job.accountID
+                && post.draftID == job.draftID
+                && post.automationID == job.automationID
         }
     }
 

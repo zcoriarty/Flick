@@ -64,7 +64,7 @@ struct MacAutomationDashboardView: View {
             HStack(spacing: 18) {
                 MacAutomationMetric(title: "Active", value: snapshot.activeCount.formatted())
                 MacAutomationMetric(title: "Running", value: snapshot.activeProgresses.count.formatted())
-                MacAutomationMetric(title: "Posts", value: snapshot.publishedPostCount.formatted())
+                MacAutomationMetric(title: "Posts", value: snapshot.postCount.formatted())
                 MacAutomationMetric(
                     title: "Next",
                     value: AutomationDashboardFormatting.relativeDate(snapshot.nextPostAt)
@@ -274,7 +274,7 @@ private struct MacAutomationCard: View {
             HStack(spacing: 10) {
                 MacAutomationCardStat(
                     title: "Posts",
-                    value: item.publishedPosts.count.formatted(),
+                    value: item.postCount.formatted(),
                     systemImage: "photo.stack"
                 )
                 MacAutomationCardStat(
