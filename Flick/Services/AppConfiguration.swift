@@ -146,13 +146,6 @@ struct CredentialDefinition: Identifiable, Hashable {
         CredentialDefinition(key: "META_CLIENT_ID", name: "Meta client ID"),
         CredentialDefinition(key: "META_CLIENT_SECRET", name: "Meta client secret"),
         CredentialDefinition(key: "OPENAI_API_KEY", name: "OpenAI API key"),
-        CredentialDefinition(key: "POSTGRES_DATABASE", name: "Postgres database"),
-        CredentialDefinition(key: "POSTGRES_HOST", name: "Postgres host"),
-        CredentialDefinition(key: "POSTGRES_PASSWORD", name: "Postgres password"),
-        CredentialDefinition(key: "POSTGRES_PRISMA_URL", name: "Postgres Prisma URL"),
-        CredentialDefinition(key: "POSTGRES_URL", name: "Postgres URL"),
-        CredentialDefinition(key: "POSTGRES_URL_NON_POOLING", name: "Postgres non-pooling URL"),
-        CredentialDefinition(key: "POSTGRES_USER", name: "Postgres user"),
         CredentialDefinition(key: "R2_ACCESS_KEY_ID", name: "Cloudflare R2 access key ID"),
         CredentialDefinition(key: "R2_ACCOUNT_ID", name: "Cloudflare R2 account ID"),
         CredentialDefinition(key: "R2_BUCKET", name: "Cloudflare R2 bucket"),
@@ -169,6 +162,16 @@ struct CredentialDefinition: Identifiable, Hashable {
     static var supportedKeys: [String] {
         supported.map(\.key)
     }
+
+    static let retiredKeys = [
+        "POSTGRES_DATABASE",
+        "POSTGRES_HOST",
+        "POSTGRES_PASSWORD",
+        "POSTGRES_PRISMA_URL",
+        "POSTGRES_URL",
+        "POSTGRES_URL_NON_POOLING",
+        "POSTGRES_USER"
+    ]
 
     static func definition(for key: String) -> CredentialDefinition? {
         supported.first { $0.key == key }

@@ -7,6 +7,7 @@ import Foundation
 
 struct AutomationDashboardSnapshot: Hashable {
     var items: [AutomationDashboardItem]
+    var activeProgresses: [AutomationPostProgress]
 
     var activeCount: Int {
         items.filter { $0.automation.status == .active }.count
@@ -35,6 +36,10 @@ struct AutomationDashboardSnapshot: Hashable {
         }
         let jobsByAutomation = Dictionary(grouping: overview.publishingJobs.filter { $0.automationID != nil }) { job in
             job.automationID ?? UUID()
+        }
+        let activeProgresses = overview.automationPostProgresses.activeAutomationPostProgresses
+        let progressesByAutomation = Dictionary(grouping: activeProgresses) { progress in
+            progress.automationID
         }
 
         let items = overview.automations
@@ -68,11 +73,12 @@ struct AutomationDashboardSnapshot: Hashable {
                     targets: targets,
                     publishedPosts: posts,
                     publishingJobs: jobs,
-                    postPreviews: postPreviews
+                    postPreviews: postPreviews,
+                    activeProgresses: progressesByAutomation[automation.id] ?? []
                 )
             }
 
-        return AutomationDashboardSnapshot(items: items)
+        return AutomationDashboardSnapshot(items: items, activeProgresses: activeProgresses)
     }
 
     private static func previewAsset(
@@ -103,6 +109,7 @@ struct AutomationDashboardItem: Identifiable, Hashable {
     var publishedPosts: [PublishedPost]
     var publishingJobs: [PublishingJob]
     var postPreviews: [AutomationPostPreview]
+    var activeProgresses: [AutomationPostProgress]
 
     var scheduleSummary: String {
         automation.schedule.summary()

@@ -39,6 +39,9 @@ struct IOSDashboardView: View {
     var body: some View {
         List {
             overviewSection
+            if !automationSnapshot.activeProgresses.isEmpty {
+                inProgressSection
+            }
             automationsSection
             tiktokPublishingSection
             syncStatusSection
@@ -118,6 +121,14 @@ struct IOSDashboardView: View {
                         IOSAutomationDashboardRow(item: item)
                     }
                 }
+            }
+        }
+    }
+
+    private var inProgressSection: some View {
+        Section("In Progress") {
+            ForEach(automationSnapshot.activeProgresses) { progress in
+                AutomationProgressSummaryRow(progress: progress)
             }
         }
     }
@@ -255,6 +266,13 @@ private struct IOSAutomationDashboardRow: View {
                         .font(.caption)
                         .foregroundStyle(.orange)
                         .lineLimit(2)
+                }
+
+                if !item.activeProgresses.isEmpty {
+                    Text(item.activeProgresses.count == 1 ? "1 post in progress" : "\(item.activeProgresses.count) posts in progress")
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                        .lineLimit(1)
                 }
             }
             .layoutPriority(1)

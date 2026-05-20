@@ -159,7 +159,8 @@ final class FlickAppModel {
             overview.refreshDerivedState()
             let didUpdateTikTokStatuses = await refreshTikTokPublishStatuses()
             clearActiveCreateDraftIfUnavailable()
-            if reconcileCompletedSlideImages() || didUpdateTikTokStatuses {
+            let didPruneProgresses = pruneAutomationPostProgresses()
+            if reconcileCompletedSlideImages() || didUpdateTikTokStatuses || didPruneProgresses {
                 overview.refreshDerivedState()
                 try await repository.saveOverview(overview)
             }
@@ -859,7 +860,8 @@ final class FlickAppModel {
     func publishManualSlideshow(
         draftID: UUID,
         settings: TikTokManualPublishSettings,
-        automationID: UUID? = nil
+        automationID: UUID? = nil,
+        automationProgressID: UUID? = nil
     ) async -> Bool {
         guard !isPublishingSlideshow else { return false }
         isPublishingSlideshow = true
@@ -907,7 +909,10 @@ final class FlickAppModel {
             completePublishStep(ManualPublishProgressStepID.createJob, detail: "Publish job \(job.id.uuidString.prefix(8)) created.")
 
             logPublish("Manual TikTok publish started draftID=\(draftID.uuidString) jobID=\(job.id.uuidString) mode=\(settings.publishMode.rawValue)")
-            let renderedAssetIDs = try await renderImageSequenceForPublish(for: draftID)
+            let renderedAssetIDs = try await renderImageSequenceForPublish(
+                for: draftID,
+                automationProgressID: automationProgressID
+            )
 
             guard let refreshedDraftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) else {
                 throw SlideshowCreationError.missingDraft
@@ -923,6 +928,11 @@ final class FlickAppModel {
             job.status = .publishing
             job.updatedAt = Date()
             createWorkflowMessage = "Posting to TikTok..."
+            await startAutomationPostProgressStep(
+                automationProgressID,
+                AutomationPostProgressStepID.publishTikTok,
+                detail: "Sending \(imageURLs.count) rendered images to TikTok."
+            )
             startPublishStep(ManualPublishProgressStepID.publishTikTok, detail: "Sending \(imageURLs.count) rendered images to TikTok.")
             let media = PreparedPlatformMedia(
                 mode: settings.publishMode,
@@ -936,10 +946,20 @@ final class FlickAppModel {
                 ? tikTokDraftUploadDetail(for: result)
                 : "TikTok publish ID \(result.platformPostID)."
             completePublishStep(ManualPublishProgressStepID.publishTikTok, detail: publishStepDetail)
+            await completeAutomationPostProgressStep(
+                automationProgressID,
+                AutomationPostProgressStepID.publishTikTok,
+                detail: publishStepDetail
+            )
 
             let recordStepDetail = settings.postAsDraft
                 ? "Saving the TikTok inbox upload status."
                 : "Saving the final publish status."
+            await startAutomationPostProgressStep(
+                automationProgressID,
+                AutomationPostProgressStepID.recordResult,
+                detail: recordStepDetail
+            )
             startPublishStep(ManualPublishProgressStepID.recordResult, detail: recordStepDetail)
             if settings.postAsDraft {
                 completeDraftUploadJob(job.id, result: result)
@@ -952,6 +972,11 @@ final class FlickAppModel {
                 ? "TikTok draft saved. Open TikTok's inbox notification to edit, save, or post."
                 : "Publish status saved."
             completePublishStep(ManualPublishProgressStepID.recordResult, detail: recordCompletionDetail)
+            await completeAutomationPostProgressStep(
+                automationProgressID,
+                AutomationPostProgressStepID.recordResult,
+                detail: recordCompletionDetail
+            )
             finishManualPublishProgress()
             createWorkflowMessage = settings.postAsDraft ? "TikTok draft sent. Open TikTok's inbox notification to finish." : "Published to TikTok."
             lastErrorMessage = nil
@@ -1225,6 +1250,152 @@ enum AutomationRunError: LocalizedError {
 }
 
 private extension FlickAppModel {
+    func pruneAutomationPostProgresses(now: Date = Date()) -> Bool {
+        let originalCount = overview.automationPostProgresses.count
+        overview.automationPostProgresses.removeAll { progress in
+            if let finishedAt = progress.finishedAt {
+                return now.timeIntervalSince(finishedAt) > 10 * 60
+            }
+
+            return now.timeIntervalSince(progress.updatedAt) > 12 * 60 * 60
+        }
+        return overview.automationPostProgresses.count != originalCount
+    }
+
+    func beginAutomationPostProgress(
+        for automation: ContentAutomation,
+        scheduledAt: Date
+    ) async -> UUID {
+        let progress = AutomationPostProgress.make(
+            automationID: automation.id,
+            title: automation.displayName(products: overview.products),
+            productName: automation.productID.flatMap { productID in
+                overview.products.first { $0.id == productID }?.name
+            },
+            scheduledAt: scheduledAt
+        )
+        overview.automationPostProgresses.insert(progress, at: 0)
+        await persistAutomationPostProgresses()
+        return progress.id
+    }
+
+    func startAutomationPostProgressStep(
+        _ progressID: UUID?,
+        _ stepID: String,
+        detail: String
+    ) async {
+        await updateAutomationPostProgressStep(progressID, stepID, state: .current, detail: detail)
+    }
+
+    func completeAutomationPostProgressStep(
+        _ progressID: UUID?,
+        _ stepID: String,
+        detail: String
+    ) async {
+        await updateAutomationPostProgressStep(progressID, stepID, state: .completed, detail: detail)
+    }
+
+    func updateAutomationPostProgress(
+        _ progressID: UUID?,
+        draftID: UUID? = nil,
+        title: String? = nil,
+        templateTitle: String? = nil,
+        productName: String? = nil
+    ) async {
+        guard
+            let progressID,
+            let progressIndex = overview.automationPostProgresses.firstIndex(where: { $0.id == progressID })
+        else {
+            return
+        }
+
+        if let draftID {
+            overview.automationPostProgresses[progressIndex].draftID = draftID
+        }
+        if let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            overview.automationPostProgresses[progressIndex].title = title
+        }
+        if let templateTitle {
+            overview.automationPostProgresses[progressIndex].templateTitle = templateTitle
+        }
+        if let productName {
+            overview.automationPostProgresses[progressIndex].productName = productName
+        }
+        overview.automationPostProgresses[progressIndex].updatedAt = Date()
+        await persistAutomationPostProgresses()
+    }
+
+    func updateAutomationPostProgressStep(
+        _ progressID: UUID?,
+        _ stepID: String,
+        state: AutomationPostProgressStepState,
+        detail: String
+    ) async {
+        guard
+            let progressID,
+            let progressIndex = overview.automationPostProgresses.firstIndex(where: { $0.id == progressID }),
+            let stepIndex = overview.automationPostProgresses[progressIndex].steps.firstIndex(where: { $0.id == stepID })
+        else {
+            return
+        }
+
+        let now = Date()
+        if state == .current {
+            for index in overview.automationPostProgresses[progressIndex].steps.indices
+                where overview.automationPostProgresses[progressIndex].steps[index].state == .current {
+                overview.automationPostProgresses[progressIndex].steps[index].state = .pending
+            }
+        }
+        overview.automationPostProgresses[progressIndex].steps[stepIndex].state = state
+        overview.automationPostProgresses[progressIndex].steps[stepIndex].detail = detail
+        overview.automationPostProgresses[progressIndex].steps[stepIndex].updatedAt = now
+        overview.automationPostProgresses[progressIndex].updatedAt = now
+        await persistAutomationPostProgresses()
+    }
+
+    func failAutomationPostProgress(_ progressID: UUID, error: Error) async {
+        guard let progressIndex = overview.automationPostProgresses.firstIndex(where: { $0.id == progressID }) else {
+            return
+        }
+
+        let now = Date()
+        let stepIndex = overview.automationPostProgresses[progressIndex].steps.firstIndex { $0.state == .current }
+            ?? overview.automationPostProgresses[progressIndex].steps.firstIndex { $0.state == .pending }
+        if let stepIndex {
+            overview.automationPostProgresses[progressIndex].steps[stepIndex].state = .failed
+            overview.automationPostProgresses[progressIndex].steps[stepIndex].detail = error.localizedDescription
+            overview.automationPostProgresses[progressIndex].steps[stepIndex].updatedAt = now
+        }
+        overview.automationPostProgresses[progressIndex].errorMessage = error.localizedDescription
+        overview.automationPostProgresses[progressIndex].finishedAt = now
+        overview.automationPostProgresses[progressIndex].updatedAt = now
+        await persistAutomationPostProgresses()
+    }
+
+    func finishAutomationPostProgress(_ progressID: UUID) async {
+        guard let progressIndex = overview.automationPostProgresses.firstIndex(where: { $0.id == progressID }) else {
+            return
+        }
+
+        let now = Date()
+        for index in overview.automationPostProgresses[progressIndex].steps.indices
+            where overview.automationPostProgresses[progressIndex].steps[index].state == .pending {
+            overview.automationPostProgresses[progressIndex].steps[index].state = .completed
+            overview.automationPostProgresses[progressIndex].steps[index].updatedAt = now
+        }
+        overview.automationPostProgresses[progressIndex].finishedAt = now
+        overview.automationPostProgresses[progressIndex].updatedAt = now
+        await persistAutomationPostProgresses()
+    }
+
+    func persistAutomationPostProgresses() async {
+        do {
+            try await repository.saveOverview(overview)
+        } catch {
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
     func makeOpenAIClient() -> OpenAIClient {
         openAIClientFactory(credentialVault.loadValues())
     }
@@ -1279,62 +1450,114 @@ private extension FlickAppModel {
         _ automation: ContentAutomation,
         scheduledAt: Date
     ) async throws {
-        guard automation.isReadyToSchedule else {
-            throw AutomationRunError.notReady
-        }
+        let progressID = await beginAutomationPostProgress(for: automation, scheduledAt: scheduledAt)
 
-        guard publishingTikTokAccount() != nil else {
-            throw ManualPublishError.missingTikTokAccount
-        }
-
-        let template = try automationTemplate(for: automation, scheduledAt: scheduledAt)
-        let productImage = try automationProductImage(for: automation, scheduledAt: scheduledAt)
-        let planningBrief = templateAnalysisBrief(for: template)
-
-        reloadCredentialConfiguration()
-        isPlanningSlideshow = true
-        createWorkflowMessage = "Creating automated slideshow..."
-        lastErrorMessage = nil
-
-        let result: AISlideshowCreationResult
         do {
-            result = try await createAISlideshowResult(
-                brief: planningBrief,
-                template: template,
-                productImage: productImage
+            guard automation.isReadyToSchedule else {
+                throw AutomationRunError.notReady
+            }
+
+            guard publishingTikTokAccount() != nil else {
+                throw ManualPublishError.missingTikTokAccount
+            }
+
+            await startAutomationPostProgressStep(
+                progressID,
+                AutomationPostProgressStepID.selectTemplate,
+                detail: "Choosing a template and product image for this run."
             )
+            let template = try automationTemplate(for: automation, scheduledAt: scheduledAt)
+            let productImage = try automationProductImage(for: automation, scheduledAt: scheduledAt)
+            await updateAutomationPostProgress(
+                progressID,
+                templateTitle: template.title,
+                productName: productImage.product.name
+            )
+            await completeAutomationPostProgressStep(
+                progressID,
+                AutomationPostProgressStepID.selectTemplate,
+                detail: "Selected \(template.title) for \(productImage.product.name)."
+            )
+
+            let planningBrief = templateAnalysisBrief(for: template)
+
+            reloadCredentialConfiguration()
+            isPlanningSlideshow = true
+            createWorkflowMessage = "Creating automated slideshow..."
+            lastErrorMessage = nil
+            await startAutomationPostProgressStep(
+                progressID,
+                AutomationPostProgressStepID.planSlideshow,
+                detail: "Creating the carousel plan and TikTok caption."
+            )
+
+            let result: AISlideshowCreationResult
+            do {
+                result = try await createAISlideshowResult(
+                    brief: planningBrief,
+                    template: template,
+                    productImage: productImage
+                )
+            } catch {
+                isPlanningSlideshow = false
+                throw error
+            }
+            isPlanningSlideshow = false
+            await completeAutomationPostProgressStep(
+                progressID,
+                AutomationPostProgressStepID.planSlideshow,
+                detail: "Created a \(result.draft.slides.count)-slide post plan."
+            )
+
+            overview.templates.insert(result.creativeTemplate, at: 0)
+            overview.drafts.insert(result.draft, at: 0)
+            await updateAutomationPostProgress(
+                progressID,
+                draftID: result.draft.id,
+                title: result.draft.title
+            )
+            try await repository.saveOverview(overview)
+
+            await startAutomationPostProgressStep(
+                progressID,
+                AutomationPostProgressStepID.generateImages,
+                detail: "Generating \(result.draft.slides.count) slide visuals."
+            )
+            await generateMissingSlideImages(for: result.draft.id)
+            guard let generatedDraft = overview.drafts.first(where: { $0.id == result.draft.id }) else {
+                throw SlideshowCreationError.missingDraft
+            }
+
+            let assetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
+            guard generatedDraft.hasCompletedCreateImages(assetsByID: assetsByID) else {
+                throw AutomationRunError.generationFailed(lastErrorMessage ?? "")
+            }
+            await completeAutomationPostProgressStep(
+                progressID,
+                AutomationPostProgressStepID.generateImages,
+                detail: "Generated \(generatedDraft.createReadyImageCount(assetsByID: assetsByID)) slide visuals."
+            )
+
+            let tikTokSettings = automation.tikTokSettings.fillingTitle(from: generatedDraft.tikTokSettings)
+            guard let settings = tikTokSettings.automatedPublishSettings(description: generatedDraft.publishDescription) else {
+                throw AutomationRunError.notReady
+            }
+
+            let didPublish = await publishManualSlideshow(
+                draftID: generatedDraft.id,
+                settings: settings,
+                automationID: automation.id,
+                automationProgressID: progressID
+            )
+            guard didPublish else {
+                throw AutomationRunError.publishFailed(lastErrorMessage ?? "")
+            }
+
+            await finishAutomationPostProgress(progressID)
         } catch {
             isPlanningSlideshow = false
+            await failAutomationPostProgress(progressID, error: error)
             throw error
-        }
-        isPlanningSlideshow = false
-
-        overview.templates.insert(result.creativeTemplate, at: 0)
-        overview.drafts.insert(result.draft, at: 0)
-        try await repository.saveOverview(overview)
-
-        await generateMissingSlideImages(for: result.draft.id)
-        guard let generatedDraft = overview.drafts.first(where: { $0.id == result.draft.id }) else {
-            throw SlideshowCreationError.missingDraft
-        }
-
-        let assetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
-        guard generatedDraft.hasCompletedCreateImages(assetsByID: assetsByID) else {
-            throw AutomationRunError.generationFailed(lastErrorMessage ?? "")
-        }
-
-        let tikTokSettings = automation.tikTokSettings.fillingTitle(from: generatedDraft.tikTokSettings)
-        guard let settings = tikTokSettings.automatedPublishSettings(description: generatedDraft.publishDescription) else {
-            throw AutomationRunError.notReady
-        }
-
-        let didPublish = await publishManualSlideshow(
-            draftID: generatedDraft.id,
-            settings: settings,
-            automationID: automation.id
-        )
-        guard didPublish else {
-            throw AutomationRunError.publishFailed(lastErrorMessage ?? "")
         }
     }
 
@@ -1688,11 +1911,19 @@ private extension FlickAppModel {
         }
     }
 
-    func renderImageSequenceForPublish(for draftID: UUID) async throws -> [UUID] {
+    func renderImageSequenceForPublish(
+        for draftID: UUID,
+        automationProgressID: UUID? = nil
+    ) async throws -> [UUID] {
         guard let draftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) else {
             throw SlideshowCreationError.missingDraft
         }
 
+        await startAutomationPostProgressStep(
+            automationProgressID,
+            AutomationPostProgressStepID.renderImages,
+            detail: "Rendering the current edited slides."
+        )
         startPublishStep(ManualPublishProgressStepID.renderImages, detail: "Rendering the current edited slides.")
         createWorkflowMessage = "Snapshotting edited slides..."
         let draft = overview.drafts[draftIndex]
@@ -1704,11 +1935,21 @@ private extension FlickAppModel {
                 options: .tikTokPhotoPost
             )
         completePublishStep(ManualPublishProgressStepID.renderImages, detail: "Snapshot \(renderedImages.count) edited slides.")
+        await completeAutomationPostProgressStep(
+            automationProgressID,
+            AutomationPostProgressStepID.renderImages,
+            detail: "Rendered \(renderedImages.count) edited slides."
+        )
 
         createWorkflowMessage = "Uploading rendered images..."
         var renderedAssetIDs: [UUID] = []
-        for renderedImage in renderedImages {
+        for (offset, renderedImage) in renderedImages.enumerated() {
             let uploadStepID = ManualPublishProgressStepID.uploadSlide(renderedImage.slideID)
+            await startAutomationPostProgressStep(
+                automationProgressID,
+                AutomationPostProgressStepID.uploadMedia,
+                detail: "Uploading rendered image \(offset + 1) of \(renderedImages.count)."
+            )
             startPublishStep(uploadStepID, detail: "Uploading rendered image to Cloudflare R2.")
             let data = try Data(contentsOf: renderedImage.fileURL)
             let assetID = UUID()
@@ -1748,6 +1989,11 @@ private extension FlickAppModel {
             renderedAssetIDs.append(assetID)
             completePublishStep(uploadStepID, detail: "Uploaded rendered image to Cloudflare R2.")
         }
+        await completeAutomationPostProgressStep(
+            automationProgressID,
+            AutomationPostProgressStepID.uploadMedia,
+            detail: "Uploaded \(renderedAssetIDs.count) rendered images."
+        )
 
         if let refreshedDraftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) {
             overview.drafts[refreshedDraftIndex].exportedImageAssetIDs = renderedAssetIDs

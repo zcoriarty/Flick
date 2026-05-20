@@ -28,6 +28,7 @@ final class CoreDataFlickRepository: FlickRepository {
         state.templates = try fetchTemplates()
         state.drafts = try fetchDrafts(slidesByDraftID: try fetchSlidesByDraftID())
         state.automations = try fetchAutomations()
+        state.automationPostProgresses = try fetchAutomationPostProgresses()
         state.publishingJobs = try fetchPublishingJobs()
         state.publishedPosts = try fetchPublishedPosts()
         state.refreshDerivedState()
@@ -44,6 +45,7 @@ final class CoreDataFlickRepository: FlickRepository {
         try syncDrafts(state.drafts)
         try syncSlides(in: state.drafts)
         try syncAutomations(state.automations)
+        try syncAutomationPostProgresses(state.automationPostProgresses)
         try syncPublishingJobs(state.publishingJobs)
         try syncPublishedPosts(state.publishedPosts)
         try saveIfNeeded()
@@ -226,6 +228,22 @@ final class CoreDataFlickRepository: FlickRepository {
         }
     }
 
+    private func syncAutomationPostProgresses(_ progresses: [AutomationPostProgress]) throws {
+        let objects = try fetchWorkflowStateObjects(key: WorkflowStateValueKey.automationPostProgresses)
+
+        if progresses.isEmpty {
+            objects.forEach { context.delete($0) }
+            return
+        }
+
+        let object = objects.first ?? insertWorkflowStateObject()
+        objects.dropFirst().forEach { context.delete($0) }
+        object.setValue(object.value(forKey: WorkflowStateKey.id) as? UUID ?? UUID(), forKey: WorkflowStateKey.id)
+        object.setValue(WorkflowStateValueKey.automationPostProgresses, forKey: WorkflowStateKey.key)
+        object.setValue(Date(), forKey: WorkflowStateKey.updatedAt)
+        object.setValue(progresses, asJSONForKey: WorkflowStateKey.valueJSON)
+    }
+
     private func syncPublishedPosts(_ posts: [PublishedPost]) throws {
         let existingPosts = try context.fetch(publishedPostFetchRequest())
         var existingByID = Dictionary(uniqueKeysWithValues: existingPosts.compactMap { object -> (UUID, NSManagedObject)? in
@@ -316,6 +334,14 @@ final class CoreDataFlickRepository: FlickRepository {
         return try context.fetch(request).compactMap(ContentAutomation.init)
     }
 
+    private func fetchAutomationPostProgresses() throws -> [AutomationPostProgress] {
+        guard let object = try fetchWorkflowStateObjects(key: WorkflowStateValueKey.automationPostProgresses).first else {
+            return []
+        }
+
+        return object.decodedJSON([AutomationPostProgress].self, forKey: WorkflowStateKey.valueJSON) ?? []
+    }
+
     private func fetchPublishingJobs() throws -> [PublishingJob] {
         let request = publishingJobFetchRequest()
         request.sortDescriptors = [
@@ -384,6 +410,19 @@ final class CoreDataFlickRepository: FlickRepository {
         NSFetchRequest<NSManagedObject>(entityName: "CDPublishedPost")
     }
 
+    private func workflowStateFetchRequest() -> NSFetchRequest<NSManagedObject> {
+        NSFetchRequest<NSManagedObject>(entityName: "CDWorkflowState")
+    }
+
+    private func fetchWorkflowStateObjects(key: String) throws -> [NSManagedObject] {
+        let request = workflowStateFetchRequest()
+        request.predicate = NSPredicate(format: "%K == %@", WorkflowStateKey.key, key)
+        request.sortDescriptors = [
+            NSSortDescriptor(key: WorkflowStateKey.updatedAt, ascending: false)
+        ]
+        return try context.fetch(request)
+    }
+
     private func insertAssetObject() -> NSManagedObject {
         NSEntityDescription.insertNewObject(forEntityName: "CDAsset", into: context)
     }
@@ -414,6 +453,10 @@ final class CoreDataFlickRepository: FlickRepository {
 
     private func insertPublishedPostObject() -> NSManagedObject {
         NSEntityDescription.insertNewObject(forEntityName: "CDPublishedPost", into: context)
+    }
+
+    private func insertWorkflowStateObject() -> NSManagedObject {
+        NSEntityDescription.insertNewObject(forEntityName: "CDWorkflowState", into: context)
     }
 
     private func insertConnectedAccountObject() -> NSManagedObject {
@@ -734,6 +777,17 @@ private enum PublishedPostKey {
     static let updatedAt = "updatedAt"
 }
 
+private enum WorkflowStateKey {
+    static let id = "id"
+    static let key = "key"
+    static let updatedAt = "updatedAt"
+    static let valueJSON = "valueJSON"
+}
+
+private enum WorkflowStateValueKey {
+    static let automationPostProgresses = "automation-post-progresses"
+}
+
 private extension MediaAsset {
     init?(managedObject: NSManagedObject) {
         guard
@@ -1049,7 +1103,7 @@ private extension NSManagedObject {
 
     func setValue<T: Encodable>(_ value: T, asJSONForKey key: String) {
         guard
-            let data = try? JSONEncoder().encode(value),
+            let data = try? JSONEncoder.flick.encode(value),
             let json = String(data: data, encoding: .utf8)
         else {
             setValue(nil, forKey: key)

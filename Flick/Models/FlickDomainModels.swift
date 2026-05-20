@@ -635,6 +635,7 @@ struct FlickOverviewState: Codable, Hashable {
     var drafts: [SlideshowDraft]
     var templates: [CreativeTemplate]
     var automations: [ContentAutomation]
+    var automationPostProgresses: [AutomationPostProgress]
     var publishingJobs: [PublishingJob]
     var publishedPosts: [PublishedPost]
     var dashboard: DashboardSnapshot

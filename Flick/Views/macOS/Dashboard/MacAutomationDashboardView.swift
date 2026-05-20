@@ -22,6 +22,10 @@ struct MacAutomationDashboardView: View {
             VStack(alignment: .leading, spacing: 24) {
                 header
 
+                if !snapshot.activeProgresses.isEmpty {
+                    MacAutomationInProgressSection(progresses: snapshot.activeProgresses)
+                }
+
                 if snapshot.items.isEmpty {
                     MacAutomationEmptyState()
                 } else {
@@ -59,6 +63,7 @@ struct MacAutomationDashboardView: View {
 
             HStack(spacing: 18) {
                 MacAutomationMetric(title: "Active", value: snapshot.activeCount.formatted())
+                MacAutomationMetric(title: "Running", value: snapshot.activeProgresses.count.formatted())
                 MacAutomationMetric(title: "Posts", value: snapshot.publishedPostCount.formatted())
                 MacAutomationMetric(
                     title: "Next",
@@ -90,6 +95,106 @@ struct MacAutomationDashboardView: View {
 
     private func loadExampleTemplates() {
         exampleTemplates = (try? ExampleSlideshowLibrary.load().flatMap(\.templates)) ?? []
+    }
+}
+
+struct MacAutomationInProgressSection: View {
+    var progresses: [AutomationPostProgress]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("In Progress")
+                    .font(.title2.weight(.semibold))
+                Text(progresses.count == 1 ? "1 post being made" : "\(progresses.count) posts being made")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            .accessibilityElement(children: .combine)
+
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 360, maximum: 520), spacing: 16, alignment: .top)],
+                alignment: .leading,
+                spacing: 16
+            ) {
+                ForEach(progresses) { progress in
+                    MacAutomationInProgressCard(progress: progress)
+                }
+            }
+        }
+    }
+}
+
+struct MacAutomationInProgressCard: View {
+    var progress: AutomationPostProgress
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            AutomationPostSkeletonShimmer()
+                .frame(width: 86, height: 148)
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        StatusBadge(
+                            title: "In Progress",
+                            tint: .blue,
+                            systemImage: "arrow.triangle.2.circlepath"
+                        )
+                        Text(progress.title)
+                            .font(.headline)
+                            .lineLimit(2)
+                    }
+                    .layoutPriority(1)
+
+                    Spacer(minLength: 8)
+
+                    Text("\(progress.currentStepIndex)/\(max(progress.totalCount, 1))")
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                if let currentStep = progress.currentStep {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Label(currentStep.title, systemImage: currentStep.systemImage)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(currentStep.state.tint)
+                        Text(currentStep.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                ProgressView(value: progress.progressFraction)
+                    .progressViewStyle(.linear)
+
+                AutomationProgressStepStrip(steps: progress.steps)
+
+                HStack(spacing: 10) {
+                    if let productName = progress.productName, !productName.isEmpty {
+                        Label(productName, systemImage: "shippingbox")
+                    }
+                    if let templateTitle = progress.templateTitle, !templateTitle.isEmpty {
+                        Label(templateTitle, systemImage: "rectangle.stack")
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+            }
+            .layoutPriority(1)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.thinMaterial, in: .rect(cornerRadius: 24))
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(.blue.opacity(0.22), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -192,6 +297,13 @@ private struct MacAutomationCard: View {
                 if item.awaitingDraftUploadCount > 0 {
                     Label("\(item.awaitingDraftUploadCount) awaiting TikTok", systemImage: "bell.badge")
                         .foregroundStyle(.orange)
+                }
+                if !item.activeProgresses.isEmpty {
+                    Label(
+                        item.activeProgresses.count == 1 ? "1 post in progress" : "\(item.activeProgresses.count) posts in progress",
+                        systemImage: "arrow.triangle.2.circlepath"
+                    )
+                    .foregroundStyle(.blue)
                 }
                 if let lastErrorMessage = item.automation.lastErrorMessage, !lastErrorMessage.isEmpty {
                     Label(lastErrorMessage, systemImage: "exclamationmark.triangle")

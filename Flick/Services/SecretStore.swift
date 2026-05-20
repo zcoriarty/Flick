@@ -118,6 +118,10 @@ struct CredentialVault {
         CredentialDefinition.supportedKeys
     }
 
+    static var removableKeys: [String] {
+        supportedKeys + CredentialDefinition.retiredKeys
+    }
+
     var store: SecretStoring = KeychainSecretStore()
 
     func loadValues() -> [String: String] {
@@ -159,7 +163,7 @@ struct CredentialVault {
     }
 
     func clearStoredCredentials() throws {
-        for key in Self.supportedKeys {
+        for key in Self.removableKeys {
             try store.delete(key)
         }
     }

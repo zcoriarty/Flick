@@ -359,6 +359,79 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(loaded.dashboard.nextAutomationPostAt, nextScheduledAt)
     }
 
+    func testCoreDataRoundTripsAutomationPostProgresses() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let persistenceController = PersistenceController(inMemory: true)
+        let repository = CoreDataFlickRepository(
+            context: persistenceController.container.viewContext,
+            cloudAvailability: { false }
+        )
+        let automationID = UUID()
+        var progress = AutomationPostProgress.make(
+            automationID: automationID,
+            title: "Launch Carousel",
+            productName: "Flick Pro",
+            scheduledAt: now,
+            now: now
+        )
+        progress.draftID = UUID()
+        progress.templateTitle = "@flickapp"
+        progress.steps[0].state = .completed
+        progress.steps[0].updatedAt = now
+        progress.steps[1].state = .current
+        progress.steps[1].detail = "Creating the carousel plan."
+        progress.updatedAt = now.addingTimeInterval(60)
+        var state = FlickEmptyState.make()
+        state.automationPostProgresses = [progress]
+
+        try await repository.saveOverview(state)
+        let loaded = try await repository.loadOverview()
+        let loadedProgress = try XCTUnwrap(loaded.automationPostProgresses.first)
+
+        XCTAssertEqual(loadedProgress, progress)
+        XCTAssertEqual(loadedProgress.currentStep?.id, AutomationPostProgressStepID.planSlideshow)
+    }
+
+    func testAutomationDashboardSnapshotGroupsActiveProgresses() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let product = makeProduct(now: now)
+        let automation = ContentAutomation(
+            name: "Weekday launches",
+            templateIDs: ["template-a"],
+            productID: product.id,
+            productImageAssetIDs: [UUID()],
+            schedule: AutomationSchedule(),
+            tikTokSettings: DraftTikTokSettings(title: "Try Flick", privacyLevel: .publicToEveryone),
+            createdAt: now,
+            updatedAt: now
+        )
+        let activeProgress = AutomationPostProgress.make(
+            automationID: automation.id,
+            title: "Launch Carousel",
+            productName: product.name,
+            scheduledAt: now,
+            now: now
+        )
+        var finishedProgress = AutomationPostProgress.make(
+            automationID: automation.id,
+            title: "Finished Carousel",
+            productName: product.name,
+            scheduledAt: now,
+            now: now
+        )
+        finishedProgress.finishedAt = now
+        var state = FlickEmptyState.make()
+        state.products = [product]
+        state.automations = [automation]
+        state.automationPostProgresses = [finishedProgress, activeProgress]
+
+        let snapshot = AutomationDashboardSnapshot.make(overview: state)
+        let item = snapshot.items.first
+
+        XCTAssertEqual(snapshot.activeProgresses.map(\.id), [activeProgress.id])
+        XCTAssertEqual(item?.activeProgresses.map(\.id), [activeProgress.id])
+    }
+
     func testCoreDataRoundTripsPublishingJobsAndPublishedPosts() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let persistenceController = PersistenceController(inMemory: true)
@@ -564,8 +637,22 @@ final class FlickTests: XCTestCase {
 
         try vault.storeValue("client-id", for: "TIKTOK_CLIENT_ID")
         XCTAssertThrowsError(try vault.storeValue("ignored", for: "UNKNOWN_KEY"))
+        XCTAssertThrowsError(try vault.storeValue("postgres", for: "POSTGRES_URL"))
         XCTAssertThrowsError(try vault.storeValue("", for: "OPENAI_API_KEY"))
         XCTAssertEqual(String(data: try XCTUnwrap(store.data(for: "TIKTOK_CLIENT_ID")), encoding: .utf8), "client-id")
+    }
+
+    func testCredentialVaultClearsRetiredCredentialKeys() throws {
+        let store = MemorySecretStore()
+        let vault = CredentialVault(store: store)
+
+        try store.save(Data("client-id".utf8), for: "TIKTOK_CLIENT_ID")
+        try store.save(Data("postgres-url".utf8), for: "POSTGRES_URL")
+
+        try vault.clearStoredCredentials()
+
+        XCTAssertNil(try store.data(for: "TIKTOK_CLIENT_ID"))
+        XCTAssertNil(try store.data(for: "POSTGRES_URL"))
     }
 
     func testR2ConfigurationRecognizesBucketAndDerivedEndpoint() {

@@ -27,6 +27,7 @@ enum FlickEmptyState {
             drafts: [],
             templates: [],
             automations: [],
+            automationPostProgresses: [],
             publishingJobs: [],
             publishedPosts: [],
             dashboard: dashboard

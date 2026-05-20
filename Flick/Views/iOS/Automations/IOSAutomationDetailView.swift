@@ -26,6 +26,9 @@ struct IOSAutomationDetailView: View {
             if let item {
                 List {
                     overviewSection(for: item)
+                    if !item.activeProgresses.isEmpty {
+                        inProgressSection(for: item)
+                    }
                     manageSection(for: item)
                     scheduleSection(for: item)
                     postsSection(for: item)
@@ -64,12 +67,12 @@ struct IOSAutomationDetailView: View {
                     title: "Run Now",
                     systemImage: "play.fill",
                     iconColor: .blue,
-                    value: appModel.isProcessingAutomations ? "Running..." : "Bypass schedule once",
+                    value: runNowValue(for: item),
                     valueLineLimit: 1
                 )
             }
             .buttonStyle(.plain)
-            .disabled(appModel.isProcessingAutomations)
+            .disabled(appModel.isProcessingAutomations || !item.activeProgresses.isEmpty)
 
             Button {
                 updateStatus(to: item.automation.status == .active ? .paused : .active)
@@ -96,6 +99,14 @@ struct IOSAutomationDetailView: View {
                 )
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    private func inProgressSection(for item: AutomationDashboardItem) -> some View {
+        Section("In Progress") {
+            ForEach(item.activeProgresses) { progress in
+                AutomationProgressSummaryRow(progress: progress)
+            }
         }
     }
 
@@ -249,6 +260,16 @@ struct IOSAutomationDetailView: View {
         Task {
             await appModel.updateAutomationStatus(id: automationID, status: status)
         }
+    }
+
+    private func runNowValue(for item: AutomationDashboardItem) -> String {
+        if !item.activeProgresses.isEmpty {
+            return "Running on Mac..."
+        }
+        if appModel.isProcessingAutomations {
+            return "Running..."
+        }
+        return "Bypass schedule once"
     }
 
     private func runNow() {

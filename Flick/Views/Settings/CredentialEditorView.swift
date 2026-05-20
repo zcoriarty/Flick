@@ -5,6 +5,14 @@
 
 import SwiftUI
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
+#if canImport(AppKit)
+import AppKit
+#endif
+
 struct CredentialEditorDraft: Identifiable, Hashable {
     var id: String { definition.id }
     var definition: CredentialDefinition
@@ -81,7 +89,8 @@ struct CredentialEditorRow: View {
                 value: $draft.value,
                 isValueVisible: $isValueVisible,
                 isEditing: isEditing,
-                editAction: toggleEditing
+                beginEditingAction: beginEditing,
+                focusChangeAction: handleValueFocusChange
             )
 
             if isEditing {
@@ -91,6 +100,7 @@ struct CredentialEditorRow: View {
             }
         }
         .animation(.snappy(duration: 0.2), value: isEditing)
+        .animation(.snappy(duration: 0.2), value: draft.canSave)
         .onChange(of: draft.originalValue) { _, _ in
             isEditing = false
         }
@@ -113,16 +123,26 @@ struct CredentialEditorRow: View {
                 Text("This removes the Keychain value for \(draft.definition.key).")
             }
 
-            Button(action: saveAction) {
-                Label("Save", systemImage: "checkmark")
-            }
+            if draft.canSave {
+                Button(action: saveAction) {
+                    Label("Save", systemImage: "checkmark")
+                }
                 .buttonStyle(CredentialCapsuleButtonStyle(tint: .blue))
-                .disabled(!draft.canSave)
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
         }
     }
 
-    private func toggleEditing() {
-        isEditing.toggle()
+    private func beginEditing() {
+        isEditing = true
+    }
+
+    private func handleValueFocusChange(_ isFocused: Bool) {
+        if isFocused {
+            beginEditing()
+        } else if isEditing && !draft.hasChanges {
+            isEditing = false
+        }
     }
 }
 
@@ -131,41 +151,39 @@ private struct CredentialValueField: View {
     @Binding var value: String
     @Binding var isValueVisible: Bool
     var isEditing: Bool
-    var editAction: () -> Void
+    var beginEditingAction: () -> Void
+    var focusChangeAction: (Bool) -> Void
+
+    @FocusState private var isFieldFocused: Bool
 
     var body: some View {
         HStack(spacing: 8) {
             valueField
 
-            Button(action: editAction) {
-                Image(systemName: "pencil")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(isEditing ? .blue : .secondary)
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
+            if !isEditing {
+                copyButton
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(isEditing ? "Stop editing \(title)" : "Edit \(title)")
+        }
+        .animation(.snappy(duration: 0.2), value: isEditing)
+        .onChange(of: isEditing) { _, isEditing in
+            if isEditing {
+                focusField()
+            } else {
+                isFieldFocused = false
+            }
+        }
+        .onChange(of: isFieldFocused) { _, isFocused in
+            focusChangeAction(isFocused)
         }
     }
 
     private var valueField: some View {
         HStack(spacing: 8) {
-            Group {
-                if isValueVisible {
-                    TextField("Value", text: $value)
-                } else {
-                    SecureField("Value", text: $value)
-                }
-            }
-            .font(.system(.callout, design: .monospaced))
-            .credentialEditorInputBehavior()
-            .disabled(!isEditing)
-            .accessibilityLabel("\(title) value")
-            .accessibilityHint(isEditing ? "Editing enabled" : "Tap Edit to change this value")
+            valueInput
 
             Button {
-                isValueVisible.toggle()
+                toggleValueVisibility()
             } label: {
                 Image(systemName: isValueVisible ? "eye.slash" : "eye")
                     .frame(width: 28, height: 28)
@@ -179,6 +197,80 @@ private struct CredentialValueField: View {
             .background.opacity(0.35),
             in: RoundedRectangle(cornerRadius: FlickStyle.controlCornerRadius, style: .continuous)
         )
+    }
+
+    private var valueInput: some View {
+        ZStack {
+            editableValueInput
+
+            if !isEditing {
+                Button(action: requestEditing) {
+                    Rectangle()
+                        .fill(.clear)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Edit \(title)")
+                .accessibilityHint("Enables editing for this credential value")
+            }
+        }
+        .accessibilityLabel("\(title) value")
+        .accessibilityHint(isEditing ? "Editing enabled" : "Tap the value to edit it")
+    }
+
+    private var editableValueInput: some View {
+        Group {
+            if isValueVisible {
+                TextField("Value", text: $value)
+            } else {
+                SecureField("Value", text: $value)
+            }
+        }
+        .font(.system(.callout, design: .monospaced))
+        .credentialEditorInputBehavior()
+        .focused($isFieldFocused)
+        .disabled(!isEditing)
+        .onSubmit {
+            isFieldFocused = false
+        }
+    }
+
+    private var copyButton: some View {
+        Button(action: copyValue) {
+            Image(systemName: "doc.on.doc")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(value.isEmpty)
+        .accessibilityLabel("Copy \(title)")
+        .accessibilityHint("Copies this credential value to the clipboard")
+        .help("Copy \(title)")
+    }
+
+    private func requestEditing() {
+        beginEditingAction()
+        focusField()
+    }
+
+    private func focusField() {
+        Task { @MainActor in
+            isFieldFocused = true
+        }
+    }
+
+    private func toggleValueVisibility() {
+        isValueVisible.toggle()
+
+        if isEditing {
+            focusField()
+        }
+    }
+
+    private func copyValue() {
+        CredentialClipboard.copy(value)
     }
 }
 
@@ -201,6 +293,17 @@ private struct CredentialCapsuleButtonStyle: ButtonStyle {
     }
 }
 
+private enum CredentialClipboard {
+    static func copy(_ value: String) {
+        #if canImport(UIKit)
+        UIPasteboard.general.string = value
+        #elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+        #endif
+    }
+}
+
 extension View {
     @ViewBuilder
     func credentialEditorInputBehavior() -> some View {
@@ -208,6 +311,7 @@ extension View {
         self
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
+            .submitLabel(.done)
         #else
         self
             .autocorrectionDisabled()

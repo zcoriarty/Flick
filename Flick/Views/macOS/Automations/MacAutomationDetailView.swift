@@ -27,6 +27,9 @@ struct MacAutomationDetailView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         MacAutomationDetailHeader(item: item)
+                        if !item.activeProgresses.isEmpty {
+                            MacAutomationInProgressSection(progresses: item.activeProgresses)
+                        }
                         MacAutomationDetailPosts(item: item)
                         MacAutomationDetailRuns(item: item)
                     }
@@ -43,7 +46,7 @@ struct MacAutomationDetailView: View {
                         Button("Run", systemImage: "play.fill") {
                             runNow()
                         }
-                        .disabled(appModel.isProcessingAutomations)
+                        .disabled(appModel.isProcessingAutomations || !item.activeProgresses.isEmpty)
                         Button(
                             item.automation.status == .active ? "Pause" : "Resume",
                             systemImage: item.automation.status == .active ? "pause.circle" : "play.circle"
