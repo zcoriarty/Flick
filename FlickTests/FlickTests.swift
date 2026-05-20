@@ -125,6 +125,28 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(loadedAsset.productIDs, [product.id])
     }
 
+    func testCoreDataRoundTripsCreationModels() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let persistenceController = PersistenceController(inMemory: true)
+        let repository = CoreDataFlickRepository(
+            context: persistenceController.container.viewContext,
+            cloudAvailability: { false }
+        )
+        let creationModel = makeCreationModel(now: now)
+        var state = FlickEmptyState.make()
+        state.creationModels = [creationModel]
+
+        try await repository.saveOverview(state)
+        let loaded = try await repository.loadOverview()
+        let loadedModel = try XCTUnwrap(loaded.creationModels.first)
+        let aiMetadataJSON = try XCTUnwrap(String(data: try loadedModel.aiMetadataJSONData(), encoding: .utf8))
+
+        XCTAssertEqual(loadedModel, creationModel)
+        XCTAssertTrue(aiMetadataJSON.contains("\"skin_details\""))
+        XCTAssertTrue(aiMetadataJSON.contains("\"style_and_accessories\""))
+        XCTAssertTrue(aiMetadataJSON.contains("Cottagecore"))
+    }
+
     func testCoreDataRoundTripsConnectedAccounts() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let persistenceController = PersistenceController(inMemory: true)
@@ -168,6 +190,32 @@ final class FlickTests: XCTestCase {
         XCTAssertTrue(model.overview.accounts.isEmpty)
         XCTAssertTrue(model.overview.dashboard.connectedAccounts.isEmpty)
         XCTAssertTrue(repository.state.accounts.isEmpty)
+    }
+
+    func testCreationModelCreateUpdateAndDeleteUseRepository() async throws {
+        let repository = InMemoryFlickRepository(state: FlickEmptyState.make())
+        let model = FlickAppModel(repository: repository, configuration: .current)
+
+        let createdModel = try await model.createCreationModel(name: "  Launch Host  ")
+
+        XCTAssertEqual(model.overview.creationModels.map(\.id), [createdModel.id])
+        XCTAssertEqual(model.overview.creationModels.first?.name, "Launch Host")
+        XCTAssertEqual(repository.state.creationModels.first?.name, "Launch Host")
+
+        var updatedModel = createdModel
+        updatedModel.name = "Launch Host v2"
+        updatedModel.metadata.hair.color = "Auburn"
+        updatedModel.metadata.styleAndAccessories.aesthetic = "Cottagecore"
+        try await model.updateCreationModel(updatedModel)
+
+        XCTAssertEqual(model.overview.creationModels.first?.name, "Launch Host v2")
+        XCTAssertEqual(repository.state.creationModels.first?.metadata.hair.color, "Auburn")
+        XCTAssertEqual(repository.state.creationModels.first?.metadata.styleAndAccessories.aesthetic, "Cottagecore")
+
+        try await model.deleteCreationModel(id: createdModel.id)
+
+        XCTAssertTrue(model.overview.creationModels.isEmpty)
+        XCTAssertTrue(repository.state.creationModels.isEmpty)
     }
 
     func testAddingProductMediaRequiresAndStoresProductSelection() async throws {
@@ -1719,6 +1767,35 @@ private func makeProduct(
         id: id,
         name: name,
         summary: summary,
+        createdAt: now,
+        updatedAt: now
+    )
+}
+
+private func makeCreationModel(
+    id: UUID = UUID(),
+    name: String = "Cottage Host",
+    now: Date = Date()
+) -> FlickCreationModel {
+    var metadata = CreationModelMetadata()
+    metadata.identity.gender = "Female"
+    metadata.identity.ageRange = "41-50"
+    metadata.ethnicity.ethnicity = "Samoan"
+    metadata.skinDetails.clarity = "Clear"
+    metadata.skinDetails.freckles = "Light Subtle"
+    metadata.faceShape.shape = "Oval"
+    metadata.faceDetails.jawline = "Sharp"
+    metadata.hair.color = "Auburn"
+    metadata.hair.style = "Bob"
+    metadata.eyesAndBrows.color = "Green"
+    metadata.body.build = "Athletic"
+    metadata.styleAndAccessories.aesthetic = "Cottagecore"
+    metadata.styleAndAccessories.glasses = "Prescription Square"
+
+    return FlickCreationModel(
+        id: id,
+        name: name,
+        metadata: metadata,
         createdAt: now,
         updatedAt: now
     )

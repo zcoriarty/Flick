@@ -24,6 +24,7 @@ final class CoreDataFlickRepository: FlickRepository {
         var state = FlickEmptyState.make()
         state.accounts = try fetchConnectedAccounts()
         state.products = try fetchProducts()
+        state.creationModels = try fetchCreationModels()
         state.assets = try fetchAssets()
         state.templates = try fetchTemplates()
         state.drafts = try fetchDrafts(slidesByDraftID: try fetchSlidesByDraftID())
@@ -40,6 +41,7 @@ final class CoreDataFlickRepository: FlickRepository {
     func saveOverview(_ state: FlickOverviewState) async throws {
         try syncConnectedAccounts(state.accounts)
         try syncProducts(state.products)
+        try syncCreationModels(state.creationModels)
         try syncAssets(state.assets)
         try syncTemplates(state.templates)
         try syncDrafts(state.drafts)
@@ -110,6 +112,24 @@ final class CoreDataFlickRepository: FlickRepository {
         for product in products {
             let object = existingByID.removeValue(forKey: product.id) ?? insertProductObject()
             apply(product, to: object)
+        }
+
+        for (id, object) in existingByID where !stateIDs.contains(id) {
+            context.delete(object)
+        }
+    }
+
+    private func syncCreationModels(_ creationModels: [FlickCreationModel]) throws {
+        let existingModels = try context.fetch(creationModelFetchRequest())
+        var existingByID = Dictionary(uniqueKeysWithValues: existingModels.compactMap { object -> (UUID, NSManagedObject)? in
+            guard let id = object.value(forKey: CreationModelKey.id) as? UUID else { return nil }
+            return (id, object)
+        })
+        let stateIDs = Set(creationModels.map(\.id))
+
+        for creationModel in creationModels {
+            let object = existingByID.removeValue(forKey: creationModel.id) ?? insertCreationModelObject()
+            apply(creationModel, to: object)
         }
 
         for (id, object) in existingByID where !stateIDs.contains(id) {
@@ -278,6 +298,14 @@ final class CoreDataFlickRepository: FlickRepository {
         return try context.fetch(request).compactMap(FlickProduct.init)
     }
 
+    private func fetchCreationModels() throws -> [FlickCreationModel] {
+        let request = creationModelFetchRequest()
+        request.sortDescriptors = [
+            NSSortDescriptor(key: CreationModelKey.updatedAt, ascending: false)
+        ]
+        return try context.fetch(request).compactMap(FlickCreationModel.init)
+    }
+
     private func fetchProduct(id: UUID) throws -> NSManagedObject? {
         let request = productFetchRequest()
         request.predicate = NSPredicate(format: "%K == %@", ProductKey.id, id as NSUUID)
@@ -386,6 +414,10 @@ final class CoreDataFlickRepository: FlickRepository {
         NSFetchRequest<NSManagedObject>(entityName: "CDProduct")
     }
 
+    private func creationModelFetchRequest() -> NSFetchRequest<NSManagedObject> {
+        NSFetchRequest<NSManagedObject>(entityName: "CDCreationModel")
+    }
+
     private func templateFetchRequest() -> NSFetchRequest<NSManagedObject> {
         NSFetchRequest<NSManagedObject>(entityName: "CDCreativeTemplate")
     }
@@ -429,6 +461,10 @@ final class CoreDataFlickRepository: FlickRepository {
 
     private func insertProductObject() -> NSManagedObject {
         NSEntityDescription.insertNewObject(forEntityName: "CDProduct", into: context)
+    }
+
+    private func insertCreationModelObject() -> NSManagedObject {
+        NSEntityDescription.insertNewObject(forEntityName: "CDCreationModel", into: context)
     }
 
     private func insertTemplateObject() -> NSManagedObject {
@@ -506,6 +542,14 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(product.summary, forKey: ProductKey.summary)
         object.setValue(product.createdAt, forKey: ProductKey.createdAt)
         object.setValue(product.updatedAt, forKey: ProductKey.updatedAt)
+    }
+
+    private func apply(_ creationModel: FlickCreationModel, to object: NSManagedObject) {
+        object.setValue(creationModel.id, forKey: CreationModelKey.id)
+        object.setValue(creationModel.name, forKey: CreationModelKey.name)
+        object.setValue(creationModel.metadata, asJSONForKey: CreationModelKey.metadataJSON)
+        object.setValue(creationModel.createdAt, forKey: CreationModelKey.createdAt)
+        object.setValue(creationModel.updatedAt, forKey: CreationModelKey.updatedAt)
     }
 
     private func apply(_ template: CreativeTemplate, to object: NSManagedObject) {
@@ -670,6 +714,14 @@ private enum ProductKey {
     static let id = "id"
     static let name = "name"
     static let summary = "summary"
+    static let updatedAt = "updatedAt"
+}
+
+private enum CreationModelKey {
+    static let createdAt = "createdAt"
+    static let id = "id"
+    static let metadataJSON = "metadataJSON"
+    static let name = "name"
     static let updatedAt = "updatedAt"
 }
 
@@ -839,6 +891,25 @@ private extension FlickProduct {
             summary: managedObject.value(forKey: ProductKey.summary) as? String ?? "",
             createdAt: managedObject.value(forKey: ProductKey.createdAt) as? Date ?? Date(),
             updatedAt: managedObject.value(forKey: ProductKey.updatedAt) as? Date ?? Date()
+        )
+    }
+}
+
+private extension FlickCreationModel {
+    init?(managedObject: NSManagedObject) {
+        guard
+            let id = managedObject.value(forKey: CreationModelKey.id) as? UUID,
+            let name = managedObject.value(forKey: CreationModelKey.name) as? String
+        else {
+            return nil
+        }
+
+        self.init(
+            id: id,
+            name: name,
+            metadata: managedObject.decodedJSON(CreationModelMetadata.self, forKey: CreationModelKey.metadataJSON) ?? CreationModelMetadata(),
+            createdAt: managedObject.value(forKey: CreationModelKey.createdAt) as? Date ?? Date(),
+            updatedAt: managedObject.value(forKey: CreationModelKey.updatedAt) as? Date ?? Date()
         )
     }
 }

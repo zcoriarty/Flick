@@ -34,6 +34,20 @@ enum ProductManagementError: LocalizedError {
     }
 }
 
+enum CreationModelManagementError: LocalizedError {
+    case missingName
+    case unavailableModel
+
+    var errorDescription: String? {
+        switch self {
+        case .missingName:
+            "Add a model name first."
+        case .unavailableModel:
+            "That model is no longer available."
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class FlickAppModel {
@@ -432,6 +446,72 @@ final class FlickAppModel {
             return product
         } catch {
             overview.products.removeAll { $0.id == product.id }
+            throw error
+        }
+    }
+
+    func createCreationModel(name: String) async throws -> FlickCreationModel {
+        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedName.isEmpty else {
+            throw CreationModelManagementError.missingName
+        }
+
+        let now = Date()
+        let creationModel = FlickCreationModel(
+            name: normalizedName,
+            createdAt: now,
+            updatedAt: now
+        )
+
+        overview.creationModels.insert(creationModel, at: 0)
+        do {
+            try await repository.saveOverview(overview)
+            lastErrorMessage = nil
+            return creationModel
+        } catch {
+            overview.creationModels.removeAll { $0.id == creationModel.id }
+            throw error
+        }
+    }
+
+    func updateCreationModel(_ creationModel: FlickCreationModel) async throws {
+        guard let existingIndex = overview.creationModels.firstIndex(where: { $0.id == creationModel.id }) else {
+            throw CreationModelManagementError.unavailableModel
+        }
+
+        let normalizedName = creationModel.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedName.isEmpty else {
+            throw CreationModelManagementError.missingName
+        }
+
+        let previousOverview = overview
+        var updatedModel = creationModel
+        updatedModel.name = normalizedName
+        updatedModel.createdAt = overview.creationModels[existingIndex].createdAt
+        updatedModel.updatedAt = Date()
+        overview.creationModels.removeAll { $0.id == updatedModel.id }
+        overview.creationModels.insert(updatedModel, at: 0)
+
+        do {
+            try await repository.saveOverview(overview)
+            lastErrorMessage = nil
+        } catch {
+            overview = previousOverview
+            throw error
+        }
+    }
+
+    func deleteCreationModel(id modelID: UUID) async throws {
+        guard overview.creationModels.contains(where: { $0.id == modelID }) else { return }
+
+        let previousOverview = overview
+        overview.creationModels.removeAll { $0.id == modelID }
+
+        do {
+            try await repository.saveOverview(overview)
+            lastErrorMessage = nil
+        } catch {
+            overview = previousOverview
             throw error
         }
     }

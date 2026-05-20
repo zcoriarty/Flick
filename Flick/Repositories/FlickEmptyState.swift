@@ -23,6 +23,7 @@ enum FlickEmptyState {
         return FlickOverviewState(
             accounts: [],
             products: [],
+            creationModels: [],
             assets: [],
             drafts: [],
             templates: [],

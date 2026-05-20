@@ -59,6 +59,13 @@
         <attribute name="tokenStatus" optional="YES" attributeType="String"/>
         <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
     </entity>
+    <entity name="CDCreationModel" representedClassName="CDCreationModel" syncable="YES" codeGenerationType="class">
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="metadataJSON" optional="YES" attributeType="String"/>
+        <attribute name="name" optional="YES" attributeType="String"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+    </entity>
     <entity name="CDCreativeTemplate" representedClassName="CDCreativeTemplate" syncable="YES" codeGenerationType="class">
         <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="defaultTextRules" optional="YES" attributeType="String"/>
@@ -189,5 +196,6 @@
         <element name="CDWorkflowState" positionX="-162" positionY="330" width="128" height="89"/>
         <element name="CDProduct" positionX="36" positionY="330" width="128" height="104"/>
         <element name="CDContentAutomation" positionX="234" positionY="330" width="128" height="224"/>
+        <element name="CDCreationModel" positionX="432" positionY="330" width="128" height="104"/>
     </elements>
 </model>

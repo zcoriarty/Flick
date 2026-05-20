@@ -25,6 +25,12 @@ struct FlickRootView: View {
                 }
             }
 
+            Tab(FlickSection.models.title, systemImage: FlickSection.models.systemImage, value: FlickSection.models) {
+                NavigationStack {
+                    ModelsView()
+                }
+            }
+
             Tab(FlickSection.create.title, systemImage: FlickSection.create.systemImage, value: FlickSection.create) {
                 NavigationStack {
                     CreateView()

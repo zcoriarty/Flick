@@ -631,6 +631,7 @@ struct DashboardSnapshot: Codable, Hashable {
 struct FlickOverviewState: Codable, Hashable {
     var accounts: [ConnectedAccount]
     var products: [FlickProduct]
+    var creationModels: [FlickCreationModel]
     var assets: [MediaAsset]
     var drafts: [SlideshowDraft]
     var templates: [CreativeTemplate]
