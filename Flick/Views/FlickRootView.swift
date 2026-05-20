@@ -7,6 +7,7 @@ import SwiftUI
 
 struct FlickRootView: View {
     @Environment(FlickAppModel.self) private var appModel
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         @Bindable var appModel = appModel
@@ -54,11 +55,20 @@ struct FlickRootView: View {
         .task {
             await appModel.refresh()
         }
+        .task {
+            await appModel.refreshOnCloudKitStoreChanges()
+        }
         #if os(macOS) || targetEnvironment(macCatalyst)
         .task {
             await appModel.runAutomationWorkerLoop()
         }
         #endif
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task {
+                await appModel.refresh()
+            }
+        }
         .onOpenURL { url in
             _ = TikTokOpenSDKURLHandler.handle(url, source: "SwiftUI.onOpenURL")
         }

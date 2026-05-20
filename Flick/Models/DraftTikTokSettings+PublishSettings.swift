@@ -11,7 +11,7 @@ extension DraftTikTokSettings {
     }
 
     func automatedPublishSettings(description: String) -> TikTokManualPublishSettings? {
-        publishSettings(description: description, allowsDraftUpload: false)
+        publishSettings(description: description, allowsDraftUpload: true)
     }
 
     private func publishSettings(
@@ -19,7 +19,6 @@ extension DraftTikTokSettings {
         allowsDraftUpload: Bool
     ) -> TikTokManualPublishSettings? {
         let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedTitle.isEmpty else { return nil }
 
         let shouldPostAsDraft = allowsDraftUpload && postAsDraft
         guard shouldPostAsDraft || privacyLevel != nil else { return nil }

@@ -99,6 +99,22 @@ extension PublishingJobStatus {
     }
 }
 
+extension ContentAutomationStatus {
+    var tint: Color {
+        switch self {
+        case .active: .green
+        case .paused: .secondary
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .active: "circle.fill"
+        case .paused: "pause.fill"
+        }
+    }
+}
+
 extension CredentialStatus.Source {
     var tint: Color {
         switch self {

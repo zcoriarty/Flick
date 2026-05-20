@@ -541,6 +541,7 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(job.id, forKey: PublishingJobKey.id)
         object.setValue(job.platform.rawValue, forKey: PublishingJobKey.platform)
         object.setValue(job.accountID, forKey: PublishingJobKey.accountID)
+        object.setValue(job.automationID, forKey: PublishingJobKey.automationID)
         object.setValue(job.draftID, forKey: PublishingJobKey.draftID)
         object.setValue(job.status.rawValue, forKey: PublishingJobKey.status)
         object.setValue(job.publishMode.rawValue, forKey: PublishingJobKey.publishMode)
@@ -556,6 +557,7 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(post.id, forKey: PublishedPostKey.id)
         object.setValue(post.platform.rawValue, forKey: PublishedPostKey.platform)
         object.setValue(post.accountID, forKey: PublishedPostKey.accountID)
+        object.setValue(post.automationID, forKey: PublishedPostKey.automationID)
         object.setValue(post.platformPostID, forKey: PublishedPostKey.platformPostID)
         object.setValue(post.platformURL, forKey: PublishedPostKey.platformURL)
         object.setValue(post.publishedAt, forKey: PublishedPostKey.publishedAt)
@@ -703,6 +705,7 @@ private enum AutomationKey {
 private enum PublishingJobKey {
     static let accountID = "accountID"
     static let attemptCount = "attemptCount"
+    static let automationID = "automationID"
     static let createdAt = "createdAt"
     static let draftID = "draftID"
     static let id = "id"
@@ -717,6 +720,7 @@ private enum PublishingJobKey {
 
 private enum PublishedPostKey {
     static let accountID = "accountID"
+    static let automationID = "automationID"
     static let caption = "caption"
     static let createdAt = "createdAt"
     static let draftID = "draftID"
@@ -977,6 +981,7 @@ private extension PublishingJob {
             id: id,
             platform: platform,
             accountID: accountID,
+            automationID: managedObject.value(forKey: PublishingJobKey.automationID) as? UUID,
             draftID: draftID,
             status: status,
             publishMode: publishMode,
@@ -1007,6 +1012,7 @@ private extension PublishedPost {
             id: id,
             platform: platform,
             accountID: accountID,
+            automationID: managedObject.value(forKey: PublishedPostKey.automationID) as? UUID,
             platformPostID: platformPostID,
             platformURL: managedObject.value(forKey: PublishedPostKey.platformURL) as? URL,
             publishedAt: managedObject.value(forKey: PublishedPostKey.publishedAt) as? Date ?? Date(),

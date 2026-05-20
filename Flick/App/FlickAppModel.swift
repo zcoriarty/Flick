@@ -64,6 +64,8 @@ final class FlickAppModel {
     @ObservationIgnored private let openAIClientFactory: @MainActor ([String: String]) -> OpenAIClient
     @ObservationIgnored private let mediaStorageFactory: @MainActor ([String: String]) -> any MediaStorageProviding
     @ObservationIgnored private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.orion.Flick", category: "Publishing")
+    @ObservationIgnored private var isRefreshing = false
+    @ObservationIgnored private var isRefreshPending = false
 
     init(
         repository: FlickRepository,
@@ -131,6 +133,24 @@ final class FlickAppModel {
     }
 
     func refresh() async {
+        guard !isRefreshing else {
+            isRefreshPending = true
+            return
+        }
+
+        isRefreshing = true
+        defer {
+            isRefreshing = false
+        }
+
+        repeat {
+            isRefreshPending = false
+            await performRefresh()
+        } while isRefreshPending
+    }
+
+    private func performRefresh() async {
+
         do {
             overview = try await repository.loadOverview()
             configuration = .current
@@ -146,6 +166,14 @@ final class FlickAppModel {
             lastErrorMessage = nil
         } catch {
             lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    func refreshOnCloudKitStoreChanges() async {
+        let notifications = NotificationCenter.default.notifications(named: .NSPersistentStoreRemoteChange)
+
+        for await _ in notifications {
+            await refresh()
         }
     }
 
@@ -530,7 +558,7 @@ final class FlickAppModel {
         }
     }
 
-    func upsertAutomation(_ automation: ContentAutomation) async {
+    func upsertAutomation(_ automation: ContentAutomation) async -> Bool {
         var automation = automation
         let now = Date()
         automation.updatedAt = now
@@ -549,11 +577,13 @@ final class FlickAppModel {
 
         do {
             try await repository.saveOverview(overview)
-            createWorkflowMessage = "Automation scheduled."
+            createWorkflowMessage = "Automation started."
             lastErrorMessage = nil
+            return true
         } catch {
             overview = previousOverview
             lastErrorMessage = error.localizedDescription
+            return false
         }
     }
 
@@ -569,6 +599,56 @@ final class FlickAppModel {
             lastErrorMessage = nil
         } catch {
             overview = previousOverview
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    func updateAutomationStatus(id automationID: UUID, status: ContentAutomationStatus) async {
+        guard let index = overview.automations.firstIndex(where: { $0.id == automationID }) else { return }
+        guard overview.automations[index].status != status else { return }
+
+        let previousOverview = overview
+        let now = Date()
+        overview.automations[index].status = status
+        overview.automations[index].nextScheduledAt = status == .active
+            ? overview.automations[index].nextOccurrence(after: now)
+            : nil
+        overview.automations[index].updatedAt = now
+        overview.refreshDerivedState()
+
+        do {
+            try await repository.saveOverview(overview)
+            lastErrorMessage = nil
+        } catch {
+            overview = previousOverview
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    func runAutomationNow(id automationID: UUID) async {
+        guard !isProcessingAutomations else { return }
+        guard let automation = overview.automations.first(where: { $0.id == automationID }) else { return }
+
+        isProcessingAutomations = true
+        defer {
+            isProcessingAutomations = false
+        }
+
+        let now = Date()
+        let preservedNextScheduledAt = automation.nextScheduledAt
+
+        do {
+            try await publishAutomationInstance(automation, scheduledAt: now)
+            markAutomationManualRun(automationID, succeededAt: now, preservingNextScheduledAt: preservedNextScheduledAt)
+            createWorkflowMessage = "Automation run completed."
+        } catch {
+            markAutomationManualRun(automationID, failedAt: now, error: error, preservingNextScheduledAt: preservedNextScheduledAt)
+        }
+
+        do {
+            overview.refreshDerivedState()
+            try await repository.saveOverview(overview)
+        } catch {
             lastErrorMessage = error.localizedDescription
         }
     }
@@ -776,7 +856,11 @@ final class FlickAppModel {
     }
 
     @discardableResult
-    func publishManualSlideshow(draftID: UUID, settings: TikTokManualPublishSettings) async -> Bool {
+    func publishManualSlideshow(
+        draftID: UUID,
+        settings: TikTokManualPublishSettings,
+        automationID: UUID? = nil
+    ) async -> Bool {
         guard !isPublishingSlideshow else { return false }
         isPublishingSlideshow = true
         createWorkflowMessage = "Preparing publish images..."
@@ -806,6 +890,7 @@ final class FlickAppModel {
                 id: UUID(),
                 platform: .tiktok,
                 accountID: account.id,
+                automationID: automationID,
                 draftID: draftID,
                 status: .rendering,
                 publishMode: settings.publishMode,
@@ -1238,11 +1323,16 @@ private extension FlickAppModel {
             throw AutomationRunError.generationFailed(lastErrorMessage ?? "")
         }
 
-        guard let settings = automation.tikTokSettings.automatedPublishSettings(description: generatedDraft.publishDescription) else {
+        let tikTokSettings = automation.tikTokSettings.fillingTitle(from: generatedDraft.tikTokSettings)
+        guard let settings = tikTokSettings.automatedPublishSettings(description: generatedDraft.publishDescription) else {
             throw AutomationRunError.notReady
         }
 
-        let didPublish = await publishManualSlideshow(draftID: generatedDraft.id, settings: settings)
+        let didPublish = await publishManualSlideshow(
+            draftID: generatedDraft.id,
+            settings: settings,
+            automationID: automation.id
+        )
         guard didPublish else {
             throw AutomationRunError.publishFailed(lastErrorMessage ?? "")
         }
@@ -1311,6 +1401,32 @@ private extension FlickAppModel {
         overview.automations[index].lastErrorMessage = error.localizedDescription
         overview.automations[index].consecutiveFailureCount += 1
         overview.automations[index].nextScheduledAt = overview.automations[index].nextOccurrence(after: date)
+        overview.automations[index].updatedAt = date
+    }
+
+    func markAutomationManualRun(
+        _ automationID: UUID,
+        succeededAt date: Date,
+        preservingNextScheduledAt nextScheduledAt: Date?
+    ) {
+        guard let index = overview.automations.firstIndex(where: { $0.id == automationID }) else { return }
+        overview.automations[index].lastRunAt = date
+        overview.automations[index].lastErrorMessage = nil
+        overview.automations[index].consecutiveFailureCount = 0
+        overview.automations[index].nextScheduledAt = nextScheduledAt
+        overview.automations[index].updatedAt = date
+    }
+
+    func markAutomationManualRun(
+        _ automationID: UUID,
+        failedAt date: Date,
+        error: Error,
+        preservingNextScheduledAt nextScheduledAt: Date?
+    ) {
+        guard let index = overview.automations.firstIndex(where: { $0.id == automationID }) else { return }
+        overview.automations[index].lastErrorMessage = error.localizedDescription
+        overview.automations[index].consecutiveFailureCount += 1
+        overview.automations[index].nextScheduledAt = nextScheduledAt
         overview.automations[index].updatedAt = date
     }
 
@@ -1706,6 +1822,7 @@ private extension FlickAppModel {
                 id: UUID(),
                 platform: result.platform,
                 accountID: accountID,
+                automationID: overview.publishingJobs.first(where: { $0.id == jobID })?.automationID,
                 platformPostID: result.platformPostID,
                 platformURL: result.platformURL,
                 publishedAt: result.publishedAt,
@@ -1773,6 +1890,7 @@ private extension FlickAppModel {
                     id: UUID(),
                     platform: .tiktok,
                     accountID: job.accountID,
+                    automationID: job.automationID,
                     platformPostID: platformPostID,
                     platformURL: nil,
                     publishedAt: now,
@@ -2176,6 +2294,22 @@ private extension FlickAppModel {
         Template context: \(template.subtitle).
         Preserve the template's pacing, composition rhythm, safe-area behavior, and style guide. Create a plan that can generate one clean vertical portrait background image per slide with Flick-rendered editable text.
         """
+    }
+}
+
+private extension DraftTikTokSettings {
+    func fillingTitle(from generatedSettings: DraftTikTokSettings?) -> DraftTikTokSettings {
+        guard title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return self
+        }
+
+        guard let generatedTitle = generatedSettings?.title.trimmingCharacters(in: .whitespacesAndNewlines), !generatedTitle.isEmpty else {
+            return self
+        }
+
+        var settings = self
+        settings.title = generatedTitle
+        return settings
     }
 }
 

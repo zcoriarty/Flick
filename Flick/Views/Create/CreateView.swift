@@ -31,6 +31,10 @@ struct CreateView: View {
     @State private var automationTikTokSettings = DraftTikTokSettings()
     @State private var automationName = ""
     @State private var editingAutomationID: UUID?
+    @State private var isStartingAutomation = false
+    @State private var showsAutomationStartSuccess = false
+    @State private var automationSuccessDismissTask: Task<Void, Never>?
+    @State private var createFormResetID = UUID()
     @State private var presentedSheet: CreateSheet?
     @State private var selectedSlideID: UUID?
     @State private var slideEditorDetent: PresentationDetent = .large
@@ -46,8 +50,12 @@ struct CreateView: View {
             appModel.overview.drafts.firstIndex { $0.id == draftID }
         }
 
-        List {
-            CreateModeSection(isAutomated: $isAutomated)
+        ZStack {
+            List {
+            CreateAutomationSection(
+                isAutomated: $isAutomated,
+                schedule: $automationSchedule
+            )
 
             if isAutomated {
                 CreateAutomationTemplateSection(
@@ -64,12 +72,10 @@ struct CreateView: View {
                     selectedProductImageAssetIDs: $selectedAutomationProductImageAssetIDs
                 )
 
-                CreateAutomationScheduleSection(schedule: $automationSchedule)
-
                 CreateTikTokSettingsSection(
                     accountName: tiktokAccountName,
                     hasConfiguredSettings: automationTikTokSettings.automatedPublishSettings(description: "") != nil,
-                    postAsDraft: false,
+                    postAsDraft: automationTikTokSettings.postAsDraft,
                     selectedVisibility: automationTikTokSettings.selectedAudience,
                     disclosesVideoContent: automationTikTokSettings.disclosesVideoContent,
                     promotesYourBrand: automationTikTokSettings.promotesYourBrand,
@@ -162,11 +168,21 @@ struct CreateView: View {
                     .disabled(true)
                 }
             }
+            }
+            .id(createFormResetID)
+            .flickSettingsListStyle()
+            .contentMargins(.top, 0, for: .scrollContent)
+            .scrollDismissesKeyboard(.interactively)
+            .dismissKeyboardOnTap()
+            .disabled(showsAutomationStartSuccess)
+            .opacity(showsAutomationStartSuccess ? 0 : 1)
+
+            if showsAutomationStartSuccess {
+                CreateAutomationStartSuccessView()
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            }
         }
-        .flickSettingsListStyle()
-        .contentMargins(.top, 0, for: .scrollContent)
-        .scrollDismissesKeyboard(.interactively)
-        .dismissKeyboardOnTap()
+        .animation(.snappy, value: showsAutomationStartSuccess)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 createToolbarTitle(in: appModel)
@@ -189,13 +205,13 @@ struct CreateView: View {
                         publishManualPost(using: appModel)
                     }
                 } label: {
-                    if appModel.isPublishingSlideshow {
+                    if isPrimaryActionBusy(in: appModel) {
                         ProgressView()
                     } else {
-                        Text("Publish")
+                        Text(isAutomated ? "Start" : "Publish")
                     }
                 }
-                .disabled(!canPublish(in: appModel) || appModel.isPublishingSlideshow)
+                .disabled(!canPublish(in: appModel) || isPrimaryActionBusy(in: appModel) || showsAutomationStartSuccess)
             }
         }
         .task {
@@ -309,8 +325,7 @@ struct CreateView: View {
                         allowStitch: $automationTikTokSettings.allowStitch,
                         disclosesVideoContent: $automationTikTokSettings.disclosesVideoContent,
                         promotesYourBrand: $automationTikTokSettings.promotesYourBrand,
-                        promotesBrandedContent: $automationTikTokSettings.promotesBrandedContent,
-                        allowsDraftUpload: false
+                        promotesBrandedContent: $automationTikTokSettings.promotesBrandedContent
                     )
                 } else if let currentDraftID = activeDraftID(in: appModel) {
                     TikTokSettingsSheet(
@@ -344,6 +359,9 @@ struct CreateView: View {
             case .publishProgress:
                 CreatePublishProgressSheet(progress: appModel.manualPublishProgress)
             }
+        }
+        .onDisappear {
+            automationSuccessDismissTask?.cancel()
         }
     }
 
@@ -498,7 +516,6 @@ struct CreateView: View {
         automationSchedule = automation.schedule
         automationSchedule.reconcileFixedTimes()
         automationTikTokSettings = automation.tikTokSettings
-        automationTikTokSettings.postAsDraft = false
     }
 
     private func deleteAutomation(_ automation: ContentAutomation, using appModel: FlickAppModel) {
@@ -528,6 +545,10 @@ struct CreateView: View {
         return canPublishManualPost(in: appModel)
     }
 
+    private func isPrimaryActionBusy(in appModel: FlickAppModel) -> Bool {
+        isAutomated ? isStartingAutomation : appModel.isPublishingSlideshow
+    }
+
     private func canPublishAutomation(in appModel: FlickAppModel) -> Bool {
         let automation = automationDraft(using: appModel, now: Date())
         return automation.isReadyToSchedule
@@ -536,11 +557,30 @@ struct CreateView: View {
     }
 
     private func publishAutomation(using appModel: FlickAppModel) {
-        guard canPublishAutomation(in: appModel) else { return }
+        guard canPublishAutomation(in: appModel), !isStartingAutomation else { return }
         let automation = automationDraft(using: appModel, now: Date())
-        editingAutomationID = automation.id
-        Task {
-            await appModel.upsertAutomation(automation)
+        isStartingAutomation = true
+        Task { @MainActor in
+            let didStart = await appModel.upsertAutomation(automation)
+            isStartingAutomation = false
+            guard didStart else { return }
+            showAutomationStartSuccess()
+        }
+    }
+
+    private func showAutomationStartSuccess() {
+        automationSuccessDismissTask?.cancel()
+        withAnimation(.snappy) {
+            showsAutomationStartSuccess = true
+        }
+        automationSuccessDismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1350))
+            guard !Task.isCancelled else { return }
+            clearAutomationForm()
+            createFormResetID = UUID()
+            withAnimation(.snappy) {
+                showsAutomationStartSuccess = false
+            }
         }
     }
 
@@ -548,8 +588,6 @@ struct CreateView: View {
         let automationID = editingAutomationID ?? UUID()
         var schedule = automationSchedule
         schedule.reconcileFixedTimes()
-        var settings = automationTikTokSettings
-        settings.postAsDraft = false
 
         let nextScheduledAt = schedule.nextOccurrence(after: now, automationID: automationID)
         return ContentAutomation(
@@ -559,7 +597,7 @@ struct CreateView: View {
             productID: selectedProductID,
             productImageAssetIDs: Array(selectedAutomationProductImageAssetIDs).sorted { $0.uuidString < $1.uuidString },
             schedule: schedule,
-            tikTokSettings: settings,
+            tikTokSettings: automationTikTokSettings,
             targetPlatforms: [.tiktok],
             status: .active,
             nextScheduledAt: nextScheduledAt,

@@ -1,0 +1,459 @@
+//
+//  IOSAutomationDetailView.swift
+//  Flick
+//
+
+#if !os(macOS)
+import SwiftUI
+
+struct IOSAutomationDetailView: View {
+    @Environment(FlickAppModel.self) private var appModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var isDeleteConfirmationPresented = false
+
+    var automationID: UUID
+    var exampleTemplates: [ExampleSlideshowTemplate]
+
+    private var item: AutomationDashboardItem? {
+        AutomationDashboardSnapshot
+            .make(overview: appModel.overview, exampleTemplates: exampleTemplates)
+            .items
+            .first { $0.id == automationID }
+    }
+
+    var body: some View {
+        Group {
+            if let item {
+                List {
+                    overviewSection(for: item)
+                    manageSection(for: item)
+                    scheduleSection(for: item)
+                    postsSection(for: item)
+                    runsSection(for: item)
+                }
+                .flickSettingsListStyle()
+                .refreshable {
+                    await appModel.refresh()
+                }
+                .flickToolbarTitle(item.displayName)
+                .confirmationDialog("Delete automation?", isPresented: $isDeleteConfirmationPresented) {
+                    Button("Delete Automation", role: .destructive) {
+                        deleteAutomation()
+                    }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    Text("This removes the automation schedule. Existing drafts and published post records are kept.")
+                }
+            } else {
+                ContentUnavailableView(
+                    "Automation unavailable",
+                    systemImage: "calendar.badge.exclamationmark",
+                    description: Text("This automation may have been deleted on another device.")
+                )
+                .flickAppBackground()
+            }
+        }
+    }
+
+    private func manageSection(for item: AutomationDashboardItem) -> some View {
+        Section("Manage") {
+            Button {
+                runNow()
+            } label: {
+                FlickSettingsRowLabel(
+                    title: "Run Now",
+                    systemImage: "play.fill",
+                    iconColor: .blue,
+                    value: appModel.isProcessingAutomations ? "Running..." : "Bypass schedule once",
+                    valueLineLimit: 1
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(appModel.isProcessingAutomations)
+
+            Button {
+                updateStatus(to: item.automation.status == .active ? .paused : .active)
+            } label: {
+                FlickSettingsRowLabel(
+                    title: item.automation.status == .active ? "Pause Automation" : "Resume Automation",
+                    systemImage: item.automation.status == .active ? "pause.circle" : "play.circle",
+                    iconColor: item.automation.status == .active ? .orange : .green,
+                    value: item.automation.status == .active ? "Stop scheduled runs" : "Schedule next run",
+                    valueLineLimit: 1
+                )
+            }
+            .buttonStyle(.plain)
+
+            Button(role: .destructive) {
+                isDeleteConfirmationPresented = true
+            } label: {
+                FlickSettingsRowLabel(
+                    title: "Delete Automation",
+                    systemImage: "trash",
+                    iconColor: .red,
+                    value: "Remove schedule",
+                    valueLineLimit: 1
+                )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func overviewSection(for item: AutomationDashboardItem) -> some View {
+        Section("Automation") {
+            FlickSettingsValueRow(
+                title: "Status",
+                systemImage: item.automation.status == .active ? "calendar.badge.clock" : "pause.circle",
+                iconColor: item.automation.status.tint,
+                value: item.automation.status.displayName
+            )
+            FlickSettingsValueRow(
+                title: "Published posts",
+                systemImage: "photo.stack",
+                iconColor: .green,
+                value: item.publishedPosts.count.formatted()
+            )
+            FlickSettingsValueRow(
+                title: "Accounts",
+                systemImage: "person.2",
+                iconColor: .blue,
+                value: item.accountPlatformSummary,
+                valueLineLimit: 3
+            )
+            FlickSettingsValueRow(
+                title: "Platforms",
+                systemImage: "paperplane",
+                iconColor: .teal,
+                value: item.targetPlatformSummary,
+                valueLineLimit: 2
+            )
+            if let productName = item.productName {
+                FlickSettingsValueRow(
+                    title: "Product",
+                    systemImage: "shippingbox",
+                    iconColor: .orange,
+                    value: productName,
+                    valueLineLimit: 2
+                )
+            }
+        }
+    }
+
+    private func scheduleSection(for item: AutomationDashboardItem) -> some View {
+        Section("Schedule") {
+            FlickSettingsValueRow(
+                title: "Cadence",
+                systemImage: "calendar",
+                iconColor: .teal,
+                value: item.scheduleSummary,
+                valueLineLimit: 2
+            )
+            FlickSettingsValueRow(
+                title: "Next post",
+                systemImage: "clock",
+                iconColor: .orange,
+                value: AutomationDashboardFormatting.absoluteDate(item.nextScheduledAt),
+                valueLineLimit: 2
+            )
+            FlickSettingsValueRow(
+                title: "Previous post",
+                systemImage: "arrow.counterclockwise",
+                iconColor: .secondary,
+                value: AutomationDashboardFormatting.absoluteDate(item.previousPostedAt),
+                valueLineLimit: 2
+            )
+            if item.automation.consecutiveFailureCount > 0 {
+                FlickSettingsValueRow(
+                    title: "Failures",
+                    systemImage: "exclamationmark.triangle",
+                    iconColor: .orange,
+                    value: item.automation.consecutiveFailureCount.formatted()
+                )
+            }
+            if let lastErrorMessage = item.automation.lastErrorMessage, !lastErrorMessage.isEmpty {
+                DashboardMessageRow(
+                    title: "Last error",
+                    message: lastErrorMessage,
+                    systemImage: "exclamationmark.triangle",
+                    iconColor: .orange
+                )
+            }
+        }
+    }
+
+    private func postsSection(for item: AutomationDashboardItem) -> some View {
+        Section("Posts") {
+            if item.postPreviews.isEmpty {
+                DashboardMessageRow(
+                    title: "No posts from this automation yet",
+                    message: "Published posts will appear here after the macOS runner completes an automation.",
+                    systemImage: "photo.stack",
+                    iconColor: .secondary
+                )
+            } else {
+                ForEach(item.postPreviews) { preview in
+                    NavigationLink {
+                        IOSAutomationPostDetailView(postID: preview.post.id)
+                    } label: {
+                        IOSAutomationPostRow(preview: preview)
+                    }
+                }
+            }
+        }
+    }
+
+    private func runsSection(for item: AutomationDashboardItem) -> some View {
+        Section("Runs") {
+            FlickSettingsValueRow(
+                title: "Awaiting TikTok",
+                systemImage: "bell.badge",
+                iconColor: .orange,
+                value: item.awaitingDraftUploadCount.formatted()
+            )
+            FlickSettingsValueRow(
+                title: "Failed jobs",
+                systemImage: "xmark.octagon",
+                iconColor: .red,
+                value: item.failedJobCount.formatted()
+            )
+            FlickSettingsValueRow(
+                title: "Updated",
+                systemImage: "arrow.triangle.2.circlepath",
+                iconColor: .secondary,
+                value: AutomationDashboardFormatting.absoluteDate(item.automation.updatedAt),
+                valueLineLimit: 2
+            )
+        }
+    }
+
+    private func updateStatus(to status: ContentAutomationStatus) {
+        Task {
+            await appModel.updateAutomationStatus(id: automationID, status: status)
+        }
+    }
+
+    private func runNow() {
+        Task {
+            await appModel.runAutomationNow(id: automationID)
+        }
+    }
+
+    private func deleteAutomation() {
+        Task {
+            await appModel.deleteAutomation(id: automationID)
+            dismiss()
+        }
+    }
+}
+
+private struct IOSAutomationPostRow: View {
+    var preview: AutomationPostPreview
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VerticalMediaFrame(
+                fileURL: preview.thumbnailAsset?.localFileURL,
+                remoteURL: preview.thumbnailAsset?.publicURL,
+                cornerRadius: 8,
+                maxPixelSize: 360
+            )
+            .frame(width: 52)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(preview.displayTitle)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                Text(preview.subtitle)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Text(AutomationDashboardFormatting.relativeDate(preview.post.publishedAt))
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .layoutPriority(1)
+
+            Spacer(minLength: 8)
+
+            StatusBadge(title: "Published", tint: .green, systemImage: "checkmark.circle")
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct IOSAutomationPostDetailView: View {
+    @Environment(FlickAppModel.self) private var appModel
+
+    var postID: UUID
+
+    private var post: PublishedPost? {
+        appModel.overview.publishedPosts.first { $0.id == postID }
+    }
+
+    private var assetsByID: [UUID: MediaAsset] {
+        Dictionary(uniqueKeysWithValues: appModel.overview.assets.map { ($0.id, $0) })
+    }
+
+    var body: some View {
+        Group {
+            if let post {
+                List {
+                    previewSection(for: post)
+                    detailsSection(for: post)
+                    slidesSection(for: post)
+                }
+                .flickSettingsListStyle()
+                .flickToolbarTitle(postTitle(for: post))
+            } else {
+                ContentUnavailableView(
+                    "Post unavailable",
+                    systemImage: "photo.badge.exclamationmark",
+                    description: Text("This post may have been deleted on another device.")
+                )
+                .flickAppBackground()
+            }
+        }
+    }
+
+    private func previewSection(for post: PublishedPost) -> some View {
+        Section {
+            HStack {
+                Spacer(minLength: 0)
+                VerticalMediaFrame(
+                    fileURL: previewAsset(for: post)?.localFileURL,
+                    remoteURL: previewAsset(for: post)?.publicURL,
+                    cornerRadius: 14,
+                    maxPixelSize: 720
+                )
+                .frame(maxWidth: 180)
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 8)
+        }
+    }
+
+    private func detailsSection(for post: PublishedPost) -> some View {
+        Section("Details") {
+            FlickSettingsValueRow(
+                title: "Platform",
+                systemImage: post.platform.systemImage,
+                iconColor: post.platform.tint,
+                value: post.platform.displayName
+            )
+            FlickSettingsValueRow(
+                title: "Account",
+                systemImage: "person.crop.circle",
+                iconColor: .blue,
+                value: accountName(for: post) ?? "Unknown"
+            )
+            FlickSettingsValueRow(
+                title: "Published",
+                systemImage: "clock",
+                iconColor: .green,
+                value: AutomationDashboardFormatting.absoluteDate(post.publishedAt),
+                valueLineLimit: 2
+            )
+            FlickSettingsValueRow(
+                title: "Post ID",
+                systemImage: "number",
+                iconColor: .secondary,
+                value: post.platformPostID,
+                valueLineLimit: 2
+            )
+            if let platformURL = post.platformURL {
+                Link(destination: platformURL) {
+                    FlickSettingsRowLabel(
+                        title: "Open post",
+                        systemImage: "arrow.up.forward.app",
+                        iconColor: .blue,
+                        value: platformURL.host ?? platformURL.absoluteString,
+                        valueLineLimit: 1,
+                        showsChevron: true
+                    )
+                }
+            }
+        }
+    }
+
+    private func slidesSection(for post: PublishedPost) -> some View {
+        Section("Slides") {
+            if slides(for: post).isEmpty {
+                DashboardMessageRow(
+                    title: "No local slide detail",
+                    message: "The post is synced, but its generated draft slides are not available on this device.",
+                    systemImage: "photo.stack",
+                    iconColor: .secondary
+                )
+            } else {
+                ForEach(slides(for: post)) { slide in
+                    IOSAutomationPostSlideRow(
+                        slide: slide,
+                        asset: slide.imageAssetID.flatMap { assetsByID[$0] }
+                    )
+                }
+            }
+        }
+    }
+
+    private func postTitle(for post: PublishedPost) -> String {
+        let caption = post.caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        return caption.isEmpty ? "\(post.platform.displayName) post" : caption
+    }
+
+    private func accountName(for post: PublishedPost) -> String? {
+        appModel.overview.accounts.first { $0.id == post.accountID }?.displayName
+    }
+
+    private func draft(for post: PublishedPost) -> SlideshowDraft? {
+        appModel.overview.drafts.first { $0.id == post.draftID }
+    }
+
+    private func slides(for post: PublishedPost) -> [Slide] {
+        draft(for: post)?.slides.sorted { $0.index < $1.index } ?? []
+    }
+
+    private func previewAsset(for post: PublishedPost) -> MediaAsset? {
+        guard let draft = draft(for: post) else { return nil }
+
+        if let asset = draft.exportedImageAssetIDs.compactMap({ assetsByID[$0] }).first {
+            return asset
+        }
+
+        return slides(for: post)
+            .compactMap(\.imageAssetID)
+            .compactMap { assetsByID[$0] }
+            .first
+    }
+}
+
+private struct IOSAutomationPostSlideRow: View {
+    var slide: Slide
+    var asset: MediaAsset?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VerticalMediaFrame(
+                fileURL: asset?.localFileURL,
+                remoteURL: asset?.publicURL,
+                cornerRadius: 8,
+                maxPixelSize: 360
+            )
+            .frame(width: 52)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Slide \(slide.index + 1)")
+                    .font(.body.weight(.semibold))
+                Text(slide.text.isEmpty ? slide.prompt : slide.text)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            }
+            .layoutPriority(1)
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+    }
+}
+#endif

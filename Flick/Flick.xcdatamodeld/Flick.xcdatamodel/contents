@@ -73,6 +73,7 @@
     </entity>
     <entity name="CDPublishedPost" representedClassName="CDPublishedPost" syncable="YES" codeGenerationType="class">
         <attribute name="accountID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="automationID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="caption" optional="YES" attributeType="String"/>
         <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="draftID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
@@ -95,6 +96,7 @@
     <entity name="CDPublishingJob" representedClassName="CDPublishingJob" syncable="YES" codeGenerationType="class">
         <attribute name="accountID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="attemptCount" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="automationID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="draftID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>

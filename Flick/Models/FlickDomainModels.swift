@@ -572,6 +572,7 @@ struct PublishingJob: Identifiable, Codable, Hashable {
     var id: UUID
     var platform: SocialPlatform
     var accountID: UUID
+    var automationID: UUID?
     var draftID: UUID
     var status: PublishingJobStatus
     var publishMode: PublishMode
@@ -594,6 +595,7 @@ struct PublishedPost: Identifiable, Codable, Hashable {
     var id: UUID
     var platform: SocialPlatform
     var accountID: UUID
+    var automationID: UUID?
     var platformPostID: String
     var platformURL: URL?
     var publishedAt: Date

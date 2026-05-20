@@ -60,7 +60,7 @@ struct DashboardStatusRow: View {
 
             Spacer(minLength: 12)
 
-            StatusBadge(
+            DashboardStatusIcon(
                 title: badgeTitle,
                 tint: badgeTint,
                 systemImage: badgeSystemImage
@@ -98,7 +98,7 @@ struct TikTokPublishingJobRow: View {
 
             Spacer(minLength: 12)
 
-            StatusBadge(title: "Draft sent", tint: .orange, systemImage: "clock")
+            DashboardStatusIcon(title: "Draft sent", tint: .orange, systemImage: "clock")
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
@@ -130,10 +130,24 @@ struct TikTokPublishedPostRow: View {
 
             Spacer(minLength: 12)
 
-            StatusBadge(title: "Published", tint: .green, systemImage: "checkmark.circle")
+            DashboardStatusIcon(title: "Published", tint: .green, systemImage: "checkmark.circle")
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
+    }
+}
+
+struct DashboardStatusIcon: View {
+    var title: String
+    var tint: Color
+    var systemImage: String?
+
+    var body: some View {
+        Image(systemName: systemImage ?? "circle.fill")
+            .font(.body.weight(.semibold))
+            .foregroundStyle(tint)
+            .frame(width: 24, height: 24)
+            .accessibilityLabel(title)
     }
 }
 

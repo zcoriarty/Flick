@@ -17,7 +17,7 @@ struct CreateAutomationsSection: View {
             if automations.isEmpty {
                 CreateMessageRow(
                     title: "No automations yet",
-                    message: "Publish this setup to save an automation that syncs through iCloud."
+                    message: "Start this setup to save an automation that syncs through iCloud."
                 )
             } else {
                 ForEach(automations) { automation in

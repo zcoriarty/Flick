@@ -90,7 +90,7 @@ struct TikTokSettingsSheet: View {
                 title: "Post title",
                 systemImage: "square.and.pencil",
                 text: $postTitle,
-                placeholder: "Add a post title.",
+                placeholder: "Add a post title (optional).",
                 minHeight: 78
             )
             .padding(.vertical, 2)

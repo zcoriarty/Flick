@@ -1,30 +1,54 @@
 //
-//  CreateAutomationScheduleSection.swift
+//  CreateAutomationSection.swift
 //  Flick
 //
 
 import SwiftUI
 
-struct CreateAutomationScheduleSection: View {
+struct CreateAutomationSection: View {
+    @Binding var isAutomated: Bool
     @Binding var schedule: AutomationSchedule
 
     var body: some View {
-        Section("Cadence") {
-            AutomationWeekdayPicker(weekdays: $schedule.weekdays)
-
-            ForEach(schedule.fixedTimes.indices, id: \.self) { index in
-                AutomationTimeRow(
-                    index: index,
-                    time: fixedTimeBinding(at: index),
-                    canRemove: schedule.fixedTimes.count > 1,
-                    removeAction: { removeTime(at: index) }
-                )
+        Section("Automation") {
+            FlickSettingsRow(
+                title: "Automated",
+                systemImage: "calendar.badge.clock",
+                iconColor: isAutomated ? .green : .secondary
+            ) {
+                Toggle("Automated", isOn: animatedAutomationBinding)
+                    .labelsHidden()
             }
 
-            if schedule.fixedTimes.count < AutomationSchedule.maximumPostsPerDay {
-                AddAutomationTimeRow(action: addTime)
+            if isAutomated {
+                AutomationWeekdayPicker(weekdays: $schedule.weekdays)
+
+                ForEach(schedule.fixedTimes.indices, id: \.self) { index in
+                    AutomationTimeRow(
+                        index: index,
+                        time: fixedTimeBinding(at: index),
+                        canRemove: schedule.fixedTimes.count > 1,
+                        removeAction: { removeTime(at: index) }
+                    )
+                }
+
+                if schedule.fixedTimes.count < AutomationSchedule.maximumPostsPerDay {
+                    AddAutomationTimeRow(action: addTime)
+                }
             }
         }
+        .animation(.snappy, value: isAutomated)
+    }
+
+    private var animatedAutomationBinding: Binding<Bool> {
+        Binding(
+            get: { isAutomated },
+            set: { newValue in
+                withAnimation(.snappy) {
+                    isAutomated = newValue
+                }
+            }
+        )
     }
 
     private func fixedTimeBinding(at index: Int) -> Binding<AutomationTimeOfDay> {
