@@ -10,6 +10,9 @@ struct SettingsView: View {
 
     var body: some View {
         List {
+            #if !os(macOS) && !targetEnvironment(macCatalyst)
+            accountsSection
+            #endif
             credentialsSection
             storageSection
             diagnosticsSection
@@ -17,6 +20,18 @@ struct SettingsView: View {
         .flickSettingsListStyle()
         .flickToolbarTitle("Settings")
     }
+
+    #if !os(macOS) && !targetEnvironment(macCatalyst)
+    private var accountsSection: some View {
+        Section("Accounts") {
+            AccountsNavigationRow(connectedCount: connectedAccountCount)
+        }
+    }
+
+    private var connectedAccountCount: Int {
+        appModel.overview.accounts.filter { $0.status == .connected }.count
+    }
+    #endif
 
     private var credentialsSection: some View {
         Section {
@@ -122,6 +137,34 @@ struct SettingsView: View {
         }
     }
 }
+
+#if !os(macOS) && !targetEnvironment(macCatalyst)
+private struct AccountsNavigationRow: View {
+    var connectedCount: Int
+
+    var body: some View {
+        NavigationLink {
+            AccountsView()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "person.2")
+                    .foregroundStyle(.green)
+                    .frame(width: 24)
+
+                Text("Accounts")
+                    .foregroundStyle(.primary)
+
+                Spacer(minLength: 12)
+
+                StatusBadge(title: "\(connectedCount) connected", tint: .green, systemImage: "person.crop.circle.fill")
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+    }
+}
+#endif
 
 private struct CredentialsNavigationRow: View {
     var storedCount: Int

@@ -193,7 +193,7 @@ struct IOSDashboardView: View {
                         message: "Connect a platform account with Login Kit before scheduling posts.",
                         systemImage: "person.crop.circle.badge.plus",
                         iconColor: .secondary,
-                        badgeTitle: "Open Accounts",
+                        badgeTitle: "Open Settings",
                         badgeTint: FlickStyle.appTint,
                         badgeSystemImage: "person.2"
                     )
@@ -217,7 +217,7 @@ struct IOSDashboardView: View {
     }
 
     private func openAccounts() {
-        appModel.selectedSection = .accounts
+        appModel.selectedSection = .settings
     }
 
     private func loadExampleTemplates() {

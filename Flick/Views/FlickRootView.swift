@@ -19,11 +19,19 @@ struct FlickRootView: View {
                 }
             }
 
+            #if os(macOS) || targetEnvironment(macCatalyst)
             Tab(FlickSection.product.title, systemImage: FlickSection.product.systemImage, value: FlickSection.product) {
                 NavigationStack {
                     ProductView()
                 }
             }
+            #else
+            Tab(FlickSection.media.title, systemImage: FlickSection.media.systemImage, value: FlickSection.media) {
+                NavigationStack {
+                    MediaView()
+                }
+            }
+            #endif
 
             Tab(FlickSection.models.title, systemImage: FlickSection.models.systemImage, value: FlickSection.models) {
                 NavigationStack {
@@ -37,6 +45,7 @@ struct FlickRootView: View {
                 }
             }
 
+            #if os(macOS) || targetEnvironment(macCatalyst)
             Tab(FlickSection.templates.title, systemImage: FlickSection.templates.systemImage, value: FlickSection.templates) {
                 NavigationStack {
                     TemplatesView()
@@ -44,11 +53,16 @@ struct FlickRootView: View {
             }
 
             Tab(FlickSection.accounts.title, systemImage: FlickSection.accounts.systemImage, value: FlickSection.accounts) {
-                AccountsView()
+                NavigationStack {
+                    AccountsView()
+                }
             }
+            #endif
 
             Tab(FlickSection.settings.title, systemImage: FlickSection.settings.systemImage, value: FlickSection.settings) {
-                SettingsView()
+                NavigationStack {
+                    SettingsView()
+                }
             }
         }
         #if os(macOS) || targetEnvironment(macCatalyst)

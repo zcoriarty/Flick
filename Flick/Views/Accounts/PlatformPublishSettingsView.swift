@@ -21,6 +21,7 @@ struct PlatformPublishSettingsView: View {
         }
         .flickSettingsListStyle()
         .flickToolbarTitle("\(platform.displayName) Publish Settings")
+        .scrollIndicators(.hidden)
     }
 
     private var platformSection: some View {
