@@ -94,7 +94,8 @@ enum LocalMediaPathResolver {
     static func readableFileURL(
         for storedPath: String?,
         source: AssetSource,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        additionalResourceRoots: [URL] = []
     ) -> URL? {
         guard
             let storedPath = storedPath?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -103,16 +104,23 @@ enum LocalMediaPathResolver {
             return nil
         }
 
-        return candidateFileURLs(for: storedPath, source: source, fileManager: fileManager)
+        return candidateFileURLs(
+            for: storedPath,
+            source: source,
+            fileManager: fileManager,
+            additionalResourceRoots: additionalResourceRoots
+        )
             .first { fileManager.isReadableFile(atPath: $0.path) }
     }
 
     private static func candidateFileURLs(
         for storedPath: String,
         source: AssetSource,
-        fileManager: FileManager
+        fileManager: FileManager,
+        additionalResourceRoots: [URL]
     ) -> [URL] {
-        let pathComponents = URL(fileURLWithPath: storedPath).pathComponents
+        let pathComponents = storedPath.split(separator: "/").map(String.init)
+        let filename = URL(fileURLWithPath: storedPath).lastPathComponent
         var candidates: [URL] = []
 
         if storedPath.hasPrefix("/") {
@@ -140,7 +148,14 @@ enum LocalMediaPathResolver {
         }
 
         if let bundleResourceURL = Bundle.main.resourceURL {
-            candidates.append(bundleResourceURL.appending(path: storedPath))
+            appendResourceCandidates(
+                root: bundleResourceURL,
+                storedPath: storedPath,
+                filename: filename,
+                pathComponents: pathComponents,
+                source: source,
+                to: &candidates
+            )
             if let exampleSlideshowsURL = reconstructedURL(
                 after: "ExampleSlideshows",
                 in: pathComponents,
@@ -153,7 +168,59 @@ enum LocalMediaPathResolver {
             }
         }
 
+        for resourceRoot in additionalResourceRoots {
+            appendResourceCandidates(
+                root: resourceRoot,
+                storedPath: storedPath,
+                filename: filename,
+                pathComponents: pathComponents,
+                source: source,
+                to: &candidates
+            )
+        }
+
+        #if DEBUG
+        for resourceRoot in sourceTreeResourceRoots() {
+            appendResourceCandidates(
+                root: resourceRoot,
+                storedPath: storedPath,
+                filename: filename,
+                pathComponents: pathComponents,
+                source: source,
+                to: &candidates
+            )
+        }
+        #endif
+
         return unique(candidates)
+    }
+
+    private static func appendResourceCandidates(
+        root: URL,
+        storedPath: String,
+        filename: String,
+        pathComponents: [String],
+        source: AssetSource,
+        to candidates: inout [URL]
+    ) {
+        candidates.append(root.appending(path: storedPath))
+        if !filename.isEmpty {
+            candidates.append(root.appendingPathComponent(filename))
+        }
+
+        if let flickRelativeURL = reconstructedURL(after: "Flick", in: pathComponents, root: root) {
+            candidates.append(flickRelativeURL)
+        }
+
+        for directoryName in sourceDirectoryNames(for: source) {
+            let sourceRoot = root.appendingPathComponent(directoryName, isDirectory: true)
+            if !filename.isEmpty {
+                candidates.append(sourceRoot.appendingPathComponent(filename))
+            }
+            if let sourceRelativeURL = reconstructedURL(after: directoryName, in: pathComponents, root: sourceRoot) {
+                candidates.append(sourceRelativeURL)
+            }
+        }
     }
 
     private static func sourceDirectoryNames(for source: AssetSource) -> [String] {
@@ -168,6 +235,19 @@ enum LocalMediaPathResolver {
             []
         }
     }
+
+    #if DEBUG
+    private static func sourceTreeResourceRoots() -> [URL] {
+        let sourceFileURL = URL(fileURLWithPath: #filePath)
+        let flickSourceDirectory = sourceFileURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return unique([
+            flickSourceDirectory,
+            flickSourceDirectory.deletingLastPathComponent()
+        ])
+    }
+    #endif
 
     private static func applicationSupportFlickDirectory(fileManager: FileManager) -> URL? {
         try? fileManager

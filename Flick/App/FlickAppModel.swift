@@ -1204,7 +1204,7 @@ enum ManualPublishError: LocalizedError {
 enum AutomationRunError: LocalizedError {
     case notReady
     case missingTemplate
-    case missingProductImage
+    case missingProductImage(String)
     case generationFailed(String)
     case publishFailed(String)
 
@@ -1214,8 +1214,8 @@ enum AutomationRunError: LocalizedError {
             return "Complete the automation templates, product images, cadence, and TikTok settings before it can publish."
         case .missingTemplate:
             return "One of the automation templates is no longer available."
-        case .missingProductImage:
-            return "One of the automation product images is no longer available."
+        case let .missingProductImage(message):
+            return message.isEmpty ? "One of the automation product images is no longer available." : message
         case let .generationFailed(message):
             return message.isEmpty ? "Automated slide image generation failed." : message
         case let .publishFailed(message):
@@ -1366,25 +1366,31 @@ private extension FlickAppModel {
             let productID = automation.productID,
             let product = overview.products.first(where: { $0.id == productID })
         else {
-            throw AutomationRunError.missingProductImage
+            throw AutomationRunError.missingProductImage("The automation product is no longer available.")
         }
 
         let selectedAssetIDs = Set(automation.productImageAssetIDs)
-        let assets = overview.assets.filter { asset in
-            selectedAssetIDs.contains(asset.id)
-                && asset.productIDs.contains(productID)
-                && asset.mediaType == .image
-                && asset.hasAvailableMediaLocation
+        let selectedAssets = overview.assets.filter { selectedAssetIDs.contains($0.id) }
+        let productImageAssets = selectedAssets.filter { asset in
+            asset.productIDs.contains(productID) && asset.mediaType == .image
         }
-        guard !assets.isEmpty else {
-            throw AutomationRunError.missingProductImage
+        let availableAssets = productImageAssets.filter(\.hasAvailableMediaLocation)
+
+        guard !availableAssets.isEmpty else {
+            if selectedAssets.isEmpty {
+                throw AutomationRunError.missingProductImage("The automation selected product image records that are no longer available.")
+            }
+            if productImageAssets.isEmpty {
+                throw AutomationRunError.missingProductImage("The selected automation images are no longer attached to \(product.name).")
+            }
+            throw AutomationRunError.missingProductImage("Flick found the selected product images for \(product.name), but could not read their local files or public URLs.")
         }
 
         let index = deterministicIndex(
             seed: "\(automation.id.uuidString)-product-image-\(scheduledAt.timeIntervalSince1970)",
-            count: assets.count
+            count: availableAssets.count
         )
-        return SlideshowProductImage(product: product, asset: assets[index])
+        return SlideshowProductImage(product: product, asset: availableAssets[index])
     }
 
     func markAutomation(_ automationID: UUID, succeededAt date: Date) {

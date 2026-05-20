@@ -463,6 +463,28 @@ final class FlickTests: XCTestCase {
         XCTAssertTrue(asset.hasAvailableMediaLocation)
     }
 
+    func testLocalMediaPathResolverFindsProductMediaMovedIntoResourceRoot() throws {
+        let resourceRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("flick-resource-root-\(UUID().uuidString)", isDirectory: true)
+        let productMediaDirectory = resourceRoot.appendingPathComponent("ProductMedia", isDirectory: true)
+        try FileManager.default.createDirectory(at: productMediaDirectory, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: resourceRoot)
+        }
+
+        let imageURL = productMediaDirectory.appendingPathComponent("product.jpg")
+        try Data([0xFF, 0xD8, 0xFF]).write(to: imageURL)
+
+        let oldProjectPath = "/Users/example/Desktop/Flick/Flick/ProductMedia/product.jpg"
+        let resolvedURL = LocalMediaPathResolver.readableFileURL(
+            for: oldProjectPath,
+            source: .uploaded,
+            additionalResourceRoots: [resourceRoot]
+        )
+
+        XCTAssertEqual(resolvedURL?.standardizedFileURL.path, imageURL.standardizedFileURL.path)
+    }
+
     func testUploadedProductImageCountsAsReadyCreateImage() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let product = makeProduct(now: now)

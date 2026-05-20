@@ -163,12 +163,17 @@ struct IOSAutomationDetailView: View {
                 valueLineLimit: 2
             )
             if item.automation.consecutiveFailureCount > 0 {
-                FlickSettingsValueRow(
+                FlickSettingsNavigationRow(
                     title: "Failures",
                     systemImage: "exclamationmark.triangle",
                     iconColor: .orange,
                     value: item.automation.consecutiveFailureCount.formatted()
-                )
+                ) {
+                    IOSAutomationFailuresView(
+                        automationID: item.id,
+                        exampleTemplates: exampleTemplates
+                    )
+                }
             }
             if let lastErrorMessage = item.automation.lastErrorMessage, !lastErrorMessage.isEmpty {
                 DashboardMessageRow(
@@ -210,12 +215,26 @@ struct IOSAutomationDetailView: View {
                 iconColor: .orange,
                 value: item.awaitingDraftUploadCount.formatted()
             )
-            FlickSettingsValueRow(
-                title: "Failed jobs",
-                systemImage: "xmark.octagon",
-                iconColor: .red,
-                value: item.failedJobCount.formatted()
-            )
+            if item.failedJobCount > 0 {
+                FlickSettingsNavigationRow(
+                    title: "Failed jobs",
+                    systemImage: "xmark.octagon",
+                    iconColor: .red,
+                    value: item.failedJobCount.formatted()
+                ) {
+                    IOSAutomationFailuresView(
+                        automationID: item.id,
+                        exampleTemplates: exampleTemplates
+                    )
+                }
+            } else {
+                FlickSettingsValueRow(
+                    title: "Failed jobs",
+                    systemImage: "xmark.octagon",
+                    iconColor: .red,
+                    value: item.failedJobCount.formatted()
+                )
+            }
             FlickSettingsValueRow(
                 title: "Updated",
                 systemImage: "arrow.triangle.2.circlepath",
