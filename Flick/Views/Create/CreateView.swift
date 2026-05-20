@@ -64,6 +64,7 @@ struct CreateView: View {
             }
         }
         .animation(.snappy, value: showsAutomationStartSuccess)
+        .toolbarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 createToolbarTitle(in: appModel)

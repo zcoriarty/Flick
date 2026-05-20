@@ -199,6 +199,7 @@ private struct FlickSettingsListStyleModifier: ViewModifier {
         .listStyle(.insetGrouped)
         #endif
         .scrollContentBackground(.hidden)
+        .scrollIndicators(.hidden)
         .flickAppBackground()
     }
 }
