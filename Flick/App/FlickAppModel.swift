@@ -5,6 +5,7 @@
 
 import Foundation
 import CoreData
+import ImageIO
 import Observation
 import OSLog
 import UniformTypeIdentifiers
@@ -46,6 +47,12 @@ enum CreationModelManagementError: LocalizedError {
             "That model is no longer available."
         }
     }
+}
+
+private struct LocalMediaMetadata {
+    var width: Int
+    var height: Int
+    var duration: TimeInterval?
 }
 
 @MainActor
@@ -559,6 +566,7 @@ final class FlickAppModel {
 
     private func addProductMedia(_ storedMedia: StoredLocalMedia, productIDs: Set<UUID>) async throws {
         let resolvedProductIDs = try validateProductIDs(productIDs)
+        let mediaMetadata = localMediaMetadata(for: storedMedia)
         let now = Date()
         let assetID = UUID()
         let objectPath = productMediaStoragePath(
@@ -585,9 +593,9 @@ final class FlickAppModel {
             storagePath: remote.storagePath,
             publicURL: remote.publicURL,
             signedURLExpiration: remote.signedURLExpiration,
-            width: 0,
-            height: 0,
-            duration: nil,
+            width: mediaMetadata.width,
+            height: mediaMetadata.height,
+            duration: mediaMetadata.duration,
             fileSize: storedMedia.fileSize,
             checksum: nil,
             trendTags: [],
@@ -604,6 +612,37 @@ final class FlickAppModel {
             overview.assets.removeAll { $0.id == asset.id }
             throw error
         }
+    }
+
+    private func localMediaMetadata(for storedMedia: StoredLocalMedia) -> LocalMediaMetadata {
+        if storedMedia.contentType.conforms(to: .image), let dimensions = imageDimensions(at: storedMedia.fileURL) {
+            return LocalMediaMetadata(width: dimensions.width, height: dimensions.height, duration: nil)
+        }
+
+        return LocalMediaMetadata(width: 0, height: 0, duration: nil)
+    }
+
+    private func imageDimensions(at fileURL: URL) -> (width: Int, height: Int)? {
+        guard
+            let imageSource = CGImageSourceCreateWithURL(fileURL as CFURL, nil),
+            let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
+            let width = mediaDimensionValue(properties[kCGImagePropertyPixelWidth]),
+            let height = mediaDimensionValue(properties[kCGImagePropertyPixelHeight])
+        else {
+            return nil
+        }
+
+        return (width, height)
+    }
+
+    private func mediaDimensionValue(_ value: Any?) -> Int? {
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+        if let intValue = value as? Int {
+            return intValue
+        }
+        return nil
     }
 
     func updateProductMediaProducts(assetID: UUID, productIDs: Set<UUID>) async throws {

@@ -115,6 +115,8 @@ private struct ProductDetailView: View {
 
     @State private var selectedMediaItems: [PhotosPickerItem] = []
     @State private var selectedMediaSelection: ProductMediaDetailSelection?
+    @State private var pendingImageCropItems: [ProductImageCropItem] = []
+    @State private var activeImageCropItem: ProductImageCropItem?
     @State private var isImportingMedia = false
 
     var productID: UUID
@@ -155,7 +157,7 @@ private struct ProductDetailView: View {
                     ) {
                         Label("Add Media", systemImage: "plus")
                     }
-                    .disabled(isImportingMedia)
+                    .disabled(isImportingMedia || activeImageCropItem != nil)
                 }
             }
         }
@@ -169,6 +171,18 @@ private struct ProductDetailView: View {
         }
         .sheet(item: $selectedMediaSelection) { selection in
             ProductMediaDetailSheet(assetID: selection.id)
+        }
+        .sheet(item: $activeImageCropItem) { item in
+            ProductImageCropSheet(
+                item: item,
+                importAction: { data, contentType in
+                    try await appModel.addProductMedia(data: data, contentType: contentType, productIDs: [productID])
+                }
+            )
+        }
+        .onChange(of: activeImageCropItem) { _, newItem in
+            guard newItem == nil else { return }
+            presentNextImageCrop()
         }
     }
 
@@ -218,12 +232,22 @@ private struct ProductDetailView: View {
                     guard let image = try await item.loadTransferable(type: ProductImageTransfer.self) else {
                         throw ProductMediaImportError.missingData
                     }
-                    try await appModel.addProductMedia(fileURL: image.fileURL, contentType: contentType, productIDs: [productID])
+                    enqueueImageCrop(ProductImageCropItem(fileURL: image.fileURL, contentType: contentType))
                 }
             } catch {
                 appModel.lastErrorMessage = error.localizedDescription
             }
         }
+    }
+
+    private func enqueueImageCrop(_ item: ProductImageCropItem) {
+        pendingImageCropItems.append(item)
+        presentNextImageCrop()
+    }
+
+    private func presentNextImageCrop() {
+        guard activeImageCropItem == nil, !pendingImageCropItems.isEmpty else { return }
+        activeImageCropItem = pendingImageCropItems.removeFirst()
     }
 }
 

@@ -250,9 +250,14 @@ final class FlickTests: XCTestCase {
             mediaStorageFactory: { _ in mediaStorage }
         )
         let product = try await model.createProduct(name: "Flick Pro", summary: "Launch assets")
+        #if canImport(UIKit)
+        let imageData = makeTestJPEGData(width: 72, height: 128)
+        #else
+        let imageData = Data([0xFF, 0xD8, 0xFF])
+        #endif
 
         try await model.addProductMedia(
-            data: Data([0xFF, 0xD8, 0xFF]),
+            data: imageData,
             contentType: .jpeg,
             productIDs: [product.id]
         )
@@ -266,6 +271,10 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(asset.publicURL, URL(string: "https://media.example.com/\(uploadedPath)"))
         XCTAssertEqual(mediaStorage.uploadedContentTypes, ["image/jpeg"])
         XCTAssertEqual(uploadedPath.hasPrefix("product-media/\(product.id.uuidString)/"), true)
+        #if canImport(UIKit)
+        XCTAssertEqual(asset.width, 72)
+        XCTAssertEqual(asset.height, 128)
+        #endif
         XCTAssertEqual(repository.state.assets.first?.productIDs, [product.id])
         XCTAssertEqual(repository.state.assets.first?.publicURL, asset.publicURL)
     }
@@ -1470,6 +1479,27 @@ final class FlickTests: XCTestCase {
         #endif
     }
 
+    func testProductImageCropRendererWritesGeneratedSlideSizedJPEG() throws {
+        #if canImport(UIKit)
+        let sourceImage = makeTestImage(width: 300, height: 120)
+        var cropState = ProductImageCropState()
+        cropState.center = CGPoint(x: 0.42, y: 0.5)
+        cropState.zoom = 1.25
+
+        let data = try ProductImageCropRenderer.jpegData(
+            image: sourceImage,
+            cropState: cropState,
+            targetPixelSize: ProductImageCropSheet.generatedSlideTargetPixelSize
+        )
+        let imageSource = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
+        let decodedImage = try XCTUnwrap(CGImageSourceCreateImageAtIndex(imageSource, 0, nil))
+
+        XCTAssertEqual(decodedImage.width, SlideshowImageGenerationSettings.draft.width)
+        XCTAssertEqual(decodedImage.height, SlideshowImageGenerationSettings.draft.height)
+        XCTAssertEqual(Array(data.prefix(3)), [0xFF, 0xD8, 0xFF])
+        #endif
+    }
+
     func testSlideshowImageGenerationSettingsRejectHorizontalAssets() {
         let verticalAsset = makeMediaAsset(width: 1024, height: 1536)
         let horizontalAsset = makeMediaAsset(width: 2560, height: 1440)
@@ -1983,6 +2013,27 @@ private final class InMemoryFlickRepository: FlickRepository {
         state.assets.removeAll { $0.id == id }
     }
 }
+
+#if canImport(UIKit)
+private func makeTestImage(width: Int, height: Int) -> UIImage {
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    format.opaque = true
+
+    let size = CGSize(width: CGFloat(width), height: CGFloat(height))
+    return UIGraphicsImageRenderer(size: size, format: format).image { context in
+        UIColor.systemBlue.setFill()
+        context.fill(CGRect(origin: .zero, size: size))
+        UIColor.systemOrange.setFill()
+        context.fill(CGRect(x: 0, y: 0, width: CGFloat(width) / 2, height: CGFloat(height)))
+    }
+}
+
+private func makeTestJPEGData(width: Int, height: Int) -> Data {
+    let image = makeTestImage(width: width, height: height)
+    return image.jpegData(compressionQuality: 0.92) ?? Data()
+}
+#endif
 
 @MainActor
 private enum LiveAppModelTestCache {
