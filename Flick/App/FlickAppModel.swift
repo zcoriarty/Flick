@@ -82,20 +82,29 @@ final class FlickAppModel {
     @ObservationIgnored private let tiktokLoginKitClient = TikTokLoginKitClient()
     @ObservationIgnored private let localMediaLibrary = LocalMediaLibrary(directoryName: "ProductMedia")
     @ObservationIgnored private let generatedImageLibrary = LocalMediaLibrary(directoryName: "GeneratedImages")
+    @ObservationIgnored private let publishedPostNotificationPublisher: any PublishedPostNotificationPublishing
     @ObservationIgnored private let openAIClientFactory: @MainActor ([String: String]) -> OpenAIClient
     @ObservationIgnored private let mediaStorageFactory: @MainActor ([String: String]) -> any MediaStorageProviding
     @ObservationIgnored private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.orion.Flick", category: "Publishing")
     @ObservationIgnored private var isRefreshing = false
     @ObservationIgnored private var isRefreshPending = false
+    @ObservationIgnored private var tikTokStatusRefreshCooldownsByJobID: [UUID: Date] = [:]
+    @ObservationIgnored private var tikTokStatusRefreshCooldownsByAccountID: [UUID: Date] = [:]
+    @ObservationIgnored private var tikTokNextPublishAllowedAtByAccountID: [UUID: Date] = [:]
+    @ObservationIgnored private let tikTokPendingInboxStatusRefreshInterval: TimeInterval = 15 * 60
+    @ObservationIgnored private let tikTokStatusRateLimitCooldown: TimeInterval = 15 * 60
+    @ObservationIgnored private let tikTokPublishRequestSpacing: TimeInterval = 12
 
     init(
         repository: FlickRepository,
         configuration: AppConfiguration,
+        publishedPostNotificationPublisher: (any PublishedPostNotificationPublishing)? = nil,
         openAIClientFactory: @escaping @MainActor ([String: String]) -> OpenAIClient = { OpenAIClient(credentials: $0) },
         mediaStorageFactory: @escaping @MainActor ([String: String]) -> any MediaStorageProviding = { R2StorageService(credentials: $0) }
     ) {
         self.repository = repository
         self.configuration = configuration
+        self.publishedPostNotificationPublisher = publishedPostNotificationPublisher ?? CloudKitPublishedPostNotificationPublisher.live
         self.openAIClientFactory = openAIClientFactory
         self.mediaStorageFactory = mediaStorageFactory
         self.overview = FlickEmptyState.make()
@@ -178,6 +187,7 @@ final class FlickAppModel {
             applyConnectedAccounts()
             applyCredentialHealth()
             overview.refreshDerivedState()
+            let publishedPostIDsBeforeDerivedUpdates = currentPublishedPostIDs()
             let didUpdateTikTokStatuses = await refreshTikTokPublishStatuses()
             let didReconcilePublishedPosts = reconcilePublishedPostsFromCompletedJobs()
             clearActiveCreateDraftIfUnavailable()
@@ -185,6 +195,7 @@ final class FlickAppModel {
             if reconcileCompletedSlideImages() || didUpdateTikTokStatuses || didReconcilePublishedPosts || didPruneProgresses {
                 overview.refreshDerivedState()
                 try await repository.saveOverview(overview)
+                await publishNotificationsForNewPosts(since: publishedPostIDsBeforeDerivedUpdates)
             }
             lastErrorMessage = nil
         } catch {
@@ -1092,6 +1103,8 @@ final class FlickAppModel {
                 warnings: []
             )
             let adapter = TikTokAdapter(configuration: configuration.tiktok)
+            try await waitForTikTokPublishRequestWindow(accountID: account.id)
+            reserveTikTokPublishRequestWindow(accountID: account.id)
             let result = try await adapter.publish(job, account: account, media: media, settings: settings)
             let publishStepDetail = settings.postAsDraft
                 ? tikTokDraftUploadDetail(for: result)
@@ -1112,6 +1125,7 @@ final class FlickAppModel {
                 detail: recordStepDetail
             )
             startPublishStep(ManualPublishProgressStepID.recordResult, detail: recordStepDetail)
+            let publishedPostIDsBeforeRecording = currentPublishedPostIDs()
             if settings.postAsDraft {
                 completeDraftUploadJob(job.id, result: result)
             } else {
@@ -1119,6 +1133,10 @@ final class FlickAppModel {
             }
             overview.refreshDerivedState()
             try await repository.saveOverview(overview)
+            await publishNotificationsForNewPosts(since: publishedPostIDsBeforeRecording)
+            if settings.postAsDraft {
+                await publishDraftUploadNotificationIfNeeded(jobID: job.id, result: result)
+            }
             let recordCompletionDetail = settings.postAsDraft
                 ? "TikTok draft saved. Open TikTok's inbox notification to edit, save, or post."
                 : "Publish status saved."
@@ -1135,6 +1153,15 @@ final class FlickAppModel {
             return true
         } catch {
             if let activeJobID {
+                if
+                    isTikTokRateLimit(error),
+                    let accountID = overview.publishingJobs.first(where: { $0.id == activeJobID })?.accountID
+                {
+                    deferTikTokPublishRequests(
+                        forAccountID: accountID,
+                        until: Date().addingTimeInterval(tikTokStatusRateLimitCooldown)
+                    )
+                }
                 failPublishingJob(activeJobID, error: error)
                 try? await repository.saveOverview(overview)
             }
@@ -2194,11 +2221,57 @@ private extension FlickAppModel {
         }
     }
 
-    func refreshTikTokPublishStatuses() async -> Bool {
+    private func currentPublishedPostIDs() -> Set<UUID> {
+        Set(overview.publishedPosts.map(\.id))
+    }
+
+    private func publishNotificationsForNewPosts(since existingPostIDs: Set<UUID>) async {
+        #if os(macOS) || targetEnvironment(macCatalyst)
+        let newPosts = overview.publishedPosts.filter { !existingPostIDs.contains($0.id) }
+        guard !newPosts.isEmpty else { return }
+
+        let accountsByID = Dictionary(uniqueKeysWithValues: overview.accounts.map { ($0.id, $0) })
+        let draftsByID = Dictionary(uniqueKeysWithValues: overview.drafts.map { ($0.id, $0) })
+
+        for post in newPosts {
+            await publishedPostNotificationPublisher.publishNotification(
+                for: post,
+                account: accountsByID[post.accountID],
+                draft: draftsByID[post.draftID]
+            )
+        }
+        #else
+        _ = existingPostIDs
+        #endif
+    }
+
+    private func publishDraftUploadNotificationIfNeeded(jobID: UUID, result: PublishResult) async {
+        #if os(macOS) || targetEnvironment(macCatalyst)
+        guard
+            let job = overview.publishingJobs.first(where: { $0.id == jobID }),
+            job.status == .awaitingUserCompletion
+        else {
+            return
+        }
+
+        let account = overview.accounts.first { $0.id == job.accountID }
+        let draft = overview.drafts.first { $0.id == job.draftID }
+        await publishedPostNotificationPublisher.publishDraftUploadNotification(
+            for: job,
+            account: account,
+            draft: draft,
+            result: result
+        )
+        #else
+        _ = jobID
+        _ = result
+        #endif
+    }
+
+    func refreshTikTokPublishStatuses(now: Date = Date()) async -> Bool {
+        pruneExpiredTikTokRefreshCooldowns(now: now)
         let awaitingJobs = overview.publishingJobs.filter { job in
-            job.platform == .tiktok
-                && job.status == .awaitingUserCompletion
-                && job.platformPublishID != nil
+            isTikTokStatusRefreshDue(for: job, now: now)
         }
         guard !awaitingJobs.isEmpty else { return false }
 
@@ -2207,6 +2280,10 @@ private extension FlickAppModel {
         var didChange = false
 
         for job in awaitingJobs {
+            let requestStartedAt = Date()
+            guard isTikTokStatusRefreshDue(for: job, now: requestStartedAt) else {
+                continue
+            }
             guard
                 let publishID = job.platformPublishID,
                 let account = accountsByID[job.accountID]
@@ -2219,16 +2296,97 @@ private extension FlickAppModel {
                     publishID: publishID,
                     account: account
                 )
-                didChange = applyTikTokPublishStatus(status, to: job.id) || didChange
+                let didApplyStatus = applyTikTokPublishStatus(status, to: job.id)
+                didChange = didApplyStatus || didChange
+                if !status.isPublishComplete && !status.isFailed {
+                    deferTikTokStatusRefresh(
+                        forJobID: job.id,
+                        until: Date().addingTimeInterval(tikTokPendingInboxStatusRefreshInterval)
+                    )
+                }
             } catch {
                 logger.error("TikTok publish status refresh failed jobID=\(job.id.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+                let retryAfter = Date().addingTimeInterval(tikTokStatusRefreshCooldown(for: error))
+                deferTikTokStatusRefresh(forJobID: job.id, until: retryAfter)
+                if isTikTokRateLimit(error) {
+                    deferTikTokStatusRefreshes(forAccountID: job.accountID, until: retryAfter)
+                }
             }
         }
 
         return didChange
     }
 
+    private func isTikTokStatusRefreshDue(for job: PublishingJob, now: Date) -> Bool {
+        guard job.platform == .tiktok, job.status == .awaitingUserCompletion else { return false }
+        guard job.platformPublishID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else { return false }
+        if let accountCooldown = tikTokStatusRefreshCooldownsByAccountID[job.accountID], accountCooldown > now {
+            return false
+        }
+        if let jobCooldown = tikTokStatusRefreshCooldownsByJobID[job.id], jobCooldown > now {
+            return false
+        }
+        return now.timeIntervalSince(job.updatedAt) >= tikTokPendingInboxStatusRefreshInterval
+    }
+
+    private func tikTokStatusRefreshCooldown(for error: Error) -> TimeInterval {
+        isTikTokRateLimit(error) ? tikTokStatusRateLimitCooldown : tikTokPendingInboxStatusRefreshInterval
+    }
+
+    private func deferTikTokStatusRefresh(forJobID jobID: UUID, until date: Date) {
+        if let existingDate = tikTokStatusRefreshCooldownsByJobID[jobID], existingDate > date {
+            return
+        }
+        tikTokStatusRefreshCooldownsByJobID[jobID] = date
+    }
+
+    private func deferTikTokStatusRefreshes(forAccountID accountID: UUID, until date: Date) {
+        if let existingDate = tikTokStatusRefreshCooldownsByAccountID[accountID], existingDate > date {
+            return
+        }
+        tikTokStatusRefreshCooldownsByAccountID[accountID] = date
+    }
+
+    private func pruneExpiredTikTokRefreshCooldowns(now: Date) {
+        tikTokStatusRefreshCooldownsByJobID = tikTokStatusRefreshCooldownsByJobID.filter { $0.value > now }
+        tikTokStatusRefreshCooldownsByAccountID = tikTokStatusRefreshCooldownsByAccountID.filter { $0.value > now }
+        tikTokNextPublishAllowedAtByAccountID = tikTokNextPublishAllowedAtByAccountID.filter { $0.value > now }
+    }
+
+    private func waitForTikTokPublishRequestWindow(accountID: UUID) async throws {
+        let now = Date()
+        pruneExpiredTikTokRefreshCooldowns(now: now)
+        guard let nextAllowedAt = tikTokNextPublishAllowedAtByAccountID[accountID] else { return }
+        let delay = nextAllowedAt.timeIntervalSince(now)
+        guard delay > 0 else {
+            tikTokNextPublishAllowedAtByAccountID[accountID] = nil
+            return
+        }
+
+        let nanoseconds = UInt64(delay * 1_000_000_000)
+        try await Task.sleep(nanoseconds: nanoseconds)
+    }
+
+    private func reserveTikTokPublishRequestWindow(accountID: UUID) {
+        deferTikTokPublishRequests(
+            forAccountID: accountID,
+            until: Date().addingTimeInterval(tikTokPublishRequestSpacing)
+        )
+    }
+
+    private func deferTikTokPublishRequests(forAccountID accountID: UUID, until date: Date) {
+        if let existingDate = tikTokNextPublishAllowedAtByAccountID[accountID], existingDate > date {
+            return
+        }
+        tikTokNextPublishAllowedAtByAccountID[accountID] = date
+    }
+
+    private func isTikTokRateLimit(_ error: Error) -> Bool {
+        (error as? TikTokPublishAPIError)?.code == "rate_limit_exceeded"
+    }
+
     func refreshAndPersistTikTokPublishStatuses() async {
+        let publishedPostIDsBeforeRefresh = currentPublishedPostIDs()
         let didUpdateTikTokStatuses = await refreshTikTokPublishStatuses()
         let didReconcilePublishedPosts = reconcilePublishedPostsFromCompletedJobs()
         guard didUpdateTikTokStatuses || didReconcilePublishedPosts else { return }
@@ -2236,6 +2394,7 @@ private extension FlickAppModel {
         do {
             overview.refreshDerivedState()
             try await repository.saveOverview(overview)
+            await publishNotificationsForNewPosts(since: publishedPostIDsBeforeRefresh)
             lastErrorMessage = nil
         } catch {
             lastErrorMessage = error.localizedDescription
@@ -2303,6 +2462,10 @@ private extension FlickAppModel {
         overview.publishingJobs[jobIndex].platformPublishID = result.platformPostID
         overview.publishingJobs[jobIndex].lastError = nil
         overview.publishingJobs[jobIndex].updatedAt = Date()
+        deferTikTokStatusRefresh(
+            forJobID: jobID,
+            until: Date().addingTimeInterval(tikTokPendingInboxStatusRefreshInterval)
+        )
     }
 
     @discardableResult
@@ -2435,6 +2598,8 @@ private extension FlickAppModel {
             "TikTok draft upload ID \(result.platformPostID). TikTok reports this draft was posted."
         case "PROCESSING_DOWNLOAD", "PROCESSING_UPLOAD":
             "TikTok draft upload ID \(result.platformPostID). TikTok is still preparing the draft."
+        case nil:
+            "TikTok accepted draft upload ID \(result.platformPostID). Check TikTok's inbox shortly."
         default:
             "TikTok draft upload ID \(result.platformPostID). Open TikTok's inbox notification to finish."
         }

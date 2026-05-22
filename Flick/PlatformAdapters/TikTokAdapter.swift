@@ -173,12 +173,22 @@ struct TikTokAdapter: SocialPlatformAdapter {
         logger.info("TikTok photo publish initialized jobID=\(job.id.uuidString, privacy: .public) publishID=\(publishID, privacy: .public)")
         let statusSnapshot: TikTokPublishStatusSnapshot?
         if settings.tikTokPostMode == .mediaUpload {
-            statusSnapshot = try await waitForDraftUploadStatus(
-                publishID: publishID,
-                accessToken: tokenBundle.accessToken,
-                initialRawResponse: rawResponse,
-                mediaPreflightSummary: mediaPreflightSummary
-            )
+            do {
+                statusSnapshot = try await waitForDraftUploadStatus(
+                    publishID: publishID,
+                    accessToken: tokenBundle.accessToken,
+                    initialRawResponse: rawResponse,
+                    mediaPreflightSummary: mediaPreflightSummary
+                )
+            } catch let error as TikTokPublishAPIError where error.code == "rate_limit_exceeded" {
+                logger.info("TikTok draft upload status fetch rate-limited after initialization publishID=\(publishID, privacy: .public)")
+                statusSnapshot = TikTokPublishStatusSnapshot(
+                    data: nil,
+                    rawResponse: "",
+                    combinedRawResponse: error.rawResponse,
+                    logID: nil
+                )
+            }
         } else {
             statusSnapshot = nil
         }
@@ -714,6 +724,21 @@ private struct TikTokPhotoSourceInfo: Encodable {
 private struct TikTokContentInitResponse: Decodable {
     var data: TikTokContentInitData?
     var error: TikTokAPIErrorEnvelope
+
+    private enum CodingKeys: String, CodingKey {
+        case data
+        case error
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        error = try container.decode(TikTokAPIErrorEnvelope.self, forKey: .error)
+        if error.code == "ok" {
+            data = try container.decodeIfPresent(TikTokContentInitData.self, forKey: .data)
+        } else {
+            data = nil
+        }
+    }
 }
 
 private struct TikTokContentInitData: Decodable {
@@ -735,6 +760,21 @@ private struct TikTokPublishStatusRequest: Encodable {
 private struct TikTokPublishStatusResponse: Decodable {
     var data: TikTokPublishStatusData?
     var error: TikTokAPIErrorEnvelope
+
+    private enum CodingKeys: String, CodingKey {
+        case data
+        case error
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        error = try container.decode(TikTokAPIErrorEnvelope.self, forKey: .error)
+        if error.code == "ok" {
+            data = try container.decodeIfPresent(TikTokPublishStatusData.self, forKey: .data)
+        } else {
+            data = nil
+        }
+    }
 }
 
 private struct TikTokPublishStatusData: Decodable, Hashable {

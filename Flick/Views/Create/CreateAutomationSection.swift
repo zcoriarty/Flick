@@ -22,22 +22,29 @@ struct CreateAutomationSection: View {
 
             if isAutomated {
                 AutomationWeekdayPicker(weekdays: $schedule.weekdays)
+                AutomationCadenceModePicker(selection: cadenceKindBinding)
 
-                ForEach(schedule.fixedTimes.indices, id: \.self) { index in
-                    AutomationTimeRow(
-                        index: index,
-                        time: fixedTimeBinding(at: index),
-                        canRemove: schedule.fixedTimes.count > 1,
-                        removeAction: { removeTime(at: index) }
-                    )
-                }
+                switch schedule.cadence.kind {
+                case .slots:
+                    ForEach(schedule.postSlots.indices, id: \.self) { index in
+                        AutomationSlotRow(
+                            index: index,
+                            slot: slotBinding(at: index),
+                            canRemove: schedule.postSlots.count > 1,
+                            removeAction: { removeSlot(at: index) }
+                        )
+                    }
 
-                if schedule.fixedTimes.count < AutomationSchedule.maximumPostsPerDay {
-                    AddAutomationTimeRow(action: addTime)
+                    if schedule.postSlots.count < AutomationSchedule.maximumPostsPerDay {
+                        AddAutomationSlotRow(action: addSlot)
+                    }
+                case .interval:
+                    AutomationIntervalRow(interval: intervalBinding)
                 }
             }
         }
         .animation(.snappy, value: isAutomated)
+        .animation(.snappy, value: schedule.cadence.kind)
     }
 
     private var animatedAutomationBinding: Binding<Bool> {
@@ -51,28 +58,63 @@ struct CreateAutomationSection: View {
         )
     }
 
-    private func fixedTimeBinding(at index: Int) -> Binding<AutomationTimeOfDay> {
+    private var cadenceKindBinding: Binding<AutomationScheduleCadence.Kind> {
         Binding(
-            get: {
-                var copy = schedule
-                copy.reconcileFixedTimes()
-                return copy.fixedTimes[min(index, copy.fixedTimes.count - 1)]
-            },
+            get: { schedule.cadence.kind },
             set: { newValue in
-                schedule.reconcileFixedTimes()
-                guard schedule.fixedTimes.indices.contains(index) else { return }
-                schedule.fixedTimes[index] = newValue
-                schedule.fixedTimes = schedule.fixedTimes.sorted()
+                withAnimation(.snappy) {
+                    schedule.setCadenceKind(newValue)
+                }
             }
         )
     }
 
-    private func addTime() {
-        schedule.addTime()
+    private var intervalBinding: Binding<AutomationIntervalCadence> {
+        Binding(
+            get: { schedule.intervalCadence },
+            set: { schedule.intervalCadence = $0 }
+        )
     }
 
-    private func removeTime(at index: Int) {
-        schedule.removeTime(at: index)
+    private func slotBinding(at index: Int) -> Binding<AutomationScheduleSlot> {
+        Binding(
+            get: {
+                var copy = schedule
+                copy.reconcileCadence()
+                let slots = copy.postSlots
+                guard slots.indices.contains(index) else { return .random }
+                return slots[index]
+            },
+            set: { newValue in
+                schedule.reconcileCadence()
+                guard schedule.postSlots.indices.contains(index) else { return }
+                var slots = schedule.postSlots
+                slots[index] = newValue
+                schedule.postSlots = slots
+            }
+        )
+    }
+
+    private func addSlot() {
+        schedule.addSlot()
+    }
+
+    private func removeSlot(at index: Int) {
+        schedule.removeSlot(at: index)
+    }
+}
+
+private struct AutomationCadenceModePicker: View {
+    @Binding var selection: AutomationScheduleCadence.Kind
+
+    var body: some View {
+        Picker("Cadence", selection: $selection) {
+            ForEach(AutomationScheduleCadence.Kind.allCases) { kind in
+                Text(kind.displayName).tag(kind)
+            }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityLabel("Cadence")
     }
 }
 
@@ -150,19 +192,19 @@ private struct AutomationWeekdaySegment: View {
     }
 }
 
-private struct AutomationTimeRow: View {
+private struct AutomationSlotRow: View {
     var index: Int
-    @Binding var time: AutomationTimeOfDay
+    @Binding var slot: AutomationScheduleSlot
     var canRemove: Bool
     var removeAction: () -> Void
 
     private var dateBinding: Binding<Date> {
         Binding(
             get: {
-                time.date(on: Date()) ?? Date()
+                slot.time?.date(on: Date()) ?? Date()
             },
             set: { newValue in
-                time = AutomationTimeOfDay(date: newValue)
+                slot.time = AutomationTimeOfDay(date: newValue)
             }
         )
     }
@@ -170,32 +212,104 @@ private struct AutomationTimeRow: View {
     var body: some View {
         FlickSettingsRow(
             title: "Post \(index + 1)",
-            systemImage: "clock",
-            iconColor: .orange
+            systemImage: slot.time == nil ? "shuffle" : "clock",
+            iconColor: slot.time == nil ? .blue : .orange
         ) {
             HStack(spacing: 8) {
-                DatePicker("Post \(index + 1)", selection: dateBinding, displayedComponents: .hourAndMinute)
-                    .labelsHidden()
+                if slot.time == nil {
+                    Button {
+                        slot.time = AutomationTimeOfDay(date: Date())
+                    } label: {
+                        Label("Random", systemImage: "shuffle")
+                    }
+                    .labelStyle(.titleAndIcon)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Post \(index + 1) random time. Set fixed time.")
+                } else {
+                    DatePicker("Post \(index + 1)", selection: dateBinding, displayedComponents: .hourAndMinute)
+                        .labelsHidden()
+
+                    Button("Use random time", systemImage: "shuffle") {
+                        slot.time = nil
+                    }
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(.secondary)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Use random time for post \(index + 1)")
+                }
 
                 if canRemove {
-                    Button("Remove time", systemImage: "minus.circle", action: removeAction)
+                    Button("Remove post", systemImage: "minus.circle", action: removeAction)
                         .labelStyle(.iconOnly)
                         .foregroundStyle(.secondary)
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Remove post \(index + 1) time")
+                        .accessibilityLabel("Remove post \(index + 1)")
                 }
             }
         }
     }
 }
 
-private struct AddAutomationTimeRow: View {
+private struct AutomationIntervalRow: View {
+    @Binding var interval: AutomationIntervalCadence
+
+    private var valueBinding: Binding<Int> {
+        Binding(
+            get: { interval.value },
+            set: { newValue in
+                interval.value = newValue
+                interval.normalize()
+            }
+        )
+    }
+
+    private var unitBinding: Binding<AutomationIntervalUnit> {
+        Binding(
+            get: { interval.unit },
+            set: { newValue in
+                interval.unit = newValue
+                interval.normalize()
+            }
+        )
+    }
+
+    var body: some View {
+        FlickSettingsRow(
+            title: "Repeat",
+            systemImage: "repeat",
+            iconColor: .teal
+        ) {
+            HStack(spacing: 10) {
+                Stepper(value: valueBinding, in: interval.unit.valueRange, step: interval.unit.valueStep) {
+                    Text("\(interval.value)")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 28, alignment: .trailing)
+                }
+                .fixedSize()
+
+                Picker("Unit", selection: unitBinding) {
+                    ForEach(AutomationIntervalUnit.allCases) { unit in
+                        Text(unit.shortName).tag(unit)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 104)
+            }
+            .controlSize(.small)
+        }
+    }
+}
+
+private struct AddAutomationSlotRow: View {
     var action: () -> Void
 
     var body: some View {
         Button(action: action) {
             FlickSettingsRow(
-                title: "Add time",
+                title: "Add post",
                 systemImage: "plus.circle",
                 iconColor: FlickStyle.appTint
             )

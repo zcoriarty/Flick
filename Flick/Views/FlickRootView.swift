@@ -78,6 +78,11 @@ struct FlickRootView: View {
         .task {
             await appModel.refreshOnCloudKitStoreChanges()
         }
+        #if os(iOS) && !targetEnvironment(macCatalyst)
+        .task {
+            await PublishedPostNotificationRegistrationService.shared.configure()
+        }
+        #endif
         .task {
             await appModel.runTikTokPublishStatusRefreshLoop()
         }

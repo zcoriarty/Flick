@@ -365,6 +365,69 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(schedule.nextOccurrence(after: reference, automationID: automationID, calendar: calendar), expected)
     }
 
+    func testAutomationScheduleDefaultsToRandomSlot() throws {
+        let automationID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let calendar = Calendar(identifier: .gregorian)
+        let schedule = AutomationSchedule.default
+        let reference = try XCTUnwrap(DateComponents(calendar: calendar, year: 2026, month: 5, day: 18).date)
+
+        let firstOccurrence = try XCTUnwrap(schedule.nextOccurrence(after: reference, automationID: automationID, calendar: calendar))
+        let secondOccurrence = try XCTUnwrap(schedule.nextOccurrence(after: reference, automationID: automationID, calendar: calendar))
+
+        XCTAssertEqual(schedule.postsPerDay, 1)
+        XCTAssertTrue(schedule.fixedTimes.isEmpty)
+        XCTAssertEqual(schedule.summary(calendar: calendar), "Weekdays - 1 post - Random time")
+        XCTAssertEqual(firstOccurrence, secondOccurrence)
+        XCTAssertGreaterThan(firstOccurrence, reference)
+    }
+
+    func testAutomationScheduleAddsRandomSlots() {
+        var schedule = AutomationSchedule.default
+
+        schedule.addSlot()
+
+        XCTAssertEqual(schedule.postsPerDay, 2)
+        XCTAssertTrue(schedule.postSlots.allSatisfy { $0.time == nil })
+        XCTAssertEqual(schedule.summary(), "Weekdays - 2 posts - Random times")
+    }
+
+    func testAutomationScheduleFindsNextIntervalOccurrence() throws {
+        let automationID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let calendar = Calendar(identifier: .gregorian)
+        let schedule = AutomationSchedule(
+            weekdays: [.monday],
+            cadence: .interval(AutomationIntervalCadence(value: 2, unit: .hours))
+        )
+        let reference = try XCTUnwrap(DateComponents(calendar: calendar, year: 2026, month: 5, day: 18, hour: 10).date)
+        let expected = try XCTUnwrap(DateComponents(calendar: calendar, year: 2026, month: 5, day: 18, hour: 12).date)
+
+        XCTAssertEqual(schedule.nextOccurrence(after: reference, automationID: automationID, calendar: calendar), expected)
+        XCTAssertEqual(schedule.summary(calendar: calendar), "M - Every 2 hours")
+    }
+
+    func testAutomationScheduleDecodesLegacyFixedTimes() throws {
+        let data = Data("""
+        {
+            "weekdays": [2, 4],
+            "fixedTimes": [
+                { "hour": 9, "minute": 0 },
+                { "hour": 15, "minute": 30 }
+            ]
+        }
+        """.utf8)
+
+        let schedule = try JSONDecoder().decode(AutomationSchedule.self, from: data)
+
+        XCTAssertEqual(schedule.postsPerDay, 2)
+        XCTAssertEqual(
+            schedule.fixedTimes,
+            [
+                AutomationTimeOfDay(hour: 9),
+                AutomationTimeOfDay(hour: 15, minute: 30)
+            ]
+        )
+    }
+
     func testAutomationDefaultNameUsesSelectedFields() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let product = makeProduct(name: "Flick Pro", now: now)
@@ -1317,6 +1380,202 @@ final class FlickTests: XCTestCase {
         XCTAssertFalse(body.contains("disable_comment"))
         XCTAssertFalse(body.contains("brand_content_toggle"))
         XCTAssertFalse(body.contains("brand_organic_toggle"))
+    }
+
+    func testTikTokAdapterSurfacesStatusRateLimitError() async throws {
+        let secretStore = MemorySecretStore()
+        let account = LoginKitAccountMapper.connectedAccount(
+            from: LoginKitAuthorizedUser(
+                platform: .tiktok,
+                openID: "real-open-id",
+                displayName: "@realaccount",
+                avatarURL: nil,
+                scopes: ["user.info.basic", "video.upload"]
+            )
+        )
+        let tokenBundle = LoginKitTokenBundle(
+            platform: .tiktok,
+            platformUserID: account.platformUserID,
+            accessToken: "valid-access-token",
+            refreshToken: "refresh-token",
+            tokenType: "Bearer",
+            scopes: account.scopes,
+            accessTokenExpiresAt: Date(timeIntervalSinceNow: 3_600),
+            refreshTokenExpiresAt: Date(timeIntervalSinceNow: 86_400),
+            updatedAt: Date()
+        )
+        try LoginKitTokenStore(store: secretStore).save(tokenBundle, for: account)
+
+        CapturingURLProtocol.requestHandler = { request in
+            switch request.url?.path.removingTrailingSlash {
+            case "/v2/post/publish/status/fetch":
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: nil)!,
+                    Data(
+                        """
+                        {
+                            "data": {},
+                            "error": {
+                                "code": "rate_limit_exceeded",
+                                "message": "The API rate limit exceeded. Please try again later.",
+                                "log_id": "status-rate-limit-log"
+                            }
+                        }
+                        """.utf8
+                    )
+                )
+            default:
+                XCTFail("Unexpected request URL: \(request.url?.absoluteString ?? "nil")")
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!,
+                    Data()
+                )
+            }
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CapturingURLProtocol.self]
+        let adapter = TikTokAdapter(
+            configuration: TikTokConfiguration(values: ["TIKTOK_CLIENT_ID": "client-key"]),
+            tokenStore: secretStore,
+            urlSession: URLSession(configuration: configuration)
+        )
+
+        do {
+            _ = try await adapter.fetchPublishStatus(
+                publishID: "p_inbox_url~v2.123",
+                account: account
+            )
+            XCTFail("Expected TikTok rate limit error.")
+        } catch let error as TikTokPublishAPIError {
+            XCTAssertEqual(error.code, "rate_limit_exceeded")
+            XCTAssertTrue(error.rawResponse.contains("status-rate-limit-log"))
+        }
+    }
+
+    func testTikTokAdapterKeepsInitializedDraftUploadWhenStatusFetchRateLimited() async throws {
+        let secretStore = MemorySecretStore()
+        let account = LoginKitAccountMapper.connectedAccount(
+            from: LoginKitAuthorizedUser(
+                platform: .tiktok,
+                openID: "real-open-id",
+                displayName: "@realaccount",
+                avatarURL: nil,
+                scopes: ["user.info.basic", "video.upload"]
+            )
+        )
+        let tokenBundle = LoginKitTokenBundle(
+            platform: .tiktok,
+            platformUserID: account.platformUserID,
+            accessToken: "valid-access-token",
+            refreshToken: "refresh-token",
+            tokenType: "Bearer",
+            scopes: account.scopes,
+            accessTokenExpiresAt: Date(timeIntervalSinceNow: 3_600),
+            refreshTokenExpiresAt: Date(timeIntervalSinceNow: 86_400),
+            updatedAt: Date()
+        )
+        try LoginKitTokenStore(store: secretStore).save(tokenBundle, for: account)
+
+        CapturingURLProtocol.requestHandler = { request in
+            switch request.url?.path.removingTrailingSlash {
+            case "/rendered-slide.jpg":
+                XCTAssertEqual(request.httpMethod, "HEAD")
+                return (
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: [
+                            "Content-Type": "image/jpeg",
+                            "Content-Length": "1024"
+                        ]
+                    )!,
+                    Data()
+                )
+            case "/v2/post/publish/content/init":
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data(
+                        """
+                        {
+                            "data": {
+                                "publish_id": "p_inbox_url~v2.123"
+                            },
+                            "error": {
+                                "code": "ok",
+                                "message": "",
+                                "log_id": "log-123"
+                            }
+                        }
+                        """.utf8
+                    )
+                )
+            case "/v2/post/publish/status/fetch":
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: nil)!,
+                    Data(
+                        """
+                        {
+                            "data": {},
+                            "error": {
+                                "code": "rate_limit_exceeded",
+                                "message": "The API rate limit exceeded. Please try again later.",
+                                "log_id": "status-rate-limit-log"
+                            }
+                        }
+                        """.utf8
+                    )
+                )
+            default:
+                XCTFail("Unexpected request URL: \(request.url?.absoluteString ?? "nil")")
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!,
+                    Data()
+                )
+            }
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CapturingURLProtocol.self]
+        let adapter = TikTokAdapter(
+            configuration: TikTokConfiguration(values: [
+                "TIKTOK_CLIENT_ID": "client-key",
+                "TIKTOK_VERIFIED_BASE_URL": "https://example.com"
+            ]),
+            tokenStore: secretStore,
+            urlSession: URLSession(configuration: configuration),
+            statusPollIntervalNanoseconds: 0
+        )
+        var job = makePublishingJob()
+        job.accountID = account.id
+
+        let result = try await adapter.publish(
+            job,
+            account: account,
+            media: PreparedPlatformMedia(
+                mode: .photoUploadForCompletion,
+                imageURLs: [try XCTUnwrap(URL(string: "https://example.com/rendered-slide.jpg"))],
+                videoURL: nil,
+                warnings: []
+            ),
+            settings: TikTokManualPublishSettings(
+                title: "Launch",
+                description: "Try Flick",
+                postAsDraft: true,
+                privacyLevel: .selfOnly,
+                allowComment: true,
+                allowDuet: false,
+                allowStitch: false,
+                disclosesVideoContent: false,
+                promotesYourBrand: false,
+                promotesBrandedContent: false
+            )
+        )
+
+        XCTAssertEqual(result.platformPostID, "p_inbox_url~v2.123")
+        XCTAssertNil(result.platformStatus)
+        XCTAssertTrue(result.rawResponse.contains("rate_limit_exceeded"))
     }
 
     func testTikTokAdapterDecodesPublishCompleteStatusWithStringPostIDs() async throws {

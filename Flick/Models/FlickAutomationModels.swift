@@ -103,19 +103,203 @@ struct AutomationTimeOfDay: Codable, Hashable, Identifiable, Comparable {
     }
 }
 
+struct AutomationScheduleSlot: Codable, Hashable {
+    var time: AutomationTimeOfDay?
+
+    init(time: AutomationTimeOfDay? = nil) {
+        self.time = time
+    }
+
+    static var random: AutomationScheduleSlot {
+        AutomationScheduleSlot()
+    }
+}
+
+enum AutomationIntervalUnit: String, CaseIterable, Codable, Identifiable, Hashable {
+    case minutes
+    case hours
+
+    var id: String { rawValue }
+
+    var shortName: String {
+        switch self {
+        case .minutes: "Min"
+        case .hours: "Hr"
+        }
+    }
+
+    var summaryName: String {
+        switch self {
+        case .minutes: "minutes"
+        case .hours: "hours"
+        }
+    }
+
+    var valueRange: ClosedRange<Int> {
+        switch self {
+        case .minutes: 5...720
+        case .hours: 1...24
+        }
+    }
+
+    var valueStep: Int {
+        switch self {
+        case .minutes: 5
+        case .hours: 1
+        }
+    }
+}
+
+struct AutomationIntervalCadence: Codable, Hashable {
+    var value: Int
+    var unit: AutomationIntervalUnit
+
+    init(value: Int = 2, unit: AutomationIntervalUnit = .hours) {
+        self.value = value
+        self.unit = unit
+        normalize()
+    }
+
+    var seconds: TimeInterval {
+        switch unit {
+        case .minutes: TimeInterval(value * 60)
+        case .hours: TimeInterval(value * 60 * 60)
+        }
+    }
+
+    var summary: String {
+        if value == 1 {
+            switch unit {
+            case .minutes: return "Every minute"
+            case .hours: return "Every hour"
+            }
+        }
+
+        return "Every \(value) \(unit.summaryName)"
+    }
+
+    mutating func normalize() {
+        let range = unit.valueRange
+        value = min(max(value, range.lowerBound), range.upperBound)
+
+        if unit == .minutes {
+            let remainder = value % unit.valueStep
+            if remainder != 0 {
+                value += unit.valueStep - remainder
+                value = min(value, range.upperBound)
+            }
+        }
+    }
+}
+
+enum AutomationScheduleCadence: Hashable {
+    enum Kind: String, CaseIterable, Identifiable {
+        case slots
+        case interval
+
+        var id: String { rawValue }
+
+        var displayName: String {
+            switch self {
+            case .slots: "Posts"
+            case .interval: "Every"
+            }
+        }
+    }
+
+    case slots([AutomationScheduleSlot])
+    case interval(AutomationIntervalCadence)
+
+    var kind: Kind {
+        switch self {
+        case .slots: .slots
+        case .interval: .interval
+        }
+    }
+
+    var normalized: AutomationScheduleCadence {
+        switch self {
+        case let .slots(slots):
+            let normalizedSlots = Array(slots.prefix(AutomationSchedule.maximumPostsPerDay))
+            return .slots(normalizedSlots.isEmpty ? [.random] : normalizedSlots)
+        case var .interval(interval):
+            interval.normalize()
+            return .interval(interval)
+        }
+    }
+}
+
+extension AutomationScheduleCadence: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case slots
+        case interval
+    }
+
+    private enum KindValue: String, Codable {
+        case slots
+        case interval
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let kind = try container.decode(KindValue.self, forKey: .kind)
+
+        switch kind {
+        case .slots:
+            let slots = try container.decode([AutomationScheduleSlot].self, forKey: .slots)
+            self = .slots(slots)
+        case .interval:
+            let interval = try container.decode(AutomationIntervalCadence.self, forKey: .interval)
+            self = .interval(interval)
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+
+        switch self {
+        case let .slots(slots):
+            try container.encode(KindValue.slots, forKey: .kind)
+            try container.encode(slots, forKey: .slots)
+        case let .interval(interval):
+            try container.encode(KindValue.interval, forKey: .kind)
+            try container.encode(interval, forKey: .interval)
+        }
+    }
+}
+
 struct AutomationSchedule: Codable, Hashable {
     static let maximumPostsPerDay = 6
 
     var weekdays: [AutomationWeekday]
-    var fixedTimes: [AutomationTimeOfDay]
+    var cadence: AutomationScheduleCadence
 
     init(
         weekdays: [AutomationWeekday] = [.monday, .tuesday, .wednesday, .thursday, .friday],
-        fixedTimes: [AutomationTimeOfDay] = [AutomationTimeOfDay(hour: 12)]
+        fixedTimes: [AutomationTimeOfDay]
     ) {
         self.weekdays = weekdays.uniqued().sorted()
-        self.fixedTimes = fixedTimes.uniqued().sorted()
-        reconcileFixedTimes()
+        cadence = .slots(fixedTimes.uniqued().sorted().map { AutomationScheduleSlot(time: $0) })
+        reconcileCadence()
+    }
+
+    init(
+        weekdays: [AutomationWeekday] = [.monday, .tuesday, .wednesday, .thursday, .friday],
+        slots: [AutomationScheduleSlot] = [.random]
+    ) {
+        self.weekdays = weekdays.uniqued().sorted()
+        cadence = .slots(slots)
+        reconcileCadence()
+    }
+
+    init(
+        weekdays: [AutomationWeekday] = [.monday, .tuesday, .wednesday, .thursday, .friday],
+        cadence: AutomationScheduleCadence
+    ) {
+        self.weekdays = weekdays.uniqued().sorted()
+        self.cadence = cadence
+        reconcileCadence()
     }
 
     static var `default`: AutomationSchedule {
@@ -126,27 +310,152 @@ struct AutomationSchedule: Codable, Hashable {
         weekdays.uniqued().sorted()
     }
 
+    var postSlots: [AutomationScheduleSlot] {
+        get {
+            guard case let .slots(slots) = cadence else { return [] }
+            return slots
+        }
+        set {
+            cadence = .slots(newValue)
+            reconcileCadence()
+        }
+    }
+
+    var intervalCadence: AutomationIntervalCadence {
+        get {
+            guard case let .interval(interval) = cadence else {
+                return AutomationIntervalCadence()
+            }
+            return interval
+        }
+        set {
+            cadence = .interval(newValue)
+            reconcileCadence()
+        }
+    }
+
+    var fixedTimes: [AutomationTimeOfDay] {
+        get {
+            guard case let .slots(slots) = cadence else { return [] }
+            return slots.compactMap(\.time).sorted()
+        }
+        set {
+            cadence = .slots(newValue.uniqued().sorted().map { AutomationScheduleSlot(time: $0) })
+            reconcileCadence()
+        }
+    }
+
     var postsPerDay: Int {
-        fixedTimes.count
+        switch cadence {
+        case let .slots(slots): slots.count
+        case .interval: 0
+        }
     }
 
     var isValid: Bool {
         guard !normalizedWeekdays.isEmpty else { return false }
-        return !fixedTimes.isEmpty && fixedTimes.count <= Self.maximumPostsPerDay
+        switch cadence.normalized {
+        case let .slots(slots):
+            return !slots.isEmpty && slots.count <= Self.maximumPostsPerDay
+        case let .interval(interval):
+            return interval.seconds > 0
+        }
+    }
+
+    mutating func reconcileCadence() {
+        weekdays = normalizedWeekdays
+        cadence = cadence.normalized
     }
 
     mutating func reconcileFixedTimes() {
-        weekdays = normalizedWeekdays
-        fixedTimes = fixedTimes.uniqued().sorted()
-        if fixedTimes.isEmpty {
-            fixedTimes = [AutomationTimeOfDay(hour: 12)]
-        }
-        fixedTimes = Array(fixedTimes.prefix(Self.maximumPostsPerDay))
+        reconcileCadence()
     }
 
     func nextOccurrence(after referenceDate: Date, automationID: UUID, calendar: Calendar = .current) -> Date? {
         let selectedWeekdays = Set(normalizedWeekdays)
         guard !selectedWeekdays.isEmpty else { return nil }
+
+        switch cadence.normalized {
+        case let .slots(slots):
+            return nextSlotOccurrence(
+                after: referenceDate,
+                automationID: automationID,
+                slots: slots,
+                selectedWeekdays: selectedWeekdays,
+                calendar: calendar
+            )
+        case let .interval(interval):
+            return nextIntervalOccurrence(
+                after: referenceDate,
+                interval: interval,
+                selectedWeekdays: selectedWeekdays,
+                calendar: calendar
+            )
+        }
+    }
+
+    func summary(calendar: Calendar = .current) -> String {
+        let dayText = weekdaySummary
+
+        switch cadence.normalized {
+        case let .slots(slots):
+            let countText = slots.count == 1 ? "1 post" : "\(slots.count) posts"
+            let timeText = slotTimeSummary(slots: slots, calendar: calendar)
+            return [dayText, countText, timeText]
+                .filter { !$0.isEmpty }
+                .joined(separator: " - ")
+        case let .interval(interval):
+            return [dayText, interval.summary]
+                .filter { !$0.isEmpty }
+                .joined(separator: " - ")
+        }
+    }
+
+    mutating func setCadenceKind(_ kind: AutomationScheduleCadence.Kind) {
+        guard cadence.kind != kind else { return }
+
+        switch kind {
+        case .slots:
+            cadence = .slots([.random])
+        case .interval:
+            cadence = .interval(AutomationIntervalCadence())
+        }
+
+        reconcileCadence()
+    }
+
+    mutating func addSlot() {
+        guard case var .slots(slots) = cadence else { return }
+        guard slots.count < Self.maximumPostsPerDay else { return }
+        slots.append(.random)
+        cadence = .slots(slots)
+        reconcileCadence()
+    }
+
+    mutating func removeSlot(at index: Int) {
+        guard case var .slots(slots) = cadence else { return }
+        guard slots.count > 1, slots.indices.contains(index) else { return }
+        slots.remove(at: index)
+        cadence = .slots(slots)
+        reconcileCadence()
+    }
+
+    mutating func addTime() {
+        addSlot()
+    }
+
+    mutating func removeTime(at index: Int) {
+        removeSlot(at: index)
+    }
+
+    private func nextSlotOccurrence(
+        after referenceDate: Date,
+        automationID: UUID,
+        slots: [AutomationScheduleSlot],
+        selectedWeekdays: Set<AutomationWeekday>,
+        calendar: Calendar
+    ) -> Date? {
+        guard !slots.isEmpty else { return nil }
 
         let referenceStartOfDay = calendar.startOfDay(for: referenceDate)
         for dayOffset in 0...370 {
@@ -160,9 +469,7 @@ struct AutomationSchedule: Codable, Hashable {
                 continue
             }
 
-            var copy = self
-            copy.reconcileFixedTimes()
-            for time in copy.fixedTimes.sorted() {
+            for time in resolvedTimes(on: day, slots: slots, automationID: automationID, calendar: calendar) {
                 guard let candidate = time.date(on: day, calendar: calendar), candidate > referenceDate else {
                     continue
                 }
@@ -173,22 +480,110 @@ struct AutomationSchedule: Codable, Hashable {
         return nil
     }
 
-    func summary(calendar: Calendar = .current) -> String {
-        let dayText = weekdaySummary
-        let countText = postsPerDay == 1 ? "1 post" : "\(postsPerDay) posts"
+    private func nextIntervalOccurrence(
+        after referenceDate: Date,
+        interval: AutomationIntervalCadence,
+        selectedWeekdays: Set<AutomationWeekday>,
+        calendar: Calendar
+    ) -> Date? {
+        var candidate = referenceDate.addingTimeInterval(interval.seconds)
+
+        for _ in 0..<(370 * 24) {
+            if isSelectedWeekday(candidate, selectedWeekdays: selectedWeekdays, calendar: calendar) {
+                return candidate
+            }
+
+            guard let nextDay = calendar.date(
+                byAdding: .day,
+                value: 1,
+                to: calendar.startOfDay(for: candidate)
+            ) else {
+                return nil
+            }
+            candidate = nextDay
+        }
+
+        return nil
+    }
+
+    private func resolvedTimes(
+        on day: Date,
+        slots: [AutomationScheduleSlot],
+        automationID: UUID,
+        calendar: Calendar
+    ) -> [AutomationTimeOfDay] {
+        var usedMinutes = Set(slots.compactMap { $0.time?.minutesAfterMidnight })
+        return slots.enumerated()
+            .map { index, slot in
+                if let time = slot.time {
+                    return time
+                }
+
+                let time = randomTime(
+                    on: day,
+                    slotIndex: index,
+                    automationID: automationID,
+                    usedMinutes: usedMinutes,
+                    calendar: calendar
+                )
+                usedMinutes.insert(time.minutesAfterMidnight)
+                return time
+            }
+            .sorted()
+    }
+
+    private func randomTime(
+        on day: Date,
+        slotIndex: Int,
+        automationID: UUID,
+        usedMinutes: Set<Int>,
+        calendar: Calendar
+    ) -> AutomationTimeOfDay {
+        let dayOrdinal = calendar.ordinality(of: .day, in: .era, for: day) ?? Int(day.timeIntervalSince1970 / 86_400)
+        let seed = stableSeed("\(automationID.uuidString)-\(dayOrdinal)-\(slotIndex)")
+        let stepMinutes = 5
+        let stepCount = (24 * 60) / stepMinutes
+        let startStep = Int(seed % UInt64(stepCount))
+
+        for offset in 0..<stepCount {
+            let minutes = ((startStep + offset) % stepCount) * stepMinutes
+            if !usedMinutes.contains(minutes) {
+                return AutomationTimeOfDay(hour: minutes / 60, minute: minutes % 60)
+            }
+        }
+
+        return AutomationTimeOfDay(hour: 12)
+    }
+
+    private func isSelectedWeekday(
+        _ date: Date,
+        selectedWeekdays: Set<AutomationWeekday>,
+        calendar: Calendar
+    ) -> Bool {
+        guard let weekday = AutomationWeekday(rawValue: calendar.component(.weekday, from: date)) else {
+            return false
+        }
+        return selectedWeekdays.contains(weekday)
+    }
+
+    private func slotTimeSummary(slots: [AutomationScheduleSlot], calendar: Calendar) -> String {
+        let randomCount = slots.filter { $0.time == nil }.count
+        guard randomCount != slots.count else {
+            return slots.count == 1 ? "Random time" : "Random times"
+        }
+
         let formatter = DateFormatter()
         formatter.timeStyle = .short
         formatter.dateStyle = .none
         let referenceDay = calendar.startOfDay(for: Date())
-        let timeText = fixedTimes
-            .sorted()
-            .compactMap { $0.date(on: referenceDay, calendar: calendar) }
-            .map(formatter.string(from:))
-            .joined(separator: ", ")
-
-        return [dayText, countText, timeText]
+        return slots
+            .map { slot in
+                guard let time = slot.time else { return "Random" }
+                guard let date = time.date(on: referenceDay, calendar: calendar) else { return "" }
+                return formatter.string(from: date)
+            }
             .filter { !$0.isEmpty }
-            .joined(separator: " - ")
+            .joined(separator: ", ")
     }
 
     private var weekdaySummary: String {
@@ -204,21 +599,35 @@ struct AutomationSchedule: Codable, Hashable {
         }
         return days.map(\.shortName).joined()
     }
+}
 
-    mutating func addTime() {
-        guard fixedTimes.count < Self.maximumPostsPerDay else { return }
-        let nextMinutes = min(
-            23 * 60 + 45,
-            (fixedTimes.sorted().last?.minutesAfterMidnight ?? 12 * 60) + 120
-        )
-        fixedTimes.append(AutomationTimeOfDay(hour: nextMinutes / 60, minute: nextMinutes % 60))
-        reconcileFixedTimes()
+extension AutomationSchedule {
+    private enum CodingKeys: String, CodingKey {
+        case weekdays
+        case fixedTimes
+        case cadence
     }
 
-    mutating func removeTime(at index: Int) {
-        guard fixedTimes.count > 1, fixedTimes.indices.contains(index) else { return }
-        fixedTimes.remove(at: index)
-        reconcileFixedTimes()
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        weekdays = try container.decodeIfPresent([AutomationWeekday].self, forKey: .weekdays)
+            ?? [.monday, .tuesday, .wednesday, .thursday, .friday]
+
+        if let cadence = try container.decodeIfPresent(AutomationScheduleCadence.self, forKey: .cadence) {
+            self.cadence = cadence
+        } else if let fixedTimes = try container.decodeIfPresent([AutomationTimeOfDay].self, forKey: .fixedTimes) {
+            self.cadence = .slots(fixedTimes.uniqued().sorted().map { AutomationScheduleSlot(time: $0) })
+        } else {
+            cadence = .slots([.random])
+        }
+
+        reconcileCadence()
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(weekdays, forKey: .weekdays)
+        try container.encode(cadence.normalized, forKey: .cadence)
     }
 }
 
@@ -319,6 +728,15 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
             && schedule.isValid
             && tikTokSettings.automatedPublishSettings(description: "") != nil
     }
+}
+
+private func stableSeed(_ string: String) -> UInt64 {
+    var hash: UInt64 = 14_695_981_039_346_656_037
+    for byte in string.utf8 {
+        hash ^= UInt64(byte)
+        hash &*= 1_099_511_628_211
+    }
+    return hash
 }
 
 private extension Array where Element: Hashable {
