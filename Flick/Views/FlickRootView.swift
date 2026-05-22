@@ -70,7 +70,6 @@ struct FlickRootView: View {
         #else
         .tint(FlickStyle.appTint)
         #endif
-        .preferredColorScheme(.dark)
         .flickAppBackground()
         .task {
             await appModel.refresh()

@@ -193,6 +193,17 @@ struct ConnectedAccount: Identifiable, Codable, Hashable {
     var updatedAt: Date
 }
 
+extension ConnectedAccount {
+    var canPublishToTikTok: Bool {
+        platform == .tiktok
+            && authorizationSource == .loginKit
+            && status == .connected
+            && isPublishingEnabled
+            && tokenStatus != .expired
+            && tokenStatus != .notStored
+    }
+}
+
 struct FlickProduct: Identifiable, Codable, Hashable {
     var id: UUID
     var name: String

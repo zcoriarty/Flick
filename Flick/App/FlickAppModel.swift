@@ -79,7 +79,7 @@ final class FlickAppModel {
     @ObservationIgnored private let repository: FlickRepository
     @ObservationIgnored private let credentialVault = CredentialVault()
     @ObservationIgnored private let loginKitAccountStore = LoginKitAccountStore()
-    @ObservationIgnored private let tiktokLoginKitClient = TikTokLoginKitClient()
+    @ObservationIgnored private let tiktokLoginKitClient: TikTokLoginKitClient
     @ObservationIgnored private let localMediaLibrary = LocalMediaLibrary(directoryName: "ProductMedia")
     @ObservationIgnored private let generatedImageLibrary = LocalMediaLibrary(directoryName: "GeneratedImages")
     @ObservationIgnored private let publishedPostNotificationPublisher: any PublishedPostNotificationPublishing
@@ -100,6 +100,7 @@ final class FlickAppModel {
         repository: FlickRepository,
         configuration: AppConfiguration,
         publishedPostNotificationPublisher: (any PublishedPostNotificationPublishing)? = nil,
+        tiktokLoginKitClient: TikTokLoginKitClient? = nil,
         openAIClientFactory: @escaping @MainActor ([String: String]) -> OpenAIClient = { OpenAIClient(credentials: $0) },
         mediaStorageFactory: @escaping @MainActor ([String: String]) -> any MediaStorageProviding = { R2StorageService(credentials: $0) },
         templateAnalysisStorageFactory: @escaping @MainActor ([String: String]) -> any TemplateAnalysisStorageProviding = { R2StorageService(credentials: $0) }
@@ -107,6 +108,7 @@ final class FlickAppModel {
         self.repository = repository
         self.configuration = configuration
         self.publishedPostNotificationPublisher = publishedPostNotificationPublisher ?? CloudKitPublishedPostNotificationPublisher.live
+        self.tiktokLoginKitClient = tiktokLoginKitClient ?? TikTokLoginKitClient()
         self.openAIClientFactory = openAIClientFactory
         self.mediaStorageFactory = mediaStorageFactory
         self.templateAnalysisStorageFactory = templateAnalysisStorageFactory
@@ -187,6 +189,8 @@ final class FlickAppModel {
         do {
             overview = try await repository.loadOverview()
             configuration = .current
+            let didReconcileMediaURLs = reconcileStoredMediaPublicURLs()
+            let didReconcileLoginKitTokens = reconcileLoginKitAccountTokenStatus()
             applyConnectedAccounts()
             applyCredentialHealth()
             overview.refreshDerivedState()
@@ -195,7 +199,13 @@ final class FlickAppModel {
             let didReconcilePublishedPosts = reconcilePublishedPostsFromCompletedJobs()
             clearActiveCreateDraftIfUnavailable()
             let didPruneProgresses = pruneAutomationPostProgresses()
-            if reconcileCompletedSlideImages() || didUpdateTikTokStatuses || didReconcilePublishedPosts || didPruneProgresses {
+            if didReconcileMediaURLs
+                || didReconcileLoginKitTokens
+                || reconcileCompletedSlideImages()
+                || didUpdateTikTokStatuses
+                || didReconcilePublishedPosts
+                || didPruneProgresses
+            {
                 overview.refreshDerivedState()
                 try await repository.saveOverview(overview)
                 await publishNotificationsForNewPosts(since: publishedPostIDsBeforeDerivedUpdates)
@@ -443,6 +453,25 @@ final class FlickAppModel {
         overview.drafts.insert(draft, at: 0)
         activeCreateDraftID = draft.id
         selectedSection = .create
+    }
+
+    func deleteLocalAnalysis(for template: ExampleSlideshowTemplate) async {
+        let fingerprint = TemplateAnalysisCacheService.fingerprint(for: template)
+        let originalCount = overview.templates.count
+        overview.templates.removeAll {
+            $0.sourceTemplateID == template.id
+                && $0.sourceTemplateFingerprint == fingerprint
+                && $0.analysisSchemaVersion == TemplateAnalysisCacheService.schemaVersion
+        }
+
+        guard overview.templates.count != originalCount else { return }
+
+        do {
+            try await repository.saveOverview(overview)
+            lastErrorMessage = nil
+        } catch {
+            lastErrorMessage = error.localizedDescription
+        }
     }
 
     func createProduct(name: String, summary: String) async throws -> FlickProduct {
@@ -1049,6 +1078,7 @@ final class FlickAppModel {
                 beginManualPublishProgress(for: draft)
             }
             startPublishStep(ManualPublishProgressStepID.validate, detail: "Checking account, media, and TikTok options.")
+            reconcileLoginKitAccountTokenStatus()
             guard let account = publishingTikTokAccount() else {
                 throw ManualPublishError.missingTikTokAccount
             }
@@ -1080,6 +1110,7 @@ final class FlickAppModel {
                 for: draftID,
                 automationProgressID: automationProgressID
             )
+            reconcileStoredMediaPublicURLs()
 
             guard let refreshedDraftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) else {
                 throw SlideshowCreationError.missingDraft
@@ -1166,6 +1197,9 @@ final class FlickAppModel {
                         forAccountID: accountID,
                         until: Date().addingTimeInterval(tikTokStatusRateLimitCooldown)
                     )
+                }
+                if let accountID = overview.publishingJobs.first(where: { $0.id == activeJobID })?.accountID {
+                    markTikTokAccountTokenUnavailableIfNeeded(error, accountID: accountID)
                 }
                 failPublishingJob(activeJobID, error: error)
                 try? await repository.saveOverview(overview)
@@ -1316,6 +1350,125 @@ final class FlickAppModel {
     private func applyConnectedAccounts() {
         overview.accounts = sortedConnectedAccounts(overview.accounts)
         overview.dashboard.connectedAccounts = overview.accounts
+    }
+
+    @discardableResult
+    func reconcileStoredMediaPublicURLs(now: Date = Date()) -> Bool {
+        guard let bucket = configuration.r2.bucket else { return false }
+        let storage = mediaStorageFactory(credentialVault.loadValues())
+        var didChange = false
+
+        for index in overview.assets.indices {
+            guard
+                overview.assets[index].storageBucket == bucket,
+                let storagePath = overview.assets[index].storagePath
+            else {
+                continue
+            }
+
+            guard let publicURL = try? storage.publicURL(path: storagePath) else {
+                continue
+            }
+
+            if overview.assets[index].publicURL != publicURL {
+                overview.assets[index].publicURL = publicURL
+                overview.assets[index].updatedAt = now
+                didChange = true
+            }
+        }
+
+        return didChange
+    }
+
+    @discardableResult
+    func reconcileLoginKitAccountTokenStatus(now: Date = Date()) -> Bool {
+        var didChange = false
+
+        for index in overview.accounts.indices {
+            let account = overview.accounts[index]
+            guard account.platform == .tiktok, account.authorizationSource == .loginKit else {
+                continue
+            }
+
+            let bundle: LoginKitTokenBundle?
+            do {
+                bundle = try tiktokLoginKitClient.tokenStore.tokenBundle(for: account)
+            } catch {
+                continue
+            }
+
+            guard let bundle else {
+                didChange = markTikTokAccountTokenUnavailable(
+                    accountID: account.id,
+                    tokenStatus: .notStored,
+                    now: now
+                ) || didChange
+                continue
+            }
+
+            if bundle.refreshTokenExpiresAt <= now {
+                didChange = markTikTokAccountTokenUnavailable(
+                    accountID: account.id,
+                    tokenStatus: .expired,
+                    now: now
+                ) || didChange
+                continue
+            }
+
+            var updatedAccount = account
+            updatedAccount.tokenStatus = bundle.accessTokenExpiresAt <= now.addingTimeInterval(60) ? .expiresSoon : .valid
+            updatedAccount.status = account.scopes.contains("user.info.basic") ? .connected : .missingScope
+            updatedAccount.isPublishingEnabled = updatedAccount.status == .connected
+                && account.scopes.contains { $0 == "video.publish" || $0 == "video.upload" }
+
+            if updatedAccount != account {
+                updatedAccount.updatedAt = now
+                overview.accounts[index] = updatedAccount
+                didChange = true
+            }
+        }
+
+        return didChange
+    }
+
+    @discardableResult
+    private func markTikTokAccountTokenUnavailableIfNeeded(_ error: Error, accountID: UUID, now: Date = Date()) -> Bool {
+        guard let tokenError = error as? TikTokOAuthTokenError else { return false }
+
+        switch tokenError {
+        case .missingStoredToken:
+            return markTikTokAccountTokenUnavailable(accountID: accountID, tokenStatus: .notStored, now: now)
+        case .refreshTokenExpired:
+            return markTikTokAccountTokenUnavailable(accountID: accountID, tokenStatus: .expired, now: now)
+        case .keychainReadFailed, .refreshNotConfigured, .refreshRequestFailed:
+            return false
+        }
+    }
+
+    @discardableResult
+    private func markTikTokAccountTokenUnavailable(
+        accountID: UUID,
+        tokenStatus: OAuthTokenStatus,
+        now: Date = Date()
+    ) -> Bool {
+        guard let index = overview.accounts.firstIndex(where: { $0.id == accountID }) else { return false }
+
+        var account = overview.accounts[index]
+        guard
+            account.tokenStatus != tokenStatus
+                || account.status != .needsAuth
+                || account.isPublishingEnabled
+        else {
+            return false
+        }
+
+        account.tokenStatus = tokenStatus
+        account.status = .needsAuth
+        account.isPublishingEnabled = false
+        account.updatedAt = now
+        overview.accounts[index] = account
+        applyConnectedAccounts()
+        return true
     }
 
     private func sortedConnectedAccounts(_ accounts: [ConnectedAccount]) -> [ConnectedAccount] {
@@ -1697,6 +1850,7 @@ private extension FlickAppModel {
                 throw AutomationRunError.notReady
             }
 
+            reconcileLoginKitAccountTokenStatus()
             guard publishingTikTokAccount() != nil else {
                 throw ManualPublishError.missingTikTokAccount
             }
@@ -2112,7 +2266,7 @@ private extension FlickAppModel {
                 settings: settings,
                 fileExtension: generatedImage.fileExtension
             )
-            let remote = try await R2StorageService(credentials: credentialVault.loadValues())
+            let remote = try await mediaStorageFactory(credentialVault.loadValues())
                 .uploadAsset(
                     LocalMediaAsset(
                         data: generatedImage.data,
@@ -2224,7 +2378,7 @@ private extension FlickAppModel {
                 slideID: renderedImage.slideID,
                 assetID: assetID
             )
-            let remote = try await R2StorageService(credentials: credentialVault.loadValues())
+            let remote = try await mediaStorageFactory(credentialVault.loadValues())
                 .uploadAsset(
                     LocalMediaAsset(
                         data: data,
@@ -2272,12 +2426,7 @@ private extension FlickAppModel {
     }
 
     func publishingTikTokAccount() -> ConnectedAccount? {
-        overview.accounts.first { account in
-            account.platform == .tiktok
-                && account.authorizationSource == .loginKit
-                && account.status == .connected
-                && account.isPublishingEnabled
-        }
+        overview.accounts.first { $0.canPublishToTikTok }
     }
 
     private func currentPublishedPostIDs() -> Set<UUID> {
@@ -2349,6 +2498,13 @@ private extension FlickAppModel {
             else {
                 continue
             }
+            guard account.canPublishToTikTok else {
+                deferTikTokStatusRefresh(
+                    forJobID: job.id,
+                    until: Date().addingTimeInterval(tikTokPendingInboxStatusRefreshInterval)
+                )
+                continue
+            }
 
             do {
                 let status = try await adapter.fetchPublishStatus(
@@ -2365,6 +2521,7 @@ private extension FlickAppModel {
                 }
             } catch {
                 logger.error("TikTok publish status refresh failed jobID=\(job.id.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+                didChange = markTikTokAccountTokenUnavailableIfNeeded(error, accountID: job.accountID) || didChange
                 let retryAfter = Date().addingTimeInterval(tikTokStatusRefreshCooldown(for: error))
                 deferTikTokStatusRefresh(forJobID: job.id, until: retryAfter)
                 if isTikTokRateLimit(error) {

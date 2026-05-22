@@ -19,9 +19,11 @@ struct CreateAutomationSection: View {
                 Toggle("Automated", isOn: animatedAutomationBinding)
                     .labelsHidden()
             }
+            .listRowSeparator(isAutomated ? .hidden : .automatic, edges: .bottom)
 
             if isAutomated {
                 AutomationWeekdayPicker(weekdays: $schedule.weekdays)
+                    .listRowSeparator(.hidden, edges: .top)
                 AutomationCadenceModePicker(selection: cadenceKindBinding)
 
                 switch schedule.cadence.kind {
@@ -276,11 +278,14 @@ private struct AutomationIntervalRow: View {
     }
 
     var body: some View {
-        FlickSettingsRow(
-            title: "Repeat",
-            systemImage: "repeat",
-            iconColor: .teal
-        ) {
+        HStack(spacing: 12) {
+            Image(systemName: "repeat")
+                .foregroundStyle(.teal)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+
+            Spacer(minLength: 12)
+
             HStack(spacing: 10) {
                 Stepper(value: valueBinding, in: interval.unit.valueRange, step: interval.unit.valueStep) {
                     Text("\(interval.value)")
@@ -300,6 +305,8 @@ private struct AutomationIntervalRow: View {
             }
             .controlSize(.small)
         }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .contain)
     }
 }
 

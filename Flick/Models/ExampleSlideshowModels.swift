@@ -35,6 +35,22 @@ struct ExampleSlideshowLibraryIndex: Codable, Hashable {
     var basePath: String
     var pageSize: Int
     var collections: [ExampleSlideshowCollectionSummary]
+    var deletedTemplates: [ExampleSlideshowDeletedTemplate] = []
+
+    var deletedTemplateIDs: Set<String> {
+        Set(deletedTemplates.map(\.templateID))
+    }
+}
+
+struct ExampleSlideshowDeletedTemplate: Identifiable, Codable, Hashable {
+    var id: String { templateID }
+
+    var templateID: String
+    var releaseID: String
+    var nicheID: String
+    var fingerprint: String
+    var slideCount: Int
+    var deletedAt: Date
 }
 
 struct ExampleSlideshowPage: Hashable {

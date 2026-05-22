@@ -28,6 +28,7 @@ enum ExampleSlideshowLibraryError: LocalizedError {
 enum ExampleSlideshowLibrary {
     static let defaultPageSize = 24
     static let currentPointerPath = "template-library/current.json"
+    static let deletionRegistryPath = "template-library/deleted-templates.json"
 
     static func loadIndex(
         configuration: AppConfiguration,
@@ -46,23 +47,33 @@ enum ExampleSlideshowLibrary {
             configuration: configuration,
             urlSession: urlSession
         )
+        let deletionRegistry = try await fetchOptional(
+            RemoteTemplateDeletionRegistry.self,
+            path: deletionRegistryPath,
+            configuration: configuration,
+            urlSession: urlSession
+        ) ?? .empty
+        let deletedTemplates = deletionRegistry.templates.filter { $0.releaseID == release.releaseID }
+        let deletedTemplatesByNicheID = Dictionary(grouping: deletedTemplates, by: \.nicheID)
 
         return ExampleSlideshowLibraryIndex(
             releaseID: release.releaseID,
             basePath: release.basePath,
             pageSize: index.pageSize,
             collections: index.niches.map { niche in
-                ExampleSlideshowCollectionSummary(
+                let deletedTemplates = deletedTemplatesByNicheID[niche.folder] ?? []
+                return ExampleSlideshowCollectionSummary(
                     folder: niche.folder,
                     title: niche.title,
                     nicheSlug: niche.nicheSlug,
                     sourcePage: URL(string: niche.sourcePage ?? ""),
-                    slideshowCount: niche.slideshowCount,
-                    totalSlideCount: niche.totalSlideCount,
+                    slideshowCount: max(niche.slideshowCount - deletedTemplates.count, 0),
+                    totalSlideCount: max(niche.totalSlideCount - deletedTemplates.reduce(0) { $0 + $1.slideCount }, 0),
                     pageSize: niche.pageSize,
                     pageCount: niche.pageCount
                 )
-            }
+            },
+            deletedTemplates: deletedTemplates
         )
     }
 
@@ -99,7 +110,9 @@ enum ExampleSlideshowLibrary {
             sourcePage: summary.sourcePage,
             slideshowCount: summary.slideshowCount,
             totalSlideCount: summary.totalSlideCount,
-            templates: page.slideshows.map { makeTemplate(from: $0, summary: summary, layout: layout) }
+            templates: page.slideshows
+                .filter { !index.deletedTemplateIDs.contains($0.id) }
+                .map { makeTemplate(from: $0, summary: summary, layout: layout) }
         )
 
         return ExampleSlideshowPage(
@@ -141,6 +154,63 @@ enum ExampleSlideshowLibrary {
         return templateIDs.compactMap { templatesByID[$0] }
     }
 
+    @MainActor
+    static func deleteTemplate(
+        _ template: ExampleSlideshowTemplate,
+        index: ExampleSlideshowLibraryIndex,
+        configuration: AppConfiguration
+    ) async throws {
+        try await deleteTemplate(
+            template,
+            index: index,
+            configuration: configuration,
+            storage: R2StorageService()
+        )
+    }
+
+    static func deleteTemplate(
+        _ template: ExampleSlideshowTemplate,
+        index: ExampleSlideshowLibraryIndex,
+        configuration: AppConfiguration,
+        storage: R2StorageService
+    ) async throws {
+        let fingerprint = TemplateAnalysisCacheService.fingerprint(for: template)
+        let nicheID = index.collections.first { $0.nicheSlug == template.nicheSlug }?.id
+            ?? index.collections.first { $0.title == template.niche }?.id
+            ?? template.niche
+        let deletion = ExampleSlideshowDeletedTemplate(
+            templateID: template.id,
+            releaseID: index.releaseID,
+            nicheID: nicheID,
+            fingerprint: fingerprint,
+            slideCount: template.slideCount,
+            deletedAt: Date()
+        )
+
+        var registry = try await loadDeletionRegistry(storage: storage)
+        registry.templates.removeAll {
+            $0.releaseID == deletion.releaseID && $0.templateID == deletion.templateID
+        }
+        registry.templates.append(deletion)
+        registry.updatedAt = Date()
+
+        try await storage.putJSON(
+            JSONEncoder.flick.encode(registry),
+            path: deletionRegistryPath,
+            metadata: [
+                "release-id": index.releaseID,
+                "template-id": template.id
+            ]
+        )
+
+        let analysisPath = TemplateAnalysisCacheService.cachePath(templateID: template.id, fingerprint: fingerprint)
+        try await storage.deleteObject(path: analysisPath)
+
+        for path in sourceObjectPaths(for: template, index: index, configuration: configuration) {
+            try await storage.deleteObject(path: path)
+        }
+    }
+
     private static func fetch<T: Decodable>(
         _ type: T.Type,
         path: String,
@@ -151,6 +221,25 @@ enum ExampleSlideshowLibrary {
         let (data, response) = try await urlSession.data(from: url)
         if let httpResponse = response as? HTTPURLResponse, !(200..<300).contains(httpResponse.statusCode) {
             throw ExampleSlideshowLibraryError.invalidRemoteURL("\(path) returned HTTP \(httpResponse.statusCode)")
+        }
+        return try JSONDecoder.flick.decode(type, from: data)
+    }
+
+    private static func fetchOptional<T: Decodable>(
+        _ type: T.Type,
+        path: String,
+        configuration: AppConfiguration,
+        urlSession: URLSession
+    ) async throws -> T? {
+        let url = try remoteURL(path: path, configuration: configuration)
+        let (data, response) = try await urlSession.data(from: url)
+        if let httpResponse = response as? HTTPURLResponse {
+            if httpResponse.statusCode == 404 {
+                return nil
+            }
+            guard (200..<300).contains(httpResponse.statusCode) else {
+                throw ExampleSlideshowLibraryError.invalidRemoteURL("\(path) returned HTTP \(httpResponse.statusCode)")
+            }
         }
         return try JSONDecoder.flick.decode(type, from: data)
     }
@@ -170,6 +259,50 @@ enum ExampleSlideshowLibrary {
             throw ExampleSlideshowLibraryError.missingPublicBaseURL
         }
         return publicBaseURL
+    }
+
+    private static func loadDeletionRegistry(storage: R2StorageService) async throws -> RemoteTemplateDeletionRegistry {
+        do {
+            let data = try await storage.data(path: deletionRegistryPath)
+            return try JSONDecoder.flick.decode(RemoteTemplateDeletionRegistry.self, from: data)
+        } catch let error as MediaStorageError {
+            if case let .requestFailed(_, statusCode, _) = error, statusCode == 404 {
+                return .empty
+            }
+            throw error
+        }
+    }
+
+    private static func sourceObjectPaths(
+        for template: ExampleSlideshowTemplate,
+        index: ExampleSlideshowLibraryIndex,
+        configuration: AppConfiguration
+    ) -> [String] {
+        var paths = template.slides.compactMap { slide in
+            slide.remoteURL.flatMap { objectPath(from: $0, configuration: configuration) }
+        }
+
+        if let summary = index.collections.first(where: { $0.nicheSlug == template.nicheSlug }) {
+            paths.append([
+                index.basePath.trimmingTrailingSlashes(),
+                "ExampleSlideshows",
+                summary.folder,
+                template.folder,
+                "\(template.folder)-metadata.json"
+            ].joined(separator: "/"))
+        }
+
+        return Array(Set(paths)).sorted()
+    }
+
+    private static func objectPath(from publicURL: URL, configuration: AppConfiguration) -> String? {
+        guard let publicBaseURL = configuration.r2.publicBaseURL else { return nil }
+        let base = publicBaseURL.absoluteString.trimmingTrailingSlashes()
+        let urlString = publicURL.absoluteString
+        let prefix = "\(base)/"
+        guard urlString.hasPrefix(prefix) else { return nil }
+        let encodedPath = String(urlString.dropFirst(prefix.count))
+        return encodedPath.removingPercentEncoding ?? encodedPath
     }
 
     private static func makeTemplate(
@@ -231,6 +364,16 @@ private struct RemoteTemplateIndexDTO: Decodable {
     var basePath: String
     var pageSize: Int
     var niches: [RemoteTemplateNicheDTO]
+}
+
+private struct RemoteTemplateDeletionRegistry: Codable, Hashable {
+    var version: Int
+    var updatedAt: Date
+    var templates: [ExampleSlideshowDeletedTemplate]
+
+    static var empty: RemoteTemplateDeletionRegistry {
+        RemoteTemplateDeletionRegistry(version: 1, updatedAt: Date(timeIntervalSince1970: 0), templates: [])
+    }
 }
 
 private struct RemoteTemplateNicheDTO: Decodable {

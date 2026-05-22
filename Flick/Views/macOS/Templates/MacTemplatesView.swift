@@ -11,6 +11,8 @@ struct MacTemplatesView: View {
     @State private var templateStore = TemplateLibraryStore()
     @State private var selectedTemplate: ExampleSlideshowTemplate?
     @State private var previewedTemplate: ExampleSlideshowTemplate?
+    @State private var templatePendingDeletion: ExampleSlideshowTemplate?
+    @State private var deleteErrorMessage: String?
     @State private var searchText = ""
 
     var body: some View {
@@ -28,6 +30,39 @@ struct MacTemplatesView: View {
             .sheet(item: $previewedTemplate) { template in
                 TemplatePreviewSheet(template: template)
             }
+            #if DEBUG
+            .confirmationDialog(
+                "Delete this template?",
+                isPresented: Binding(
+                    get: { templatePendingDeletion != nil },
+                    set: { if !$0 { templatePendingDeletion = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let template = templatePendingDeletion {
+                    Button("Delete Template", role: .destructive) {
+                        Task {
+                            await deleteTemplate(template)
+                        }
+                    }
+                }
+            } message: {
+                if let template = templatePendingDeletion {
+                    Text("This removes @\(template.profile)'s template from the shared library and deletes its cached analysis.")
+                }
+            }
+            .alert(
+                "Template deletion failed",
+                isPresented: Binding(
+                    get: { deleteErrorMessage != nil },
+                    set: { if !$0 { deleteErrorMessage = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(deleteErrorMessage ?? "")
+            }
+            #endif
             .task {
                 if case .loading = templateStore.status {
                     await loadTemplates()
@@ -95,6 +130,7 @@ struct MacTemplatesView: View {
                         selectedTemplate: selectedTemplate,
                         selectAction: { selectedTemplate = $0 },
                         useAction: useTemplate,
+                        deleteAction: { templatePendingDeletion = $0 },
                         loadMoreAction: {
                             Task {
                                 await templateStore.loadNextPage(configuration: appModel.configuration)
@@ -105,7 +141,8 @@ struct MacTemplatesView: View {
                     MacTemplateInspector(
                         template: selectedTemplate ?? templates.first,
                         previewAction: { previewedTemplate = $0 },
-                        useAction: useTemplate
+                        useAction: useTemplate,
+                        deleteAction: { templatePendingDeletion = $0 }
                     )
                     .frame(width: 320)
                 }
@@ -163,6 +200,21 @@ struct MacTemplatesView: View {
     private func loadTemplates(forceReload: Bool = false) async {
         await templateStore.loadInitial(configuration: appModel.configuration, forceReload: forceReload)
         selectedTemplate = templateStore.templates.first(where: \.hasDisplayablePreview)
+    }
+
+    private func deleteTemplate(_ template: ExampleSlideshowTemplate) async {
+        do {
+            try await templateStore.deleteTemplate(template, configuration: appModel.configuration)
+            await appModel.deleteLocalAnalysis(for: template)
+            if selectedTemplate?.id == template.id {
+                selectedTemplate = filteredTemplates.first
+            }
+            if previewedTemplate?.id == template.id {
+                previewedTemplate = nil
+            }
+        } catch {
+            deleteErrorMessage = error.localizedDescription
+        }
     }
 }
 
@@ -232,6 +284,7 @@ private struct MacTemplateGrid: View {
     var selectedTemplate: ExampleSlideshowTemplate?
     var selectAction: (ExampleSlideshowTemplate) -> Void
     var useAction: (ExampleSlideshowTemplate) -> Void
+    var deleteAction: (ExampleSlideshowTemplate) -> Void
     var loadMoreAction: () -> Void
 
     var body: some View {
@@ -263,6 +316,11 @@ private struct MacTemplateGrid: View {
                             Button("Use Template", systemImage: "wand.and.sparkles") {
                                 useAction(template)
                             }
+                            #if DEBUG
+                            Button("Delete Template", systemImage: "trash", role: .destructive) {
+                                deleteAction(template)
+                            }
+                            #endif
                         }
                     }
                 }
@@ -292,6 +350,7 @@ private struct MacTemplateInspector: View {
     var template: ExampleSlideshowTemplate?
     var previewAction: (ExampleSlideshowTemplate) -> Void
     var useAction: (ExampleSlideshowTemplate) -> Void
+    var deleteAction: (ExampleSlideshowTemplate) -> Void
 
     var body: some View {
         MacWorkspaceSection(title: "Details", systemImage: "sidebar.right") {
@@ -338,6 +397,11 @@ private struct MacTemplateInspector: View {
                                 useAction(template)
                             }
                             .buttonStyle(.glassProminent)
+                            #if DEBUG
+                            Button("Delete", systemImage: "trash", role: .destructive) {
+                                deleteAction(template)
+                            }
+                            #endif
                         }
                     }
                 }

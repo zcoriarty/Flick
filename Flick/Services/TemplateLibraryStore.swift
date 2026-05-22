@@ -9,6 +9,7 @@ import Observation
 struct TemplateLibraryClient {
     var loadIndex: (AppConfiguration) async throws -> ExampleSlideshowLibraryIndex
     var loadPage: (String, Int, ExampleSlideshowLibraryIndex, AppConfiguration) async throws -> ExampleSlideshowPage
+    var deleteTemplate: (ExampleSlideshowTemplate, ExampleSlideshowLibraryIndex, AppConfiguration) async throws -> Void
 
     static let remote = TemplateLibraryClient(
         loadIndex: { configuration in
@@ -18,6 +19,13 @@ struct TemplateLibraryClient {
             try await ExampleSlideshowLibrary.loadPage(
                 nicheID: nicheID,
                 pageNumber: pageNumber,
+                index: index,
+                configuration: configuration
+            )
+        },
+        deleteTemplate: { template, index, configuration in
+            try await ExampleSlideshowLibrary.deleteTemplate(
+                template,
                 index: index,
                 configuration: configuration
             )
@@ -42,6 +50,8 @@ final class TemplateLibraryStore {
     var pageCount = 0
     var isLoadingPage = false
     var pageErrorMessage: String?
+    var deleteErrorMessage: String?
+    var deletingTemplateIDs: Set<String> = []
 
     @ObservationIgnored private let persistedNicheKey: String
     @ObservationIgnored private let userDefaults: UserDefaults
@@ -102,6 +112,7 @@ final class TemplateLibraryStore {
 
         status = .loading
         pageErrorMessage = nil
+        deleteErrorMessage = nil
 
         do {
             let loadedIndex = try await client.loadIndex(configuration)
@@ -131,12 +142,46 @@ final class TemplateLibraryStore {
         pageNumber = 0
         pageCount = summaries.first { $0.id == nicheID }?.pageCount ?? 0
         pageErrorMessage = nil
+        deleteErrorMessage = nil
         await loadPage(1, nicheID: nicheID, configuration: configuration, replacing: true)
     }
 
     func loadNextPage(configuration: AppConfiguration) async {
         guard hasNextPage, let selectedNicheID, !isLoadingPage else { return }
         await loadPage(pageNumber + 1, nicheID: selectedNicheID, configuration: configuration, replacing: false)
+    }
+
+    func deleteTemplate(_ template: ExampleSlideshowTemplate, configuration: AppConfiguration) async throws {
+        guard let index, !deletingTemplateIDs.contains(template.id) else { return }
+        deletingTemplateIDs.insert(template.id)
+        deleteErrorMessage = nil
+        defer {
+            deletingTemplateIDs.remove(template.id)
+        }
+
+        do {
+            try await client.deleteTemplate(template, index, configuration)
+            templates.removeAll { $0.id == template.id }
+            let deletion = ExampleSlideshowDeletedTemplate(
+                templateID: template.id,
+                releaseID: index.releaseID,
+                nicheID: selectedNicheID ?? template.niche,
+                fingerprint: TemplateAnalysisCacheService.fingerprint(for: template),
+                slideCount: template.slideCount,
+                deletedAt: Date()
+            )
+            if var loadedIndex = self.index {
+                loadedIndex.deletedTemplates.removeAll {
+                    $0.releaseID == deletion.releaseID && $0.templateID == deletion.templateID
+                }
+                loadedIndex.deletedTemplates.append(deletion)
+                self.index = loadedIndex
+            }
+            decrementSelectedSummaryCounts(for: template)
+        } catch {
+            deleteErrorMessage = error.localizedDescription
+            throw error
+        }
     }
 
     private func loadPage(
@@ -166,5 +211,25 @@ final class TemplateLibraryStore {
             }
         }
         isLoadingPage = false
+    }
+
+    private func decrementSelectedSummaryCounts(for template: ExampleSlideshowTemplate) {
+        guard
+            let selectedNicheID,
+            var loadedIndex = index,
+            let collectionIndex = loadedIndex.collections.firstIndex(where: { $0.id == selectedNicheID })
+        else {
+            return
+        }
+
+        loadedIndex.collections[collectionIndex].slideshowCount = max(
+            loadedIndex.collections[collectionIndex].slideshowCount - 1,
+            0
+        )
+        loadedIndex.collections[collectionIndex].totalSlideCount = max(
+            loadedIndex.collections[collectionIndex].totalSlideCount - template.slideCount,
+            0
+        )
+        index = loadedIndex
     }
 }

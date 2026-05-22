@@ -857,12 +857,7 @@ struct MacCreateView: View {
     }
 
     private func publishingTikTokAccount(in appModel: FlickAppModel) -> ConnectedAccount? {
-        appModel.overview.accounts.first { account in
-            account.platform == .tiktok
-                && account.authorizationSource == .loginKit
-                && account.status == .connected
-                && account.isPublishingEnabled
-        }
+        appModel.overview.accounts.first { $0.canPublishToTikTok }
     }
 
     private func activeDraftID(in appModel: FlickAppModel) -> UUID? {

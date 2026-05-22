@@ -10,6 +10,8 @@ struct IOSTemplatesView: View {
     @Environment(FlickAppModel.self) private var appModel
     @State private var templateStore = TemplateLibraryStore()
     @State private var selectedTemplate: ExampleSlideshowTemplate?
+    @State private var templatePendingDeletion: ExampleSlideshowTemplate?
+    @State private var deleteErrorMessage: String?
     @State private var searchText = ""
 
     var body: some View {
@@ -27,6 +29,39 @@ struct IOSTemplatesView: View {
             .sheet(item: $selectedTemplate) { template in
                 TemplatePreviewSheet(template: template)
             }
+            #if DEBUG
+            .confirmationDialog(
+                "Delete this template?",
+                isPresented: Binding(
+                    get: { templatePendingDeletion != nil },
+                    set: { if !$0 { templatePendingDeletion = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let template = templatePendingDeletion {
+                    Button("Delete Template", role: .destructive) {
+                        Task {
+                            await deleteTemplate(template)
+                        }
+                    }
+                }
+            } message: {
+                if let template = templatePendingDeletion {
+                    Text("This removes @\(template.profile)'s template from the shared library and deletes its cached analysis.")
+                }
+            }
+            .alert(
+                "Template deletion failed",
+                isPresented: Binding(
+                    get: { deleteErrorMessage != nil },
+                    set: { if !$0 { deleteErrorMessage = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(deleteErrorMessage ?? "")
+            }
+            #endif
         .task {
             if case .loading = templateStore.status {
                 await loadTemplates()
@@ -118,6 +153,11 @@ struct IOSTemplatesView: View {
                         Button("Use Template", systemImage: "wand.and.sparkles") {
                             appModel.createDraft(from: template)
                         }
+                        #if DEBUG
+                        Button("Delete Template", systemImage: "trash", role: .destructive) {
+                            templatePendingDeletion = template
+                        }
+                        #endif
                     }
                 }
 
@@ -181,6 +221,18 @@ struct IOSTemplatesView: View {
 
     private func loadTemplates(forceReload: Bool = false) async {
         await templateStore.loadInitial(configuration: appModel.configuration, forceReload: forceReload)
+    }
+
+    private func deleteTemplate(_ template: ExampleSlideshowTemplate) async {
+        do {
+            try await templateStore.deleteTemplate(template, configuration: appModel.configuration)
+            await appModel.deleteLocalAnalysis(for: template)
+            if selectedTemplate?.id == template.id {
+                selectedTemplate = nil
+            }
+        } catch {
+            deleteErrorMessage = error.localizedDescription
+        }
     }
 }
 

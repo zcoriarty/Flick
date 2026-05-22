@@ -253,7 +253,8 @@ struct AutomationTargetSummary: Identifiable, Hashable {
         return targetPlatforms.flatMap { platform in
             let matchingAccounts = accounts
                 .filter { account in
-                    account.platform == platform && account.isPublishingEnabled
+                    account.platform == platform
+                        && (platform == .tiktok ? account.canPublishToTikTok : account.isPublishingEnabled)
                 }
                 .sorted { lhs, rhs in
                     lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending

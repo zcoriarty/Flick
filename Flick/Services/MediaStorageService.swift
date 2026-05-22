@@ -216,6 +216,28 @@ struct R2StorageService: MediaStorageProviding {
         return true
     }
 
+    func putJSON(_ data: Data, path: String, metadata: [String: String] = [:]) async throws {
+        let configuration = try configuredStorage()
+        let objectPath = try normalizedObjectPath(path)
+        var headers = metadata.reduce(into: [
+            "cache-control": "3600",
+            "content-type": "application/json",
+            "content-length": "\(data.count)"
+        ]) { result, pair in
+            result["x-amz-meta-\(pair.key.lowercased())"] = pair.value
+        }
+        headers["content-length"] = "\(data.count)"
+
+        let request = try signedRequest(
+            method: "PUT",
+            path: objectPath,
+            headers: headers,
+            body: data,
+            configuration: configuration
+        )
+        _ = try await send(request, operation: "put json")
+    }
+
     func data(path: String) async throws -> Data {
         let configuration = try configuredStorage()
         let objectPath = try normalizedObjectPath(path)
@@ -242,6 +264,10 @@ struct R2StorageService: MediaStorageProviding {
 
     func objectExists(path: String) async throws -> Bool {
         try await objectExists(path: try normalizedObjectPath(path), configuration: try configuredStorage())
+    }
+
+    func deleteObject(path: String) async throws {
+        try await deleteObject(path: try normalizedObjectPath(path), configuration: try configuredStorage())
     }
 
     func publicURL(path: String) throws -> URL {

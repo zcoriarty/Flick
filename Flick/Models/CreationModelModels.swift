@@ -40,6 +40,7 @@ struct FlickCreationModel: Identifiable, Codable, Hashable {
             body: metadata.body,
             styleAndAccessories: metadata.styleAndAccessories
         )
+        .normalizedForGeneration
     }
 
     func aiMetadataJSONData() throws -> Data {
@@ -88,7 +89,7 @@ struct SlideshowCreationModelReference: Identifiable, Codable, Hashable {
 
     func aiMetadataJSONString() -> String {
         guard
-            let data = try? JSONEncoder.flick.encode(aiMetadata),
+            let data = try? JSONEncoder.flick.encode(aiMetadata.normalizedForGeneration),
             let json = String(data: data, encoding: .utf8)
         else {
             return "{}"
@@ -128,6 +129,14 @@ struct CreationModelAIMetadata: Codable, Hashable {
         case noseAndEars = "nose_and_ears"
         case body
         case styleAndAccessories = "style_and_accessories"
+    }
+}
+
+private extension CreationModelAIMetadata {
+    var normalizedForGeneration: CreationModelAIMetadata {
+        var metadata = self
+        metadata.skinDetails.moles = "None"
+        return metadata
     }
 }
 
@@ -218,7 +227,7 @@ enum CreationModelPreset: String, CaseIterable, Identifiable, Hashable {
             metadata.ethnicity.ethnicity = "Samoan"
             metadata.skinDetails.clarity = "Clear"
             metadata.skinDetails.freckles = "Light Subtle"
-            metadata.skinDetails.moles = "Few Scattered"
+            metadata.skinDetails.moles = "None"
             metadata.skinDetails.underEyes = "Bright"
             metadata.faceShape.shape = "Oval"
             metadata.faceDetails.jawline = "Sharp"
@@ -249,7 +258,7 @@ enum CreationModelPreset: String, CaseIterable, Identifiable, Hashable {
             metadata.ethnicity.ethnicity = "Mixed"
             metadata.skinDetails.clarity = "Dewy"
             metadata.skinDetails.freckles = "None"
-            metadata.skinDetails.moles = "Beauty Mark"
+            metadata.skinDetails.moles = "None"
             metadata.skinDetails.underEyes = "Bright"
             metadata.faceShape.shape = "Diamond"
             metadata.faceDetails.jawline = "Defined"
@@ -280,7 +289,7 @@ enum CreationModelPreset: String, CaseIterable, Identifiable, Hashable {
             metadata.ethnicity.ethnicity = "Latine"
             metadata.skinDetails.clarity = "Natural"
             metadata.skinDetails.freckles = "Medium"
-            metadata.skinDetails.moles = "Few Scattered"
+            metadata.skinDetails.moles = "None"
             metadata.skinDetails.underEyes = "Natural"
             metadata.faceShape.shape = "Heart"
             metadata.faceDetails.jawline = "Soft"
@@ -387,7 +396,7 @@ struct CreationModelEthnicity: Codable, Hashable {
 struct CreationModelSkinDetails: Codable, Hashable {
     var clarity = ""
     var freckles = ""
-    var moles = ""
+    var moles = "None"
     var underEyes = ""
 
     enum CodingKeys: String, CodingKey {
@@ -476,7 +485,7 @@ enum CreationModelSection: String, CaseIterable, Identifiable, Codable, Hashable
         case .ethnicity:
             [.ethnicity]
         case .skinDetails:
-            [.skinClarity, .freckles, .moles, .underEyes]
+            [.skinClarity, .freckles, .underEyes]
         case .faceShape:
             [.faceShape]
         case .faceDetails:
@@ -510,7 +519,6 @@ enum CreationModelField: String, CaseIterable, Identifiable, Codable, Hashable {
     case ethnicity
     case skinClarity
     case freckles
-    case moles
     case underEyes
     case faceShape
     case jawline
@@ -543,7 +551,6 @@ enum CreationModelField: String, CaseIterable, Identifiable, Codable, Hashable {
         case .ethnicity: "Ethnicity"
         case .skinClarity: "Clarity"
         case .freckles: "Freckles"
-        case .moles: "Moles"
         case .underEyes: "Under-Eyes"
         case .faceShape: "Shape"
         case .jawline: "Jawline"
@@ -593,8 +600,6 @@ enum CreationModelField: String, CaseIterable, Identifiable, Codable, Hashable {
             ["Clear", "Natural", "Textured", "Dewy", "Matte"]
         case .freckles:
             ["None", "Light Subtle", "Medium", "Heavy"]
-        case .moles:
-            ["None", "Few Scattered", "Beauty Mark", "Several"]
         case .underEyes:
             ["Bright", "Natural", "Soft Shadows", "Dark Circles"]
         case .faceShape:
@@ -649,7 +654,6 @@ enum CreationModelField: String, CaseIterable, Identifiable, Codable, Hashable {
         case .ethnicity: \.ethnicity.ethnicity
         case .skinClarity: \.skinDetails.clarity
         case .freckles: \.skinDetails.freckles
-        case .moles: \.skinDetails.moles
         case .underEyes: \.skinDetails.underEyes
         case .faceShape: \.faceShape.shape
         case .jawline: \.faceDetails.jawline
