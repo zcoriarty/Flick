@@ -17,7 +17,11 @@ struct TemplateCard: View {
     }
 
     private var thumbnail: some View {
-        VerticalMediaFrame(fileURL: template.displayablePreviewSlide?.localURL, cornerRadius: 0)
+        VerticalMediaFrame(
+            fileURL: template.displayablePreviewSlide?.localURL,
+            remoteURL: template.displayablePreviewSlide?.remoteURL,
+            cornerRadius: 0
+        )
             .overlay {
                 LinearGradient(
                     colors: [.clear, .black.opacity(0.74)],

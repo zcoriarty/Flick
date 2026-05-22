@@ -8,9 +8,8 @@ import SwiftUI
 #if !os(macOS)
 struct IOSTemplatesView: View {
     @Environment(FlickAppModel.self) private var appModel
-    @State private var loadState: TemplatesLoadState = .loading
+    @State private var templateStore = TemplateLibraryStore()
     @State private var selectedTemplate: ExampleSlideshowTemplate?
-    @State private var selectedNicheID = TemplatesFilter.allID
     @State private var searchText = ""
 
     var body: some View {
@@ -19,7 +18,9 @@ struct IOSTemplatesView: View {
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Reload", systemImage: "arrow.clockwise") {
-                        loadTemplates()
+                        Task {
+                            await loadTemplates(forceReload: true)
+                        }
                     }
                 }
             }
@@ -27,15 +28,15 @@ struct IOSTemplatesView: View {
                 TemplatePreviewSheet(template: template)
             }
         .task {
-            if case .loading = loadState {
-                loadTemplates()
+            if case .loading = templateStore.status {
+                await loadTemplates()
             }
         }
     }
 
     @ViewBuilder
     private var content: some View {
-        switch loadState {
+        switch templateStore.status {
         case .loading:
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -47,48 +48,45 @@ struct IOSTemplatesView: View {
                 actionTitle: "Reload",
                 actionSystemImage: "arrow.clockwise"
             ) {
-                loadTemplates()
+                Task {
+                    await loadTemplates(forceReload: true)
+                }
             }
             .padding(FlickStyle.pagePadding)
-        case let .loaded(collections):
-            loadedContent(collections)
+        case .loaded:
+            loadedContent
         }
     }
 
-    private func loadedContent(_ collections: [ExampleSlideshowCollection]) -> some View {
-        let templates = filteredTemplates(in: collections)
-        let displayableTemplates = collections.flatMap(\.templates).filter(\.hasDisplayablePreview)
-        let totalTemplates = displayableTemplates.count
-        let totalSlides = displayableTemplates.reduce(0) { $0 + $1.slideCount }
+    private var loadedContent: some View {
+        let templates = filteredTemplates
+        let totalTemplates = templateStore.selectedSummary?.slideshowCount ?? templates.count
+        let totalSlides = templateStore.selectedSummary?.totalSlideCount ?? templates.reduce(0) { $0 + $1.slideCount }
 
         return VStack(alignment: .leading, spacing: 14) {
             SectionTitle(
-                title: "Example library",
-                subtitle: "\(totalTemplates) templates, \(totalSlides) slides, \(collections.count) niches",
+                title: templateStore.selectedSummary?.title ?? "Example library",
+                subtitle: "\(totalTemplates) templates, \(totalSlides) slides, \(templateStore.summaries.count) niches",
                 systemImage: "rectangle.stack"
             )
-            filters(collections)
+            filters
             templateGrid(templates)
         }
         .flickScrollablePage()
         .searchable(text: $searchText, prompt: "Search templates")
     }
 
-    private func filters(_ collections: [ExampleSlideshowCollection]) -> some View {
+    private var filters: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 8) {
-                NicheFilterChip(
-                    title: "All",
-                    isSelected: selectedNicheID == TemplatesFilter.allID
-                ) {
-                    selectedNicheID = TemplatesFilter.allID
-                }
-                ForEach(collections) { collection in
+                ForEach(templateStore.summaries) { collection in
                     NicheFilterChip(
                         title: collection.title,
-                        isSelected: selectedNicheID == collection.id
+                        isSelected: templateStore.selectedNicheID == collection.id
                     ) {
-                        selectedNicheID = collection.id
+                        Task {
+                            await templateStore.selectNiche(collection.id, configuration: appModel.configuration)
+                        }
                     }
                 }
             }
@@ -122,8 +120,33 @@ struct IOSTemplatesView: View {
                         }
                     }
                 }
+
+                if showLoadMore {
+                    Button {
+                        Task {
+                            await templateStore.loadNextPage(configuration: appModel.configuration)
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            if templateStore.isLoadingPage {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+                            Text(templateStore.isLoadingPage ? "Loading templates" : "Load more")
+                                .font(.callout.weight(.semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(templateStore.isLoadingPage)
+                }
             }
         }
+    }
+
+    private var showLoadMore: Bool {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && templateStore.hasNextPage
     }
 
     private var templateColumns: [GridItem] {
@@ -136,15 +159,9 @@ struct IOSTemplatesView: View {
         ]
     }
 
-    private func filteredTemplates(in collections: [ExampleSlideshowCollection]) -> [ExampleSlideshowTemplate] {
-        let sourceCollections = selectedNicheID == TemplatesFilter.allID
-            ? collections
-            : collections.filter { $0.id == selectedNicheID }
-
+    private var filteredTemplates: [ExampleSlideshowTemplate] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let templates = sourceCollections
-            .flatMap(\.templates)
-            .filter(\.hasDisplayablePreview)
+        let templates = templateStore.templates.filter(\.hasDisplayablePreview)
 
         guard !query.isEmpty else { return templates }
 
@@ -162,24 +179,9 @@ struct IOSTemplatesView: View {
         }
     }
 
-    private func loadTemplates() {
-        loadState = .loading
-        do {
-            loadState = .loaded(try ExampleSlideshowLibrary.load())
-        } catch {
-            loadState = .failed(error.localizedDescription)
-        }
+    private func loadTemplates(forceReload: Bool = false) async {
+        await templateStore.loadInitial(configuration: appModel.configuration, forceReload: forceReload)
     }
-}
-
-private enum TemplatesLoadState {
-    case loading
-    case loaded([ExampleSlideshowCollection])
-    case failed(String)
-}
-
-private enum TemplatesFilter {
-    static let allID = "all"
 }
 
 private struct NicheFilterChip: View {

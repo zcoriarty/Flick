@@ -85,6 +85,7 @@ final class FlickAppModel {
     @ObservationIgnored private let publishedPostNotificationPublisher: any PublishedPostNotificationPublishing
     @ObservationIgnored private let openAIClientFactory: @MainActor ([String: String]) -> OpenAIClient
     @ObservationIgnored private let mediaStorageFactory: @MainActor ([String: String]) -> any MediaStorageProviding
+    @ObservationIgnored private let templateAnalysisStorageFactory: @MainActor ([String: String]) -> any TemplateAnalysisStorageProviding
     @ObservationIgnored private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.orion.Flick", category: "Publishing")
     @ObservationIgnored private var isRefreshing = false
     @ObservationIgnored private var isRefreshPending = false
@@ -100,13 +101,15 @@ final class FlickAppModel {
         configuration: AppConfiguration,
         publishedPostNotificationPublisher: (any PublishedPostNotificationPublishing)? = nil,
         openAIClientFactory: @escaping @MainActor ([String: String]) -> OpenAIClient = { OpenAIClient(credentials: $0) },
-        mediaStorageFactory: @escaping @MainActor ([String: String]) -> any MediaStorageProviding = { R2StorageService(credentials: $0) }
+        mediaStorageFactory: @escaping @MainActor ([String: String]) -> any MediaStorageProviding = { R2StorageService(credentials: $0) },
+        templateAnalysisStorageFactory: @escaping @MainActor ([String: String]) -> any TemplateAnalysisStorageProviding = { R2StorageService(credentials: $0) }
     ) {
         self.repository = repository
         self.configuration = configuration
         self.publishedPostNotificationPublisher = publishedPostNotificationPublisher ?? CloudKitPublishedPostNotificationPublisher.live
         self.openAIClientFactory = openAIClientFactory
         self.mediaStorageFactory = mediaStorageFactory
+        self.templateAnalysisStorageFactory = templateAnalysisStorageFactory
         self.overview = FlickEmptyState.make()
         applyConnectedAccounts()
         applyCredentialHealth()
@@ -377,15 +380,15 @@ final class FlickAppModel {
                 id: UUID(),
                 mediaType: .image,
                 source: .reference,
-                localFilePath: slide.localURL.path,
+                localFilePath: slide.remoteURL == nil ? slide.localURL.path : nil,
                 storageBucket: nil,
                 storagePath: nil,
-                publicURL: nil,
+                publicURL: slide.remoteURL,
                 signedURLExpiration: nil,
                 width: 0,
                 height: 0,
                 duration: nil,
-                fileSize: fileSize(at: slide.localURL),
+                fileSize: slide.remoteURL == nil ? fileSize(at: slide.localURL) : nil,
                 checksum: nil,
                 trendTags: [],
                 createdAt: now,
@@ -885,7 +888,9 @@ final class FlickAppModel {
                 creationModel: creationModel,
                 productImage: productImage
             )
-            overview.templates.insert(result.creativeTemplate, at: 0)
+            if result.shouldInsertCreativeTemplate {
+                overview.templates.insert(result.creativeTemplate, at: 0)
+            }
             overview.drafts.insert(result.draft, at: 0)
             activeCreateDraftID = result.draft.id
             try await repository.saveOverview(overview)
@@ -1367,7 +1372,14 @@ private extension Array where Element == CredentialStatus {
 
 private struct AISlideshowCreationResult {
     var creativeTemplate: CreativeTemplate
+    var shouldInsertCreativeTemplate: Bool
     var draft: SlideshowDraft
+}
+
+private struct AnalyzedCreativeTemplate {
+    var creativeTemplate: CreativeTemplate
+    var styleGuide: TemplateStyleGuide
+    var shouldInsert: Bool
 }
 
 enum SlideshowCreationError: LocalizedError {
@@ -1590,7 +1602,8 @@ private extension FlickAppModel {
         productImage: SlideshowProductImage?
     ) async throws -> AISlideshowCreationResult {
         let openAIClient = makeOpenAIClient()
-        let styleGuide = try await TemplateAnalysisService(client: openAIClient).createStyleGuide(from: template)
+        let analyzedTemplate = try await analyzedCreativeTemplate(from: template, openAIClient: openAIClient)
+        let styleGuide = analyzedTemplate.styleGuide
         createWorkflowMessage = "Planning slideshow..."
         let plan = try await SlideshowPlannerService(client: openAIClient).createPlan(
             brief: brief,
@@ -1607,6 +1620,49 @@ private extension FlickAppModel {
         try validateProductImagePlacement(in: plan, productImage: productImage)
 
         let now = Date()
+        let draft = makeDraft(
+            from: plan,
+            brief: brief,
+            templateID: analyzedTemplate.creativeTemplate.id,
+            creationModel: creationModel,
+            productImage: productImage,
+            now: now
+        )
+
+        return AISlideshowCreationResult(
+            creativeTemplate: analyzedTemplate.creativeTemplate,
+            shouldInsertCreativeTemplate: analyzedTemplate.shouldInsert,
+            draft: draft
+        )
+    }
+
+    private func analyzedCreativeTemplate(
+        from template: ExampleSlideshowTemplate,
+        openAIClient: OpenAIClient
+    ) async throws -> AnalyzedCreativeTemplate {
+        let fingerprint = TemplateAnalysisCacheService.fingerprint(for: template)
+        if
+            let existingTemplate = overview.templates.first(where: {
+                $0.sourceTemplateID == template.id
+                    && $0.sourceTemplateFingerprint == fingerprint
+                    && $0.analysisSchemaVersion == TemplateAnalysisCacheService.schemaVersion
+            }),
+            let styleGuide = existingTemplate.decodedStyleGuide
+        {
+            return AnalyzedCreativeTemplate(
+                creativeTemplate: existingTemplate,
+                styleGuide: styleGuide,
+                shouldInsert: false
+            )
+        }
+
+        let styleGuide = try await TemplateAnalysisCacheService(
+            openAIClient: openAIClient,
+            storage: templateAnalysisStorageFactory(credentialVault.loadValues())
+        )
+        .resolveStyleGuide(for: template)
+
+        let now = Date()
         let creativeTemplate = CreativeTemplate(
             id: UUID(),
             name: "\(styleGuide.styleName.isEmpty ? template.niche : styleGuide.styleName) - @\(template.profile)",
@@ -1615,21 +1671,19 @@ private extension FlickAppModel {
             slideCount: template.slideCount,
             styleJSON: styleGuide.encodedJSONString(),
             defaultTextRules: "Generated backgrounds must contain no readable text. Flick renders all text overlays.",
+            sourceTemplateID: template.id,
+            sourceTemplateFingerprint: fingerprint,
+            analysisSchemaVersion: TemplateAnalysisCacheService.schemaVersion,
             tags: [],
             createdAt: now,
             updatedAt: now
         )
 
-        let draft = makeDraft(
-            from: plan,
-            brief: brief,
-            templateID: creativeTemplate.id,
-            creationModel: creationModel,
-            productImage: productImage,
-            now: now
+        return AnalyzedCreativeTemplate(
+            creativeTemplate: creativeTemplate,
+            styleGuide: styleGuide,
+            shouldInsert: true
         )
-
-        return AISlideshowCreationResult(creativeTemplate: creativeTemplate, draft: draft)
     }
 
     func publishAutomationInstance(
@@ -1647,12 +1701,13 @@ private extension FlickAppModel {
                 throw ManualPublishError.missingTikTokAccount
             }
 
+            reloadCredentialConfiguration()
             await startAutomationPostProgressStep(
                 progressID,
                 AutomationPostProgressStepID.selectTemplate,
                 detail: "Choosing a template and product image for this run."
             )
-            let template = try automationTemplate(for: automation, scheduledAt: scheduledAt)
+            let template = try await automationTemplate(for: automation, scheduledAt: scheduledAt)
             let productImage = try automationProductImage(for: automation, scheduledAt: scheduledAt)
             await updateAutomationPostProgress(
                 progressID,
@@ -1701,7 +1756,9 @@ private extension FlickAppModel {
                 detail: "Created a \(result.draft.slides.count)-slide post plan."
             )
 
-            overview.templates.insert(result.creativeTemplate, at: 0)
+            if result.shouldInsertCreativeTemplate {
+                overview.templates.insert(result.creativeTemplate, at: 0)
+            }
             overview.drafts.insert(result.draft, at: 0)
             await updateAutomationPostProgress(
                 progressID,
@@ -1756,9 +1813,11 @@ private extension FlickAppModel {
     func automationTemplate(
         for automation: ContentAutomation,
         scheduledAt: Date
-    ) throws -> ExampleSlideshowTemplate {
-        let templates = try ExampleSlideshowLibrary.load()
-            .flatMap(\.templates)
+    ) async throws -> ExampleSlideshowTemplate {
+        let templates = try await ExampleSlideshowLibrary.loadTemplates(
+            matching: Set(automation.templateIDs),
+            configuration: configuration
+        )
             .filter(\.hasDisplayablePreview)
         let templatesByID = Dictionary(uniqueKeysWithValues: templates.map { ($0.id, $0) })
         let selectedTemplates = automation.templateIDs.compactMap { templatesByID[$0] }

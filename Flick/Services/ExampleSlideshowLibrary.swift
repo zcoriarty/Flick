@@ -6,82 +6,181 @@
 import Foundation
 
 enum ExampleSlideshowLibraryError: LocalizedError {
-    case missingResourceFolder
-    case missingIndex(URL)
+    case missingPublicBaseURL
+    case invalidRemoteURL(String)
+    case missingCollection(String)
+    case invalidPage(Int)
 
     var errorDescription: String? {
         switch self {
-        case .missingResourceFolder:
-            "ExampleSlideshows is not available in the app bundle."
-        case let .missingIndex(url):
-            "Example slideshow index is missing at \(url.path)."
+        case .missingPublicBaseURL:
+            "Cloudflare R2 public base URL is required to load templates."
+        case let .invalidRemoteURL(path):
+            "Could not build a template library URL for \(path)."
+        case let .missingCollection(id):
+            "Template niche \(id) is not available."
+        case let .invalidPage(page):
+            "Template page \(page) is not available."
         }
     }
 }
 
 enum ExampleSlideshowLibrary {
-    static func load(bundle: Bundle = .main) throws -> [ExampleSlideshowCollection] {
-        let layout = try resourceLayout(bundle: bundle)
-        let indexURL = try layout.url(for: "index.json")
+    static let defaultPageSize = 24
+    static let currentPointerPath = "template-library/current.json"
 
-        guard FileManager.default.fileExists(atPath: indexURL.path) else {
-            throw ExampleSlideshowLibraryError.missingIndex(indexURL)
+    static func loadIndex(
+        configuration: AppConfiguration,
+        urlSession: URLSession = .shared
+    ) async throws -> ExampleSlideshowLibraryIndex {
+        let release = try await fetch(
+            RemoteTemplateRelease.self,
+            path: currentPointerPath,
+            configuration: configuration,
+            urlSession: urlSession
+        )
+        let indexPath = release.indexPath ?? "\(release.basePath.trimmingTrailingSlashes())/index.json"
+        let index = try await fetch(
+            RemoteTemplateIndexDTO.self,
+            path: indexPath,
+            configuration: configuration,
+            urlSession: urlSession
+        )
+
+        return ExampleSlideshowLibraryIndex(
+            releaseID: release.releaseID,
+            basePath: release.basePath,
+            pageSize: index.pageSize,
+            collections: index.niches.map { niche in
+                ExampleSlideshowCollectionSummary(
+                    folder: niche.folder,
+                    title: niche.title,
+                    nicheSlug: niche.nicheSlug,
+                    sourcePage: URL(string: niche.sourcePage ?? ""),
+                    slideshowCount: niche.slideshowCount,
+                    totalSlideCount: niche.totalSlideCount,
+                    pageSize: niche.pageSize,
+                    pageCount: niche.pageCount
+                )
+            }
+        )
+    }
+
+    static func loadPage(
+        nicheID: String,
+        pageNumber: Int,
+        index: ExampleSlideshowLibraryIndex,
+        configuration: AppConfiguration,
+        urlSession: URLSession = .shared
+    ) async throws -> ExampleSlideshowPage {
+        guard let summary = index.collections.first(where: { $0.id == nicheID }) else {
+            throw ExampleSlideshowLibraryError.missingCollection(nicheID)
+        }
+        guard pageNumber > 0, pageNumber <= max(summary.pageCount, 1) else {
+            throw ExampleSlideshowLibraryError.invalidPage(pageNumber)
         }
 
-        let index = try decode(IndexDTO.self, from: indexURL)
+        let pagePath = "\(index.basePath.trimmingTrailingSlashes())/niches/\(summary.nicheSlug)/pages/\(pageNumber).json"
+        let page = try await fetch(
+            RemoteTemplatePageDTO.self,
+            path: pagePath,
+            configuration: configuration,
+            urlSession: urlSession
+        )
+        let layout = RemoteTemplateResourceLayout(
+            publicBaseURL: try publicBaseURL(configuration: configuration),
+            releaseBasePath: index.basePath,
+            collectionFolder: summary.folder
+        )
+        let collection = ExampleSlideshowCollection(
+            folder: summary.folder,
+            title: summary.title,
+            nicheSlug: summary.nicheSlug,
+            sourcePage: summary.sourcePage,
+            slideshowCount: summary.slideshowCount,
+            totalSlideCount: summary.totalSlideCount,
+            templates: page.slideshows.map { makeTemplate(from: $0, summary: summary, layout: layout) }
+        )
 
-        return try index.niches.map { niche in
-            let manifestURL = try layout.url(for: niche.manifest)
-            let manifest = try decode(ManifestDTO.self, from: manifestURL)
+        return ExampleSlideshowPage(
+            collection: collection,
+            pageNumber: page.pageNumber,
+            pageSize: page.pageSize,
+            pageCount: page.pageCount
+        )
+    }
 
-            return ExampleSlideshowCollection(
-                folder: niche.folder,
-                title: manifest.niche,
-                nicheSlug: manifest.nicheSlug ?? niche.nicheSlug,
-                sourcePage: URL(string: manifest.sourcePage),
-                slideshowCount: manifest.slideshowCount,
-                totalSlideCount: manifest.totalSlideCount,
-                templates: manifest.slideshows.map { slideshow in
-                    makeTemplate(from: slideshow, niche: manifest, collection: niche, layout: layout)
+    static func loadTemplates(
+        matching templateIDs: Set<String>,
+        configuration: AppConfiguration,
+        urlSession: URLSession = .shared
+    ) async throws -> [ExampleSlideshowTemplate] {
+        guard !templateIDs.isEmpty else { return [] }
+        let index = try await loadIndex(configuration: configuration, urlSession: urlSession)
+        var templatesByID: [String: ExampleSlideshowTemplate] = [:]
+
+        for summary in index.collections {
+            guard templatesByID.count < templateIDs.count else { break }
+            for pageNumber in 1...max(summary.pageCount, 1) {
+                let page = try await loadPage(
+                    nicheID: summary.id,
+                    pageNumber: pageNumber,
+                    index: index,
+                    configuration: configuration,
+                    urlSession: urlSession
+                )
+                for template in page.collection.templates where templateIDs.contains(template.id) {
+                    templatesByID[template.id] = template
                 }
-            )
+                if templatesByID.count == templateIDs.count {
+                    break
+                }
+            }
         }
+
+        return templateIDs.compactMap { templatesByID[$0] }
     }
 
-    private static func resourceLayout(bundle: Bundle) throws -> ResourceLayout {
-        if let url = bundle.resourceURL?.appending(path: "ExampleSlideshows", directoryHint: .isDirectory),
-           FileManager.default.fileExists(atPath: url.path) {
-            return .preservedFolder(url)
+    private static func fetch<T: Decodable>(
+        _ type: T.Type,
+        path: String,
+        configuration: AppConfiguration,
+        urlSession: URLSession
+    ) async throws -> T {
+        let url = try remoteURL(path: path, configuration: configuration)
+        let (data, response) = try await urlSession.data(from: url)
+        if let httpResponse = response as? HTTPURLResponse, !(200..<300).contains(httpResponse.statusCode) {
+            throw ExampleSlideshowLibraryError.invalidRemoteURL("\(path) returned HTTP \(httpResponse.statusCode)")
         }
-
-        if let url = bundle.url(forResource: "ExampleSlideshows", withExtension: nil),
-           FileManager.default.fileExists(atPath: url.path) {
-            return .preservedFolder(url)
-        }
-
-        if bundle.url(forResource: "index", withExtension: "json") != nil {
-            return .flat(bundle)
-        }
-
-        throw ExampleSlideshowLibraryError.missingResourceFolder
+        return try JSONDecoder.flick.decode(type, from: data)
     }
 
-    private static func decode<T: Decodable>(_ type: T.Type, from url: URL) throws -> T {
-        let data = try Data(contentsOf: url)
-        let decoder = JSONDecoder()
-        return try decoder.decode(type, from: data)
+    private static func remoteURL(path: String, configuration: AppConfiguration) throws -> URL {
+        let baseURL = try publicBaseURL(configuration: configuration)
+        let base = baseURL.absoluteString.trimmingTrailingSlashes()
+        let normalizedPath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let url = URL(string: "\(base)/\(R2PercentEncoding.path(normalizedPath))") else {
+            throw ExampleSlideshowLibraryError.invalidRemoteURL(path)
+        }
+        return url
+    }
+
+    private static func publicBaseURL(configuration: AppConfiguration) throws -> URL {
+        guard let publicBaseURL = configuration.r2.publicBaseURL else {
+            throw ExampleSlideshowLibraryError.missingPublicBaseURL
+        }
+        return publicBaseURL
     }
 
     private static func makeTemplate(
         from slideshow: SlideshowDTO,
-        niche: ManifestDTO,
-        collection: NicheDTO,
-        layout: ResourceLayout
+        summary: ExampleSlideshowCollectionSummary,
+        layout: RemoteTemplateResourceLayout
     ) -> ExampleSlideshowTemplate {
         ExampleSlideshowTemplate(
             id: slideshow.id,
             niche: slideshow.niche,
-            nicheSlug: slideshow.nicheSlug ?? niche.nicheSlug ?? slug(for: niche.niche),
+            nicheSlug: slideshow.nicheSlug ?? summary.nicheSlug,
             sourceURL: URL(string: slideshow.sourceURL),
             postNumber: slideshow.postNumber,
             profile: slideshow.profile,
@@ -106,70 +205,49 @@ enum ExampleSlideshowLibrary {
                 region: slideshow.creator.region
             ),
             slides: slideshow.slides.map { slide in
-                let localURL = layout.optionalURL(for: "\(collection.folder)/\(slide.relativePath)")
+                let localURL = URL(fileURLWithPath: slide.relativePath)
                 return ExampleSlideshowSlide(
                     id: "\(slideshow.id)-slide-\(slide.index)",
                     index: slide.index,
                     filename: slide.filename,
                     relativePath: slide.relativePath,
-                    localURL: localURL ?? URL(fileURLWithPath: slide.relativePath),
-                    sourceURL: URL(string: slide.url)
+                    localURL: localURL,
+                    sourceURL: URL(string: slide.url),
+                    remoteURL: layout.remoteURL(for: slide.relativePath)
                 )
             }
         )
     }
-
-    private static func slug(for value: String) -> String {
-        value
-            .lowercased()
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .filter { !$0.isEmpty }
-            .joined(separator: "-")
-    }
 }
 
-private enum ResourceLayout {
-    case preservedFolder(URL)
-    case flat(Bundle)
-
-    func url(for relativePath: String) throws -> URL {
-        if let url = optionalURL(for: relativePath) {
-            return url
-        }
-        throw ExampleSlideshowLibraryError.missingIndex(URL(fileURLWithPath: relativePath))
-    }
-
-    func optionalURL(for relativePath: String) -> URL? {
-        switch self {
-        case let .preservedFolder(rootURL):
-            return rootURL.appending(path: relativePath)
-        case let .flat(bundle):
-            let filename = URL(fileURLWithPath: relativePath).lastPathComponent
-            let stem = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
-            let ext = URL(fileURLWithPath: filename).pathExtension
-            return bundle.url(forResource: stem, withExtension: ext.isEmpty ? nil : ext)
-        }
-    }
+private struct RemoteTemplateRelease: Decodable {
+    var releaseID: String
+    var basePath: String
+    var indexPath: String?
 }
 
-private struct IndexDTO: Decodable {
-    var niches: [NicheDTO]
+private struct RemoteTemplateIndexDTO: Decodable {
+    var releaseID: String
+    var basePath: String
+    var pageSize: Int
+    var niches: [RemoteTemplateNicheDTO]
 }
 
-private struct NicheDTO: Decodable {
+private struct RemoteTemplateNicheDTO: Decodable {
     var folder: String
+    var title: String
     var nicheSlug: String
-    var manifest: String
+    var sourcePage: String?
     var slideshowCount: Int
     var totalSlideCount: Int
+    var pageSize: Int
+    var pageCount: Int
 }
 
-private struct ManifestDTO: Decodable {
-    var sourcePage: String
-    var niche: String
-    var nicheSlug: String?
-    var slideshowCount: Int
-    var totalSlideCount: Int
+private struct RemoteTemplatePageDTO: Decodable {
+    var pageNumber: Int
+    var pageSize: Int
+    var pageCount: Int
     var slideshows: [SlideshowDTO]
 }
 
@@ -230,4 +308,24 @@ private struct SlideDTO: Decodable {
     var url: String
     var filename: String
     var relativePath: String
+}
+
+private struct RemoteTemplateResourceLayout {
+    var publicBaseURL: URL
+    var releaseBasePath: String
+    var collectionFolder: String
+
+    func remoteURL(for slideRelativePath: String) -> URL? {
+        let objectPath = [
+            releaseBasePath.trimmingTrailingSlashes(),
+            "ExampleSlideshows",
+            collectionFolder,
+            slideRelativePath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        ]
+        .filter { !$0.isEmpty }
+        .joined(separator: "/")
+
+        let base = publicBaseURL.absoluteString.trimmingTrailingSlashes()
+        return URL(string: "\(base)/\(R2PercentEncoding.path(objectPath))")
+    }
 }

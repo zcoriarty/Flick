@@ -6,13 +6,13 @@
 import SwiftUI
 
 struct CreateAutomationTemplateSection: View {
-    var loadState: CreateTemplateLoadState
+    var templateStore: TemplateLibraryStore
     @Binding var selectedTemplateIDs: Set<String>
     var selectAction: () -> Void
     var retryAction: () -> Void
 
     private var templatesByID: [String: ExampleSlideshowTemplate] {
-        Dictionary(uniqueKeysWithValues: loadState.collections.flatMap(\.templates).map { ($0.id, $0) })
+        Dictionary(uniqueKeysWithValues: templateStore.templates.map { ($0.id, $0) })
     }
 
     private var selectedTemplates: [ExampleSlideshowTemplate] {
@@ -21,16 +21,9 @@ struct CreateAutomationTemplateSection: View {
             .sorted { $0.subtitle.localizedCaseInsensitiveCompare($1.subtitle) == .orderedAscending }
     }
 
-    private var selectableTemplateCount: Int {
-        loadState.collections
-            .flatMap(\.templates)
-            .filter(\.hasDisplayablePreview)
-            .count
-    }
-
     var body: some View {
         Section("Templates") {
-            switch loadState {
+            switch templateStore.status {
             case .loading:
                 HStack(spacing: 12) {
                     ProgressView()
@@ -63,7 +56,7 @@ struct CreateAutomationTemplateSection: View {
                     title: selectedTemplateIDs.isEmpty ? "Select templates" : "Change templates",
                     systemImage: "rectangle.stack.badge.play",
                     iconColor: FlickStyle.appTint,
-                    value: selectedTemplateIDs.isEmpty ? "\(selectableTemplateCount) available" : "\(selectedTemplateIDs.count) selected",
+                    value: selectedTemplateIDs.isEmpty ? templateStore.loadedTemplateCountText : "\(selectedTemplateIDs.count) selected",
                     action: selectAction
                 )
             }
@@ -77,7 +70,11 @@ private struct SelectedAutomationTemplateRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            VerticalMediaFrame(fileURL: template.displayablePreviewSlide?.localURL, cornerRadius: 8)
+            VerticalMediaFrame(
+                fileURL: template.displayablePreviewSlide?.localURL,
+                remoteURL: template.displayablePreviewSlide?.remoteURL,
+                cornerRadius: 8
+            )
                 .frame(width: 44, height: 78)
 
             VStack(alignment: .leading, spacing: 4) {

@@ -558,6 +558,9 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(template.description, forKey: TemplateKey.summary)
         object.setValue(template.platform.rawValue, forKey: TemplateKey.platform)
         object.setValue(template.slideCount, forKey: TemplateKey.slideCount)
+        object.setValue(template.analysisSchemaVersion, forKey: TemplateKey.analysisSchemaVersion)
+        object.setValue(template.sourceTemplateFingerprint, forKey: TemplateKey.sourceTemplateFingerprint)
+        object.setValue(template.sourceTemplateID, forKey: TemplateKey.sourceTemplateID)
         object.setValue(template.styleJSON, forKey: TemplateKey.styleJSON)
         object.setValue(template.defaultTextRules, forKey: TemplateKey.defaultTextRules)
         object.setValue(template.tags.map(\.id.uuidString), asJSONForKey: TemplateKey.tagIDsJSON)
@@ -736,6 +739,9 @@ private enum TemplateKey {
     static let name = "name"
     static let platform = "platform"
     static let slideCount = "slideCount"
+    static let analysisSchemaVersion = "analysisSchemaVersion"
+    static let sourceTemplateFingerprint = "sourceTemplateFingerprint"
+    static let sourceTemplateID = "sourceTemplateID"
     static let styleJSON = "styleJSON"
     static let summary = "summary"
     static let tagIDsJSON = "tagIDsJSON"
@@ -978,6 +984,10 @@ private extension CreativeTemplate {
             slideCount: managedObject.integerValue(forKey: TemplateKey.slideCount),
             styleJSON: managedObject.value(forKey: TemplateKey.styleJSON) as? String ?? "{}",
             defaultTextRules: managedObject.value(forKey: TemplateKey.defaultTextRules) as? String ?? "",
+            sourceTemplateID: managedObject.value(forKey: TemplateKey.sourceTemplateID) as? String,
+            sourceTemplateFingerprint: managedObject.value(forKey: TemplateKey.sourceTemplateFingerprint) as? String,
+            analysisSchemaVersion: (managedObject.value(forKey: TemplateKey.analysisSchemaVersion) as? NSNumber)?.intValue
+                ?? managedObject.value(forKey: TemplateKey.analysisSchemaVersion) as? Int,
             tags: [],
             createdAt: managedObject.value(forKey: TemplateKey.createdAt) as? Date ?? Date(),
             updatedAt: managedObject.value(forKey: TemplateKey.updatedAt) as? Date ?? Date()

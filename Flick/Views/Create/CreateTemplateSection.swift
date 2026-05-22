@@ -5,34 +5,16 @@
 
 import SwiftUI
 
-enum CreateTemplateLoadState {
-    case loading
-    case loaded([ExampleSlideshowCollection])
-    case failed(String)
-
-    var collections: [ExampleSlideshowCollection] {
-        guard case let .loaded(collections) = self else { return [] }
-        return collections
-    }
-}
-
 struct CreateTemplateSection: View {
-    var loadState: CreateTemplateLoadState
+    var templateStore: TemplateLibraryStore
     var selectedTemplate: ExampleSlideshowTemplate?
     var selectAction: () -> Void
     var clearAction: () -> Void
     var retryAction: () -> Void
 
-    private var selectableTemplateCount: Int {
-        loadState.collections
-            .flatMap(\.templates)
-            .filter(\.hasDisplayablePreview)
-            .count
-    }
-
     var body: some View {
         Section("Template") {
-            switch loadState {
+            switch templateStore.status {
             case .loading:
                 HStack(spacing: 12) {
                     ProgressView()
@@ -59,7 +41,7 @@ struct CreateTemplateSection: View {
                     title: selectedTemplate == nil ? "Select template" : "Change template",
                     systemImage: "rectangle.stack.badge.play",
                     iconColor: FlickStyle.appTint,
-                    value: "\(selectableTemplateCount) available",
+                    value: templateStore.loadedTemplateCountText,
                     action: selectAction
                 )
             }
@@ -126,7 +108,11 @@ private struct SelectedTemplateRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            VerticalMediaFrame(fileURL: template.displayablePreviewSlide?.localURL, cornerRadius: 8)
+            VerticalMediaFrame(
+                fileURL: template.displayablePreviewSlide?.localURL,
+                remoteURL: template.displayablePreviewSlide?.remoteURL,
+                cornerRadius: 8
+            )
                 .frame(width: 54, height: 96)
 
             VStack(alignment: .leading, spacing: 5) {

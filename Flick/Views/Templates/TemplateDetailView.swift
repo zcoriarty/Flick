@@ -30,7 +30,10 @@ struct TemplateDetailView: View {
     private var header: some View {
         FlickGlassCard {
             HStack(alignment: .top, spacing: 16) {
-                VerticalMediaFrame(fileURL: template.displayablePreviewSlide?.localURL)
+                VerticalMediaFrame(
+                    fileURL: template.displayablePreviewSlide?.localURL,
+                    remoteURL: template.displayablePreviewSlide?.remoteURL
+                )
                     .frame(width: 120)
 
                 VStack(alignment: .leading, spacing: 10) {
@@ -90,7 +93,7 @@ private struct TemplateSlideTile: View {
     var slide: ExampleSlideshowSlide
 
     var body: some View {
-        VerticalMediaFrame(fileURL: slide.localURL, cornerRadius: 8)
+        VerticalMediaFrame(fileURL: slide.localURL, remoteURL: slide.remoteURL, cornerRadius: 8)
             .overlay(alignment: .bottomLeading) {
                 Text("Slide \(slide.index)")
                     .font(.caption.weight(.semibold))

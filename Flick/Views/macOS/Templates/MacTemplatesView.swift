@@ -8,10 +8,9 @@ import SwiftUI
 
 struct MacTemplatesView: View {
     @Environment(FlickAppModel.self) private var appModel
-    @State private var loadState: MacTemplatesLoadState = .loading
+    @State private var templateStore = TemplateLibraryStore()
     @State private var selectedTemplate: ExampleSlideshowTemplate?
     @State private var previewedTemplate: ExampleSlideshowTemplate?
-    @State private var selectedNicheID = MacTemplatesFilter.allID
     @State private var searchText = ""
 
     var body: some View {
@@ -20,7 +19,9 @@ struct MacTemplatesView: View {
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Reload", systemImage: "arrow.clockwise") {
-                        loadTemplates()
+                        Task {
+                            await loadTemplates(forceReload: true)
+                        }
                     }
                 }
             }
@@ -28,15 +29,15 @@ struct MacTemplatesView: View {
                 TemplatePreviewSheet(template: template)
             }
             .task {
-                if case .loading = loadState {
-                    loadTemplates()
+                if case .loading = templateStore.status {
+                    await loadTemplates()
                 }
             }
     }
 
     @ViewBuilder
     private var content: some View {
-        switch loadState {
+        switch templateStore.status {
         case .loading:
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -49,31 +50,36 @@ struct MacTemplatesView: View {
             )
             .padding(28)
             .flickAppBackground()
-        case let .loaded(collections):
-            loadedContent(collections)
+        case .loaded:
+            loadedContent
         }
     }
 
-    private func loadedContent(_ collections: [ExampleSlideshowCollection]) -> some View {
-        let templates = filteredTemplates(in: collections)
-        let displayableTemplates = collections.flatMap(\.templates).filter(\.hasDisplayablePreview)
-        let totalSlides = displayableTemplates.reduce(0) { $0 + $1.slideCount }
+    private var loadedContent: some View {
+        let templates = filteredTemplates
+        let totalTemplates = templateStore.selectedSummary?.slideshowCount ?? templates.count
+        let totalSlides = templateStore.selectedSummary?.totalSlideCount ?? templates.reduce(0) { $0 + $1.slideCount }
 
         return HStack(alignment: .top, spacing: 22) {
             MacTemplateSidebar(
-                collections: collections,
-                selectedNicheID: $selectedNicheID
+                summaries: templateStore.summaries,
+                selectedNicheID: templateStore.selectedNicheID,
+                selectAction: { summary in
+                    Task {
+                        await templateStore.selectNiche(summary.id, configuration: appModel.configuration)
+                    }
+                }
             )
             .frame(width: 260)
 
             VStack(alignment: .leading, spacing: 22) {
                 MacWorkspaceHeader(
                     title: "Template Library",
-                    subtitle: "Browse examples by niche, inspect source details, and start drafts from proven slideshow structures.",
-                    metrics: [
-                        MacWorkspaceMetric(title: "Templates", value: displayableTemplates.count.formatted()),
+                        subtitle: "Browse examples by niche, inspect source details, and start drafts from proven slideshow structures.",
+                        metrics: [
+                        MacWorkspaceMetric(title: "Templates", value: totalTemplates.formatted()),
                         MacWorkspaceMetric(title: "Slides", value: totalSlides.formatted()),
-                        MacWorkspaceMetric(title: "Niches", value: collections.count.formatted())
+                        MacWorkspaceMetric(title: "Niches", value: templateStore.summaries.count.formatted())
                     ]
                 )
 
@@ -84,9 +90,16 @@ struct MacTemplatesView: View {
                 HStack(alignment: .top, spacing: 18) {
                     MacTemplateGrid(
                         templates: templates,
+                        showsLoadMore: showLoadMore,
+                        isLoadingMore: templateStore.isLoadingPage,
                         selectedTemplate: selectedTemplate,
                         selectAction: { selectedTemplate = $0 },
-                        useAction: useTemplate
+                        useAction: useTemplate,
+                        loadMoreAction: {
+                            Task {
+                                await templateStore.loadNextPage(configuration: appModel.configuration)
+                            }
+                        }
                     )
 
                     MacTemplateInspector(
@@ -103,20 +116,14 @@ struct MacTemplatesView: View {
         .onChange(of: templates) { _, newTemplates in
             reconcileSelection(with: newTemplates)
         }
-        .task(id: selectedNicheID) {
+        .task(id: templateStore.selectedNicheID) {
             reconcileSelection(with: templates)
         }
     }
 
-    private func filteredTemplates(in collections: [ExampleSlideshowCollection]) -> [ExampleSlideshowTemplate] {
-        let sourceCollections = selectedNicheID == MacTemplatesFilter.allID
-            ? collections
-            : collections.filter { $0.id == selectedNicheID }
-
+    private var filteredTemplates: [ExampleSlideshowTemplate] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let templates = sourceCollections
-            .flatMap(\.templates)
-            .filter(\.hasDisplayablePreview)
+        let templates = templateStore.templates.filter(\.hasDisplayablePreview)
 
         guard !query.isEmpty else { return templates }
 
@@ -149,35 +156,20 @@ struct MacTemplatesView: View {
         appModel.createDraft(from: template)
     }
 
-    private func loadTemplates() {
-        loadState = .loading
-        do {
-            let collections = try ExampleSlideshowLibrary.load()
-            loadState = .loaded(collections)
-            selectedTemplate = collections.flatMap(\.templates).first(where: \.hasDisplayablePreview)
-        } catch {
-            loadState = .failed(error.localizedDescription)
-        }
+    private var showLoadMore: Bool {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && templateStore.hasNextPage
     }
-}
 
-private enum MacTemplatesLoadState {
-    case loading
-    case loaded([ExampleSlideshowCollection])
-    case failed(String)
-}
-
-private enum MacTemplatesFilter {
-    static let allID = "all"
+    private func loadTemplates(forceReload: Bool = false) async {
+        await templateStore.loadInitial(configuration: appModel.configuration, forceReload: forceReload)
+        selectedTemplate = templateStore.templates.first(where: \.hasDisplayablePreview)
+    }
 }
 
 private struct MacTemplateSidebar: View {
-    var collections: [ExampleSlideshowCollection]
-    @Binding var selectedNicheID: String
-
-    private var totalTemplates: Int {
-        collections.flatMap(\.templates).filter(\.hasDisplayablePreview).count
-    }
+    var summaries: [ExampleSlideshowCollectionSummary]
+    var selectedNicheID: String?
+    var selectAction: (ExampleSlideshowCollectionSummary) -> Void
 
     var body: some View {
         MacWorkspacePanel {
@@ -186,21 +178,13 @@ private struct MacTemplateSidebar: View {
                     .font(.title2.weight(.semibold))
 
                 VStack(spacing: 8) {
-                    MacTemplateFilterButton(
-                        title: "All Templates",
-                        subtitle: "\(totalTemplates.formatted()) templates",
-                        isSelected: selectedNicheID == MacTemplatesFilter.allID
-                    ) {
-                        selectedNicheID = MacTemplatesFilter.allID
-                    }
-
-                    ForEach(collections) { collection in
+                    ForEach(summaries) { collection in
                         MacTemplateFilterButton(
                             title: collection.title,
-                            subtitle: "\(collection.templates.filter(\.hasDisplayablePreview).count.formatted()) templates",
+                            subtitle: "\(collection.slideshowCount.formatted()) templates",
                             isSelected: selectedNicheID == collection.id
                         ) {
-                            selectedNicheID = collection.id
+                            selectAction(collection)
                         }
                     }
                 }
@@ -243,9 +227,12 @@ private struct MacTemplateFilterButton: View {
 
 private struct MacTemplateGrid: View {
     var templates: [ExampleSlideshowTemplate]
+    var showsLoadMore: Bool
+    var isLoadingMore: Bool
     var selectedTemplate: ExampleSlideshowTemplate?
     var selectAction: (ExampleSlideshowTemplate) -> Void
     var useAction: (ExampleSlideshowTemplate) -> Void
+    var loadMoreAction: () -> Void
 
     var body: some View {
         MacWorkspaceSection(title: "Templates", systemImage: "rectangle.stack") {
@@ -279,6 +266,22 @@ private struct MacTemplateGrid: View {
                         }
                     }
                 }
+
+                if showsLoadMore {
+                    Button(action: loadMoreAction) {
+                        HStack(spacing: 8) {
+                            if isLoadingMore {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+                            Text(isLoadingMore ? "Loading templates" : "Load more")
+                                .fontWeight(.semibold)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isLoadingMore)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -295,7 +298,12 @@ private struct MacTemplateInspector: View {
             if let template {
                 MacWorkspacePanel {
                     VStack(alignment: .leading, spacing: 16) {
-                        VerticalMediaFrame(fileURL: template.displayablePreviewSlide?.localURL, cornerRadius: 14, maxPixelSize: 1_080)
+                        VerticalMediaFrame(
+                            fileURL: template.displayablePreviewSlide?.localURL,
+                            remoteURL: template.displayablePreviewSlide?.remoteURL,
+                            cornerRadius: 14,
+                            maxPixelSize: 1_080
+                        )
                             .frame(maxWidth: 210)
                             .frame(maxWidth: .infinity)
 

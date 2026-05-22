@@ -438,6 +438,9 @@ struct CreativeTemplate: Identifiable, Codable, Hashable {
     var slideCount: Int
     var styleJSON: String
     var defaultTextRules: String
+    var sourceTemplateID: String? = nil
+    var sourceTemplateFingerprint: String? = nil
+    var analysisSchemaVersion: Int? = nil
     var tags: [TrendTag]
     var createdAt: Date
     var updatedAt: Date

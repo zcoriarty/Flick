@@ -151,6 +151,41 @@ final class FlickTests: XCTestCase {
         XCTAssertTrue(aiMetadataJSON.contains("Cottagecore"))
     }
 
+    func testCoreDataRoundTripsCreativeTemplateSourceFields() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let persistenceController = PersistenceController(inMemory: true)
+        let repository = CoreDataFlickRepository(
+            context: persistenceController.container.viewContext,
+            cloudAvailability: { false }
+        )
+        let template = CreativeTemplate(
+            id: UUID(),
+            name: "Cached Fitness Style",
+            description: "Shared template analysis",
+            platform: .tiktok,
+            slideCount: 3,
+            styleJSON: makeTemplateStyleGuide(styleName: "Cached Fitness").encodedJSONString(),
+            defaultTextRules: "No readable text.",
+            sourceTemplateID: "fitness-template-1",
+            sourceTemplateFingerprint: "fingerprint-1",
+            analysisSchemaVersion: TemplateAnalysisCacheService.schemaVersion,
+            tags: [],
+            createdAt: now,
+            updatedAt: now
+        )
+        var state = FlickEmptyState.make()
+        state.templates = [template]
+
+        try await repository.saveOverview(state)
+        let loaded = try await repository.loadOverview()
+        let loadedTemplate = try XCTUnwrap(loaded.templates.first)
+
+        XCTAssertEqual(loadedTemplate.sourceTemplateID, template.sourceTemplateID)
+        XCTAssertEqual(loadedTemplate.sourceTemplateFingerprint, template.sourceTemplateFingerprint)
+        XCTAssertEqual(loadedTemplate.analysisSchemaVersion, template.analysisSchemaVersion)
+        XCTAssertEqual(loadedTemplate.decodedStyleGuide?.styleName, "Cached Fitness")
+    }
+
     func testCoreDataRoundTripsConnectedAccounts() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let persistenceController = PersistenceController(inMemory: true)
@@ -986,6 +1021,331 @@ final class FlickTests: XCTestCase {
                 paths.thumbnails
             ]
         )
+    }
+
+    func testRemoteTemplateIndexLoadsNicheSummariesWithoutFetchingPages() async throws {
+        var requestedPaths: [String] = []
+        CapturingURLProtocol.requestHandler = { request in
+            let path = request.url?.path ?? ""
+            requestedPaths.append(path)
+
+            let payload: String
+            switch path {
+            case "/template-library/current.json":
+                payload = """
+                {
+                    "releaseID": "release-1",
+                    "basePath": "template-library/releases/release-1",
+                    "indexPath": "template-library/releases/release-1/index.json"
+                }
+                """
+            case "/template-library/releases/release-1/index.json":
+                payload = """
+                {
+                    "releaseID": "release-1",
+                    "basePath": "template-library/releases/release-1",
+                    "pageSize": 24,
+                    "niches": [
+                        {
+                            "folder": "Fitness",
+                            "title": "Fitness",
+                            "nicheSlug": "fitness",
+                            "sourcePage": "https://example.com/fitness",
+                            "slideshowCount": 30,
+                            "totalSlideCount": 90,
+                            "pageSize": 24,
+                            "pageCount": 2
+                        },
+                        {
+                            "folder": "Wellness",
+                            "title": "Wellness",
+                            "nicheSlug": "wellness",
+                            "sourcePage": "https://example.com/wellness",
+                            "slideshowCount": 12,
+                            "totalSlideCount": 36,
+                            "pageSize": 24,
+                            "pageCount": 1
+                        }
+                    ]
+                }
+                """
+            default:
+                XCTFail("Unexpected template library request: \(path)")
+                payload = "{}"
+            }
+
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                Data(payload.utf8)
+            )
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CapturingURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let index = try await ExampleSlideshowLibrary.loadIndex(
+            configuration: makeTestAppConfiguration(),
+            urlSession: session
+        )
+
+        XCTAssertEqual(index.releaseID, "release-1")
+        XCTAssertEqual(index.collections.map(\.id), ["Fitness", "Wellness"])
+        XCTAssertEqual(index.collections.first?.pageCount, 2)
+        XCTAssertFalse(requestedPaths.contains { $0.contains("/pages/") })
+    }
+
+    func testRemoteTemplatePageBuildsSlideRemoteURLs() async throws {
+        CapturingURLProtocol.requestHandler = { request in
+            let path = request.url?.path ?? ""
+            let payload: String
+            switch path {
+            case "/template-library/current.json":
+                payload = """
+                {
+                    "releaseID": "release-1",
+                    "basePath": "template-library/releases/release-1",
+                    "indexPath": "template-library/releases/release-1/index.json"
+                }
+                """
+            case "/template-library/releases/release-1/index.json":
+                payload = """
+                {
+                    "releaseID": "release-1",
+                    "basePath": "template-library/releases/release-1",
+                    "pageSize": 24,
+                    "niches": [
+                        {
+                            "folder": "Fitness",
+                            "title": "Fitness",
+                            "nicheSlug": "fitness",
+                            "sourcePage": null,
+                            "slideshowCount": 1,
+                            "totalSlideCount": 1,
+                            "pageSize": 24,
+                            "pageCount": 1
+                        }
+                    ]
+                }
+                """
+            case "/template-library/releases/release-1/niches/fitness/pages/1.json":
+                payload = """
+                {
+                    "pageNumber": 1,
+                    "pageSize": 24,
+                    "pageCount": 1,
+                    "slideshows": [
+                        {
+                            "id": "fitness-template-1",
+                            "niche": "Fitness",
+                            "nicheSlug": "fitness",
+                            "sourceUrl": "https://example.com/source",
+                            "postNumber": 1,
+                            "profile": "fitcreator",
+                            "profileDisplayName": "Fit Creator",
+                            "folder": "fitness-template-1",
+                            "slideCount": 1,
+                            "metrics": {},
+                            "product": {},
+                            "creator": {},
+                            "slides": [
+                                {
+                                    "index": 1,
+                                    "url": "https://example.com/original-slide.jpg",
+                                    "filename": "slide 01.jpg",
+                                    "relativePath": "fitness-template-1/slide 01.jpg"
+                                }
+                            ]
+                        }
+                    ]
+                }
+                """
+            default:
+                XCTFail("Unexpected template library request: \(path)")
+                payload = "{}"
+            }
+
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                Data(payload.utf8)
+            )
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CapturingURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let appConfiguration = makeTestAppConfiguration()
+        let index = try await ExampleSlideshowLibrary.loadIndex(
+            configuration: appConfiguration,
+            urlSession: session
+        )
+        let page = try await ExampleSlideshowLibrary.loadPage(
+            nicheID: "Fitness",
+            pageNumber: 1,
+            index: index,
+            configuration: appConfiguration,
+            urlSession: session
+        )
+
+        let slide = try XCTUnwrap(page.collection.templates.first?.slides.first)
+        XCTAssertEqual(
+            slide.remoteURL?.absoluteString,
+            "https://media.example.com/template-library/releases/release-1/ExampleSlideshows/Fitness/fitness-template-1/slide%2001.jpg"
+        )
+    }
+
+    func testTemplateLibraryStoreInitialSelectionUsesPersistedNicheThenFirstFallback() async throws {
+        let index = makeTemplateLibraryIndex()
+        var requestedPages: [(String, Int)] = []
+        let client = TemplateLibraryClient(
+            loadIndex: { _ in index },
+            loadPage: { nicheID, pageNumber, index, _ in
+                requestedPages.append((nicheID, pageNumber))
+                return makeTemplatePage(
+                    nicheID: nicheID,
+                    pageNumber: pageNumber,
+                    index: index,
+                    templates: [makeExampleSlideshowTemplate(id: "\(nicheID)-page-\(pageNumber)")]
+                )
+            }
+        )
+        let suiteName = "TemplateLibraryStore-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.set("Wellness", forKey: "lastSelectedTemplateNicheID")
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let persistedStore = TemplateLibraryStore(userDefaults: defaults, client: client)
+        await persistedStore.loadInitial(configuration: makeTestAppConfiguration())
+
+        XCTAssertEqual(persistedStore.selectedNicheID, "Wellness")
+        XCTAssertEqual(requestedPages.map { "\($0.0):\($0.1)" }, ["Wellness:1"])
+
+        defaults.set("Missing", forKey: "lastSelectedTemplateNicheID")
+        requestedPages = []
+        let fallbackStore = TemplateLibraryStore(userDefaults: defaults, client: client)
+        await fallbackStore.loadInitial(configuration: makeTestAppConfiguration())
+
+        XCTAssertEqual(fallbackStore.selectedNicheID, "Fitness")
+        XCTAssertEqual(requestedPages.map { "\($0.0):\($0.1)" }, ["Fitness:1"])
+    }
+
+    func testTemplateLibraryStoreSelectionAndPaginationFetchSelectedNichePages() async {
+        let index = makeTemplateLibraryIndex()
+        var requestedPages: [(String, Int)] = []
+        let client = TemplateLibraryClient(
+            loadIndex: { _ in index },
+            loadPage: { nicheID, pageNumber, index, _ in
+                requestedPages.append((nicheID, pageNumber))
+                return makeTemplatePage(
+                    nicheID: nicheID,
+                    pageNumber: pageNumber,
+                    index: index,
+                    templates: [makeExampleSlideshowTemplate(id: "\(nicheID)-template-\(pageNumber)", niche: nicheID)]
+                )
+            }
+        )
+        let suiteName = "TemplateLibraryStore-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        let store = TemplateLibraryStore(userDefaults: defaults, client: client)
+
+        await store.loadInitial(configuration: makeTestAppConfiguration())
+        await store.selectNiche("Wellness", configuration: makeTestAppConfiguration())
+        await store.loadNextPage(configuration: makeTestAppConfiguration())
+
+        XCTAssertEqual(requestedPages.map { "\($0.0):\($0.1)" }, ["Fitness:1", "Wellness:1", "Wellness:2"])
+        XCTAssertEqual(store.templates.map(\.id), ["Wellness-template-1", "Wellness-template-2"])
+        XCTAssertEqual(store.pageNumber, 2)
+        XCTAssertFalse(store.hasNextPage)
+    }
+
+    func testCreateDraftUsesRemoteOnlySlideURLs() throws {
+        let template = makeExampleSlideshowTemplate(
+            id: "remote-template",
+            slideCount: 2,
+            niche: "Fitness",
+            slides: [
+                makeExampleSlideshowSlide(index: 1, remoteURL: try XCTUnwrap(URL(string: "https://media.example.com/slide-1.jpg"))),
+                makeExampleSlideshowSlide(index: 2, remoteURL: try XCTUnwrap(URL(string: "https://media.example.com/slide-2.jpg")))
+            ]
+        )
+        let model = FlickAppModel(
+            repository: InMemoryFlickRepository(state: FlickEmptyState.make()),
+            configuration: makeTestAppConfiguration()
+        )
+
+        model.createDraft(from: template)
+
+        XCTAssertEqual(model.overview.assets.count, 2)
+        XCTAssertEqual(model.overview.assets.map(\.publicURL), template.slides.map(\.remoteURL))
+        XCTAssertTrue(model.overview.assets.allSatisfy { $0.localFilePath == nil })
+        XCTAssertEqual(model.activeCreateDraft?.slides.count, 2)
+    }
+
+    func testAnalysisCacheHitSkipsOpenAI() async throws {
+        let styleGuide = makeTemplateStyleGuide(styleName: "Cached Style")
+        let template = makeExampleSlideshowTemplate(id: "cached-template")
+        let fingerprint = TemplateAnalysisCacheService.fingerprint(for: template)
+        let path = TemplateAnalysisCacheService.cachePath(templateID: template.id, fingerprint: fingerprint)
+        let storage = FakeTemplateAnalysisStorage()
+        storage.cachedDataByPath[path] = try makeAnalysisCacheRecordData(
+            templateID: template.id,
+            fingerprint: fingerprint,
+            styleGuide: styleGuide
+        )
+        var openAIRequestCount = 0
+        CapturingURLProtocol.requestHandler = { request in
+            openAIRequestCount += 1
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!,
+                Data()
+            )
+        }
+
+        let service = TemplateAnalysisCacheService(
+            openAIClient: makeOpenAIClientForTests(),
+            storage: storage
+        )
+        let resolved = try await service.resolveStyleGuide(for: template)
+
+        XCTAssertEqual(resolved, styleGuide)
+        XCTAssertEqual(openAIRequestCount, 0)
+        XCTAssertTrue(storage.uploads.isEmpty)
+    }
+
+    func testAnalysisCacheMissCallsOpenAIOnceAndStoresJSON() async throws {
+        let styleGuide = makeTemplateStyleGuide(styleName: "Fresh Style")
+        let template = makeExampleSlideshowTemplate(id: "fresh-template")
+        let fingerprint = TemplateAnalysisCacheService.fingerprint(for: template)
+        var openAIRequestCount = 0
+        CapturingURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url?.path, "/v1/responses")
+            openAIRequestCount += 1
+
+            let outputData = try JSONEncoder.flick.encode(styleGuide)
+            let outputText = try XCTUnwrap(String(data: outputData, encoding: .utf8))
+            let responseData = try JSONSerialization.data(withJSONObject: ["output_text": outputText])
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                responseData
+            )
+        }
+        let storage = FakeTemplateAnalysisStorage()
+        let service = TemplateAnalysisCacheService(
+            openAIClient: makeOpenAIClientForTests(),
+            storage: storage
+        )
+
+        let resolved = try await service.resolveStyleGuide(for: template)
+
+        XCTAssertEqual(resolved, styleGuide)
+        XCTAssertEqual(openAIRequestCount, 1)
+        XCTAssertEqual(storage.uploads.count, 1)
+        XCTAssertEqual(storage.uploads.first?.path, TemplateAnalysisCacheService.cachePath(templateID: template.id, fingerprint: fingerprint))
+        XCTAssertNotNil(storage.cachedDataByPath[TemplateAnalysisCacheService.cachePath(templateID: template.id, fingerprint: fingerprint)])
     }
 
     func testTikTokAuthorizationParametersRequireUniversalLinkRedirect() throws {
@@ -1938,7 +2298,8 @@ final class FlickTests: XCTestCase {
         let model = FlickAppModel(
             repository: repository,
             configuration: .current,
-            openAIClientFactory: { _ in client }
+            openAIClientFactory: { _ in client },
+            templateAnalysisStorageFactory: { _ in FakeTemplateAnalysisStorage(missingConfiguration: true) }
         )
         let creationModel = makeCreationModel()
 
@@ -2170,16 +2531,25 @@ private func makeConnectedAccount(
     )
 }
 
-private func makeExampleSlideshowTemplate(slideCount: Int = 2) -> ExampleSlideshowTemplate {
-    ExampleSlideshowTemplate(
-        id: "template-\(slideCount)",
-        niche: "Productivity",
-        nicheSlug: "productivity",
+private func makeExampleSlideshowTemplate(
+    id: String? = nil,
+    slideCount: Int = 2,
+    niche: String = "Productivity",
+    nicheSlug: String? = nil,
+    slides: [ExampleSlideshowSlide] = []
+) -> ExampleSlideshowTemplate {
+    let templateID = id ?? "template-\(slideCount)"
+    let resolvedNicheSlug = nicheSlug ?? niche.lowercased().replacingOccurrences(of: " ", with: "-")
+
+    return ExampleSlideshowTemplate(
+        id: templateID,
+        niche: niche,
+        nicheSlug: resolvedNicheSlug,
         sourceURL: nil,
         postNumber: 1,
         profile: "flickapp",
         profileDisplayName: "Flick",
-        folder: "Productivity/template-\(slideCount)",
+        folder: "\(niche)/\(templateID)",
         slideCount: slideCount,
         metrics: ExampleSlideshowMetrics(
             views: nil,
@@ -2198,8 +2568,141 @@ private func makeExampleSlideshowTemplate(slideCount: Int = 2) -> ExampleSlidesh
             avatarURL: nil,
             region: nil
         ),
-        slides: []
+        slides: slides
     )
+}
+
+private func makeExampleSlideshowSlide(index: Int, remoteURL: URL? = nil) -> ExampleSlideshowSlide {
+    ExampleSlideshowSlide(
+        id: "slide-\(index)",
+        index: index,
+        filename: "slide-\(index).jpg",
+        relativePath: "template/slide-\(index).jpg",
+        localURL: URL(fileURLWithPath: "/missing/template/slide-\(index).jpg"),
+        sourceURL: URL(string: "https://example.com/source-slide-\(index).jpg"),
+        remoteURL: remoteURL
+    )
+}
+
+private func makeTemplateStyleGuide(styleName: String) -> TemplateStyleGuide {
+    TemplateStyleGuide(
+        styleName: styleName,
+        visualTraits: ["Clean layout"],
+        colorPalette: ["Blue", "White"],
+        lighting: "Soft",
+        recurringMotifs: ["Phone frame"],
+        reuseStructurally: ["Hook then proof"],
+        avoidCopyingDirectly: ["Creator likeness"],
+        imageGenerationRules: ["No readable text"]
+    )
+}
+
+private func makeTemplateLibraryIndex() -> ExampleSlideshowLibraryIndex {
+    ExampleSlideshowLibraryIndex(
+        releaseID: "release-1",
+        basePath: "template-library/releases/release-1",
+        pageSize: 24,
+        collections: [
+            ExampleSlideshowCollectionSummary(
+                folder: "Fitness",
+                title: "Fitness",
+                nicheSlug: "fitness",
+                sourcePage: nil,
+                slideshowCount: 24,
+                totalSlideCount: 48,
+                pageSize: 24,
+                pageCount: 1
+            ),
+            ExampleSlideshowCollectionSummary(
+                folder: "Wellness",
+                title: "Wellness",
+                nicheSlug: "wellness",
+                sourcePage: nil,
+                slideshowCount: 48,
+                totalSlideCount: 96,
+                pageSize: 24,
+                pageCount: 2
+            )
+        ]
+    )
+}
+
+private func makeTemplatePage(
+    nicheID: String,
+    pageNumber: Int,
+    index: ExampleSlideshowLibraryIndex,
+    templates: [ExampleSlideshowTemplate]
+) -> ExampleSlideshowPage {
+    let summary = index.collections.first { $0.id == nicheID } ?? index.collections[0]
+    return ExampleSlideshowPage(
+        collection: ExampleSlideshowCollection(
+            folder: summary.folder,
+            title: summary.title,
+            nicheSlug: summary.nicheSlug,
+            sourcePage: summary.sourcePage,
+            slideshowCount: summary.slideshowCount,
+            totalSlideCount: summary.totalSlideCount,
+            templates: templates
+        ),
+        pageNumber: pageNumber,
+        pageSize: summary.pageSize,
+        pageCount: summary.pageCount
+    )
+}
+
+private func makeTestAppConfiguration(values: [String: String] = [:]) -> AppConfiguration {
+    let mergedValues = [
+        "R2_ACCOUNT_ID": "account-id",
+        "R2_ACCESS_KEY_ID": "access-key",
+        "R2_SECRET_ACCESS_KEY": "secret-key",
+        "R2_BUCKET": "flick-media",
+        "R2_PUBLIC_BASE_URL": "https://media.example.com",
+        "OPENAI_API_KEY": "test-key"
+    ].merging(values) { _, new in new }
+
+    return AppConfiguration(
+        r2: R2StorageConfiguration(values: mergedValues),
+        tiktok: TikTokConfiguration(values: mergedValues),
+        openAI: OpenAIConfiguration(values: mergedValues),
+        meta: MetaConfiguration(values: mergedValues),
+        storagePaths: R2StoragePaths(),
+        renderDirectory: FileManager.default.temporaryDirectory,
+        secureStoredCredentialKeys: Set(mergedValues.keys)
+    )
+}
+
+private func makeOpenAIClientForTests() -> OpenAIClient {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [CapturingURLProtocol.self]
+    let session = URLSession(configuration: configuration)
+    return OpenAIClient(
+        credentials: ["OPENAI_API_KEY": "test-key"],
+        urlSession: session
+    )
+}
+
+private func makeAnalysisCacheRecordData(
+    templateID: String,
+    fingerprint: String,
+    styleGuide: TemplateStyleGuide
+) throws -> Data {
+    try JSONSerialization.data(withJSONObject: [
+        "templateID": templateID,
+        "fingerprint": fingerprint,
+        "schemaVersion": TemplateAnalysisCacheService.schemaVersion,
+        "model": "gpt-test",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "styleGuide": [
+            "styleName": styleGuide.styleName,
+            "visualTraits": styleGuide.visualTraits,
+            "colorPalette": styleGuide.colorPalette,
+            "lighting": styleGuide.lighting,
+            "recurringMotifs": styleGuide.recurringMotifs,
+            "reuseStructurally": styleGuide.reuseStructurally,
+            "avoidCopyingDirectly": styleGuide.avoidCopyingDirectly,
+            "imageGenerationRules": styleGuide.imageGenerationRules
+        ]
+    ])
 }
 
 private func managedObjectCount(entityName: String, in context: NSManagedObjectContext) throws -> Int {
@@ -2228,6 +2731,42 @@ private final class FakeMediaStorage: MediaStorageProviding {
 
     func signedURL(path: String, expiresIn: TimeInterval) async throws -> URL {
         try XCTUnwrap(URL(string: "https://signed.example.com/\(path)?expires=\(Int(expiresIn))"))
+    }
+}
+
+private final class FakeTemplateAnalysisStorage: TemplateAnalysisStorageProviding {
+    struct Upload: Hashable {
+        var path: String
+        var data: Data
+        var metadata: [String: String]
+    }
+
+    var cachedDataByPath: [String: Data] = [:]
+    private(set) var uploads: [Upload] = []
+    private let missingConfiguration: Bool
+
+    init(missingConfiguration: Bool = false) {
+        self.missingConfiguration = missingConfiguration
+    }
+
+    func uploadJSONIfAbsent(_ data: Data, path: String, metadata: [String: String]) async throws -> Bool {
+        if missingConfiguration {
+            throw MediaStorageError.missingR2Configuration
+        }
+        uploads.append(Upload(path: path, data: data, metadata: metadata))
+        guard cachedDataByPath[path] == nil else { return false }
+        cachedDataByPath[path] = data
+        return true
+    }
+
+    func data(path: String) async throws -> Data {
+        if missingConfiguration {
+            throw MediaStorageError.missingR2Configuration
+        }
+        guard let data = cachedDataByPath[path] else {
+            throw MediaStorageError.requestFailed(operation: "download", statusCode: 404, response: "")
+        }
+        return data
     }
 }
 

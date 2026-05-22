@@ -75,6 +75,9 @@
         <attribute name="name" optional="YES" attributeType="String"/>
         <attribute name="platform" optional="YES" attributeType="String"/>
         <attribute name="slideCount" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="analysisSchemaVersion" optional="YES" attributeType="Integer 64" usesScalarValueType="NO"/>
+        <attribute name="sourceTemplateFingerprint" optional="YES" attributeType="String"/>
+        <attribute name="sourceTemplateID" optional="YES" attributeType="String"/>
         <attribute name="styleJSON" optional="YES" attributeType="String"/>
         <attribute name="summary" optional="YES" attributeType="String"/>
         <attribute name="tagIDsJSON" optional="YES" attributeType="String"/>

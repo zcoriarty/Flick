@@ -17,6 +17,37 @@ struct ExampleSlideshowCollection: Identifiable, Hashable {
     var templates: [ExampleSlideshowTemplate]
 }
 
+struct ExampleSlideshowCollectionSummary: Identifiable, Codable, Hashable {
+    var id: String { folder }
+
+    var folder: String
+    var title: String
+    var nicheSlug: String
+    var sourcePage: URL?
+    var slideshowCount: Int
+    var totalSlideCount: Int
+    var pageSize: Int
+    var pageCount: Int
+}
+
+struct ExampleSlideshowLibraryIndex: Codable, Hashable {
+    var releaseID: String
+    var basePath: String
+    var pageSize: Int
+    var collections: [ExampleSlideshowCollectionSummary]
+}
+
+struct ExampleSlideshowPage: Hashable {
+    var collection: ExampleSlideshowCollection
+    var pageNumber: Int
+    var pageSize: Int
+    var pageCount: Int
+
+    var hasNextPage: Bool {
+        pageNumber < pageCount
+    }
+}
+
 struct ExampleSlideshowTemplate: Identifiable, Hashable {
     var id: String
     var niche: String
@@ -74,4 +105,5 @@ struct ExampleSlideshowSlide: Identifiable, Hashable {
     var relativePath: String
     var localURL: URL
     var sourceURL: URL?
+    var remoteURL: URL?
 }

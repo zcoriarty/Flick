@@ -21,7 +21,7 @@ private enum CreateSheet: String, Identifiable {
 struct IOSCreateView: View {
     @Environment(FlickAppModel.self) private var appModel
 
-    @State private var templateLoadState: CreateTemplateLoadState = .loading
+    @State private var templateStore = TemplateLibraryStore()
     @State private var isAutomated = false
     @State private var selectedTemplate: ExampleSlideshowTemplate?
     @State private var selectedAutomationTemplateIDs: Set<String> = []
@@ -98,8 +98,8 @@ struct IOSCreateView: View {
             }
         }
         .task {
-            if case .loading = templateLoadState {
-                loadTemplates()
+            if case .loading = templateStore.status {
+                await loadTemplates()
             }
             syncCreationModelSelectionFromActiveDraft(in: appModel)
             updateSelectedSlide(using: appModel)
@@ -143,12 +143,14 @@ struct IOSCreateView: View {
             case .templatePicker:
                 if isAutomated {
                     AutomationTemplatePickerSheet(
-                        collections: templateLoadState.collections,
+                        templateStore: templateStore,
+                        configuration: appModel.configuration,
                         selectedTemplateIDs: $selectedAutomationTemplateIDs
                     )
                 } else {
                     TemplatePickerSheet(
-                        collections: templateLoadState.collections,
+                        templateStore: templateStore,
+                        configuration: appModel.configuration,
                         selectedTemplate: $selectedTemplate
                     )
                 }
@@ -330,10 +332,12 @@ struct IOSCreateView: View {
     @ViewBuilder
     private func automatedSetupSections(in appModel: FlickAppModel) -> some View {
         CreateAutomationTemplateSection(
-            loadState: templateLoadState,
+            templateStore: templateStore,
             selectedTemplateIDs: $selectedAutomationTemplateIDs,
             selectAction: { presentedSheet = .templatePicker },
-            retryAction: loadTemplates
+            retryAction: {
+                Task { await loadTemplates(forceReload: true) }
+            }
         )
 
         CreateModelSection(
@@ -361,7 +365,7 @@ struct IOSCreateView: View {
 
         CreateAutomationsSection(
             automations: appModel.overview.automations,
-            templates: allTemplates(in: templateLoadState),
+            templates: allTemplates(),
             products: appModel.overview.products,
             editAction: loadAutomation,
             deleteAction: { deleteAutomation($0, using: appModel) }
@@ -375,11 +379,13 @@ struct IOSCreateView: View {
         currentDraftIndex: Int?
     ) -> some View {
         CreateTemplateSection(
-            loadState: templateLoadState,
+            templateStore: templateStore,
             selectedTemplate: selectedTemplate,
             selectAction: { presentedSheet = .templatePicker },
             clearAction: { selectedTemplate = nil },
-            retryAction: loadTemplates
+            retryAction: {
+                Task { await loadTemplates(forceReload: true) }
+            }
         )
 
         CreateModelSection(
@@ -569,13 +575,8 @@ struct IOSCreateView: View {
         automationTikTokSettings = DraftTikTokSettings()
     }
 
-    private func loadTemplates() {
-        templateLoadState = .loading
-        do {
-            templateLoadState = .loaded(try ExampleSlideshowLibrary.load())
-        } catch {
-            templateLoadState = .failed(error.localizedDescription)
-        }
+    private func loadTemplates(forceReload: Bool = false) async {
+        await templateStore.loadInitial(configuration: appModel.configuration, forceReload: forceReload)
     }
 
     private func loadAutomation(_ automation: ContentAutomation) {
@@ -600,15 +601,14 @@ struct IOSCreateView: View {
         }
     }
 
-    private func allTemplates(in loadState: CreateTemplateLoadState) -> [ExampleSlideshowTemplate] {
-        loadState.collections
-            .flatMap(\.templates)
+    private func allTemplates() -> [ExampleSlideshowTemplate] {
+        templateStore.templates
             .filter(\.hasDisplayablePreview)
     }
 
     private func automationDefaultName(in appModel: FlickAppModel) -> String {
         automationDraft(using: appModel, now: Date())
-            .defaultName(templates: allTemplates(in: templateLoadState), products: appModel.overview.products)
+            .defaultName(templates: allTemplates(), products: appModel.overview.products)
     }
 
     private func canPublish(in appModel: FlickAppModel) -> Bool {
@@ -707,7 +707,7 @@ struct IOSCreateView: View {
     }
 
     private func selectedAutomationSelectionsAreAvailable(in appModel: FlickAppModel) -> Bool {
-        let templateIDs = Set(allTemplates(in: templateLoadState).map(\.id))
+        let templateIDs = Set(allTemplates().map(\.id))
         guard !selectedAutomationTemplateIDs.isEmpty else { return false }
         guard selectedAutomationTemplateIDs.isSubset(of: templateIDs) else { return false }
         guard let selectedProductID, appModel.overview.products.contains(where: { $0.id == selectedProductID }) else {

@@ -30,6 +30,7 @@ enum MediaStorageError: LocalizedError {
     case invalidSignedURLExpiration(TimeInterval)
     case requestFailed(operation: String, statusCode: Int, response: String)
     case httpStatusUnavailable(URL)
+    case objectAlreadyExists(String)
 
     var errorDescription: String? {
         switch self {
@@ -43,6 +44,8 @@ enum MediaStorageError: LocalizedError {
             "Cloudflare R2 \(operation) failed with status \(statusCode): \(response)"
         case let .httpStatusUnavailable(url):
             "Could not read an HTTP status from \(url.absoluteString)."
+        case let .objectAlreadyExists(path):
+            "Cloudflare R2 object already exists at \(path)."
         }
     }
 }
@@ -175,6 +178,70 @@ struct R2StorageService: MediaStorageProviding {
             publicURL: try publicURL(path: objectPath),
             signedURLExpiration: nil
         )
+    }
+
+    func uploadJSONIfAbsent(_ data: Data, path: String, metadata: [String: String] = [:]) async throws -> Bool {
+        let configuration = try configuredStorage()
+        let objectPath = try normalizedObjectPath(path)
+        var headers = metadata.reduce(into: [
+            "cache-control": "3600",
+            "content-type": "application/json",
+            "if-none-match": "*"
+        ]) { result, pair in
+            result["x-amz-meta-\(pair.key.lowercased())"] = pair.value
+        }
+        headers["content-length"] = "\(data.count)"
+
+        let request = try signedRequest(
+            method: "PUT",
+            path: objectPath,
+            headers: headers,
+            body: data,
+            configuration: configuration
+        )
+        let (responseData, response) = try await urlSession.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw MediaStorageError.httpStatusUnavailable(request.url!)
+        }
+        if httpResponse.statusCode == 412 {
+            return false
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw MediaStorageError.requestFailed(
+                operation: "conditional upload",
+                statusCode: httpResponse.statusCode,
+                response: String(data: responseData, encoding: .utf8) ?? ""
+            )
+        }
+        return true
+    }
+
+    func data(path: String) async throws -> Data {
+        let configuration = try configuredStorage()
+        let objectPath = try normalizedObjectPath(path)
+        let request = try signedRequest(
+            method: "GET",
+            path: objectPath,
+            headers: [:],
+            body: Data(),
+            configuration: configuration
+        )
+        let (data, response) = try await urlSession.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw MediaStorageError.httpStatusUnavailable(request.url!)
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw MediaStorageError.requestFailed(
+                operation: "download",
+                statusCode: httpResponse.statusCode,
+                response: String(data: data, encoding: .utf8) ?? ""
+            )
+        }
+        return data
+    }
+
+    func objectExists(path: String) async throws -> Bool {
+        try await objectExists(path: try normalizedObjectPath(path), configuration: try configuredStorage())
     }
 
     func publicURL(path: String) throws -> URL {
@@ -576,7 +643,7 @@ private enum R2HMAC {
     }
 }
 
-private enum R2PercentEncoding {
+enum R2PercentEncoding {
     static func path(_ value: String) -> String {
         value
             .split(separator: "/", omittingEmptySubsequences: false)
@@ -638,7 +705,7 @@ private extension URL {
     }
 }
 
-private extension String {
+extension String {
     func trimmingTrailingSlashes() -> String {
         var value = self
         while value.hasSuffix("/") {

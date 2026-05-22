@@ -53,7 +53,7 @@ struct IOSDashboardView: View {
             await appModel.refresh()
         }
         .task {
-            loadExampleTemplates()
+            await loadExampleTemplates()
         }
         .flickToolbarTitle("Dashboard")
     }
@@ -220,8 +220,23 @@ struct IOSDashboardView: View {
         appModel.selectedSection = .settings
     }
 
-    private func loadExampleTemplates() {
-        exampleTemplates = (try? ExampleSlideshowLibrary.load().flatMap(\.templates)) ?? []
+    private func loadExampleTemplates() async {
+        do {
+            let index = try await ExampleSlideshowLibrary.loadIndex(configuration: appModel.configuration)
+            guard let firstNicheID = index.collections.first?.id else {
+                exampleTemplates = []
+                return
+            }
+            let page = try await ExampleSlideshowLibrary.loadPage(
+                nicheID: firstNicheID,
+                pageNumber: 1,
+                index: index,
+                configuration: appModel.configuration
+            )
+            exampleTemplates = page.collection.templates
+        } catch {
+            exampleTemplates = []
+        }
     }
 }
 

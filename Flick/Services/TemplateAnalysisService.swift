@@ -59,11 +59,18 @@ struct TemplateAnalysisService {
             ])
             content.append([
                 "type": "input_image",
-                "image_url": try dataURL(for: slide.localURL)
+                "image_url": try imageURL(for: slide)
             ])
         }
 
         return content
+    }
+
+    private func imageURL(for slide: ExampleSlideshowSlide) throws -> String {
+        if let remoteURL = slide.remoteURL {
+            return remoteURL.absoluteString
+        }
+        return try dataURL(for: slide.localURL)
     }
 
     private func dataURL(for fileURL: URL) throws -> String {
