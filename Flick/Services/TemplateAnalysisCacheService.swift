@@ -14,7 +14,7 @@ protocol TemplateAnalysisStorageProviding {
 extension R2StorageService: TemplateAnalysisStorageProviding {}
 
 struct TemplateAnalysisCacheService {
-    static let schemaVersion = 1
+    static let schemaVersion = 2
 
     var openAIClient: OpenAIClient
     var storage: any TemplateAnalysisStorageProviding
@@ -65,7 +65,7 @@ struct TemplateAnalysisCacheService {
     }
 
     static func cachePath(templateID: String, fingerprint: String) -> String {
-        "template-analyses/v1/\(templateID)/\(fingerprint).json"
+        "template-analyses/v\(schemaVersion)/\(templateID)/\(fingerprint).json"
     }
 
     static func fingerprint(for template: ExampleSlideshowTemplate) -> String {

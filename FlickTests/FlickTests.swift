@@ -2404,7 +2404,7 @@ final class FlickTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Cottagecore"))
     }
 
-    func testPlannerRequestsExtraSlideForSelectedProductImage() async throws {
+    func testPlannerAppendsSelectedProductImageWhenTemplateHasNoProductSlot() async throws {
         let product = makeProduct(name: "Flick Pro")
         let creationModel = makeCreationModel()
         let productImageURL = try XCTUnwrap(URL(string: "https://example.com/product-image.jpg"))
@@ -2426,11 +2426,11 @@ final class FlickTests: XCTestCase {
             slideCount: 3,
             narrativeArc: ["Hook", "Product", "Proof"],
             globalVisualMotif: "Clean product frames",
-            planSummary: "Two template slides plus one product image slide.",
+            planSummary: "Two template slides plus one final product image slide.",
             slides: [
                 PlannedSlide(index: 0, text: "Start here", textPosition: .center, imagePrompt: "Generated hook", selectedVisualSummary: "Hook visual", usesProductImage: false),
-                PlannedSlide(index: 1, text: "See Flick Pro", textPosition: .center, imagePrompt: "Use selected product image", selectedVisualSummary: "Product image", usesProductImage: true),
-                PlannedSlide(index: 2, text: "Ship faster", textPosition: .center, imagePrompt: "Generated proof", selectedVisualSummary: "Proof visual", usesProductImage: false)
+                PlannedSlide(index: 1, text: "Ship faster", textPosition: .center, imagePrompt: "Generated proof", selectedVisualSummary: "Proof visual", usesProductImage: false),
+                PlannedSlide(index: 2, text: "See Flick Pro", textPosition: .center, imagePrompt: "Use selected product image", selectedVisualSummary: "Product image", usesProductImage: true)
             ],
             caption: "Try Flick Pro",
             hashtags: ["flick"]
@@ -2450,7 +2450,9 @@ final class FlickTests: XCTestCase {
             XCTAssertTrue(promptText.contains("Selected creation model"))
             XCTAssertTrue(promptText.contains("\"skin_details\""))
             XCTAssertTrue(promptText.contains("Do not copy the template person's face"))
-            XCTAssertTrue(promptText.contains("Keep exactly 2 non-product generated/template slides, plus this one product-image slide."))
+            XCTAssertTrue(promptText.contains("Detected template product-image slide numbers: none"))
+            XCTAssertTrue(promptText.contains("Append the selected product image as one final actual slide image at the end of the carousel."))
+            XCTAssertTrue(promptText.contains("Keep exactly 2 non-product generated/template slides, plus this final product-image slide."))
             XCTAssertEqual(content.last?["image_url"] as? String, productImageURL.absoluteString)
 
             let responsePlanData = try JSONEncoder.flick.encode(responsePlan)
@@ -2480,7 +2482,141 @@ final class FlickTests: XCTestCase {
 
         XCTAssertEqual(plan.slides.count, 3)
         XCTAssertEqual(plan.slides.filter(\.usesProductImage).count, 1)
+        XCTAssertTrue(plan.slides.sorted { $0.index < $1.index }.last?.usesProductImage == true)
         XCTAssertEqual(plan.tikTokTitle, "Launch Flick Pro")
+    }
+
+    func testPlannerReplacesDetectedTemplateProductSlotWithSelectedProductImage() async throws {
+        let product = makeProduct(name: "Flick Pro")
+        let productImageURL = try XCTUnwrap(URL(string: "https://example.com/product-image.jpg"))
+        let productImage = SlideshowProductImage(
+            product: product,
+            asset: makeMediaAsset(
+                source: .uploaded,
+                publicURL: productImageURL,
+                productIDs: [product.id]
+            )
+        )
+        let styleGuide = makeTemplateStyleGuide(
+            styleName: "Launch Style",
+            productImageSlideNumbers: [2]
+        )
+        let responsePlan = PlannedSlideshow(
+            title: "Launch Carousel",
+            tikTokTitle: "Launch Flick Pro",
+            topic: "Product launch",
+            audience: "Creators",
+            goal: "Increase installs",
+            tone: "Direct",
+            slideCount: 3,
+            narrativeArc: ["Hook", "Product", "Proof"],
+            globalVisualMotif: "Clean product frames",
+            planSummary: "A template product slot is replaced by Flick Pro.",
+            slides: [
+                PlannedSlide(index: 0, text: "Start here", textPosition: .center, imagePrompt: "Generated hook", selectedVisualSummary: "Hook visual", usesProductImage: false),
+                PlannedSlide(index: 1, text: "See Flick Pro", textPosition: .center, imagePrompt: "Use selected product image", selectedVisualSummary: "Product image", usesProductImage: true),
+                PlannedSlide(index: 2, text: "Ship faster", textPosition: .center, imagePrompt: "Generated proof", selectedVisualSummary: "Proof visual", usesProductImage: false)
+            ],
+            caption: "Try Flick Pro",
+            hashtags: ["flick"]
+        )
+
+        CapturingURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url?.path, "/v1/responses")
+            let bodyData = Data(request.encodedBodyString.utf8)
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: bodyData) as? [String: Any])
+            let input = try XCTUnwrap(body["input"] as? [[String: Any]])
+            let content = try XCTUnwrap(input.first?["content"] as? [[String: Any]])
+            let promptText = try XCTUnwrap(content.first?["text"] as? String)
+
+            XCTAssertTrue(promptText.contains("Total planned slide count to return: 3"))
+            XCTAssertTrue(promptText.contains("Detected template product-image slide numbers: 2"))
+            XCTAssertTrue(promptText.contains("Replace those template product-image positions with the attached selected product image. Do not add an extra product-image slide."))
+            XCTAssertTrue(promptText.contains("Set usesProductImage to true only for those detected template product-image positions"))
+            XCTAssertEqual(content.last?["image_url"] as? String, productImageURL.absoluteString)
+
+            let responsePlanData = try JSONEncoder.flick.encode(responsePlan)
+            let responsePlanText = try XCTUnwrap(String(data: responsePlanData, encoding: .utf8))
+            let responseData = try JSONSerialization.data(withJSONObject: ["output_text": responsePlanText])
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                responseData
+            )
+        }
+
+        let plan = try await SlideshowPlannerService(client: makeOpenAIClientForTests()).createPlan(
+            brief: "Launch Flick Pro",
+            template: makeExampleSlideshowTemplate(slideCount: 3),
+            styleGuide: styleGuide,
+            productImage: productImage
+        )
+
+        XCTAssertEqual(plan.slides.count, 3)
+        XCTAssertEqual(
+            plan.slides.sorted { $0.index < $1.index }.enumerated().compactMap { offset, slide in
+                slide.usesProductImage ? offset + 1 : nil
+            },
+            [2]
+        )
+    }
+
+    func testPlannerRemovesTemplateProductImagesWhenNoProductSelected() async throws {
+        let styleGuide = makeTemplateStyleGuide(
+            styleName: "Launch Style",
+            productImageSlideNumbers: [2]
+        )
+        let responsePlan = PlannedSlideshow(
+            title: "Launch Carousel",
+            tikTokTitle: "Launch Flick Pro",
+            topic: "Product launch",
+            audience: "Creators",
+            goal: "Increase installs",
+            tone: "Direct",
+            slideCount: 3,
+            narrativeArc: ["Hook", "Middle", "Proof"],
+            globalVisualMotif: "Clean motion frames",
+            planSummary: "The template product slot becomes a non-product slide.",
+            slides: [
+                PlannedSlide(index: 0, text: "Start here", textPosition: .center, imagePrompt: "Generated hook", selectedVisualSummary: "Hook visual", usesProductImage: false),
+                PlannedSlide(index: 1, text: "Keep going", textPosition: .center, imagePrompt: "Abstract workflow visual with no product imagery", selectedVisualSummary: "Non-product middle visual", usesProductImage: false),
+                PlannedSlide(index: 2, text: "Ship faster", textPosition: .center, imagePrompt: "Generated proof", selectedVisualSummary: "Proof visual", usesProductImage: false)
+            ],
+            caption: "Try Flick Pro",
+            hashtags: ["flick"]
+        )
+
+        CapturingURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url?.path, "/v1/responses")
+            let bodyData = Data(request.encodedBodyString.utf8)
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: bodyData) as? [String: Any])
+            let input = try XCTUnwrap(body["input"] as? [[String: Any]])
+            let content = try XCTUnwrap(input.first?["content"] as? [[String: Any]])
+            let promptText = try XCTUnwrap(content.first?["text"] as? String)
+
+            XCTAssertEqual(content.count, 1)
+            XCTAssertTrue(promptText.contains("Total planned slide count to return: 3"))
+            XCTAssertTrue(promptText.contains("No selected product image was supplied."))
+            XCTAssertTrue(promptText.contains("Detected template product-image slide numbers: 2."))
+            XCTAssertTrue(promptText.contains("turn those positions into non-product generated visuals"))
+            XCTAssertTrue(promptText.contains("Image prompts must not mention, recreate, imply, or visually describe the template product"))
+
+            let responsePlanData = try JSONEncoder.flick.encode(responsePlan)
+            let responsePlanText = try XCTUnwrap(String(data: responsePlanData, encoding: .utf8))
+            let responseData = try JSONSerialization.data(withJSONObject: ["output_text": responsePlanText])
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                responseData
+            )
+        }
+
+        let plan = try await SlideshowPlannerService(client: makeOpenAIClientForTests()).createPlan(
+            brief: "Launch Flick Pro",
+            template: makeExampleSlideshowTemplate(slideCount: 3),
+            styleGuide: styleGuide
+        )
+
+        XCTAssertEqual(plan.slides.count, 3)
+        XCTAssertTrue(plan.slides.allSatisfy { !$0.usesProductImage })
     }
 
     func testCreateAIAnalysisPrefillsTikTokSettingsTitle() async throws {
@@ -2835,7 +2971,10 @@ private func makeExampleSlideshowSlide(index: Int, remoteURL: URL? = nil) -> Exa
     )
 }
 
-private func makeTemplateStyleGuide(styleName: String) -> TemplateStyleGuide {
+private func makeTemplateStyleGuide(
+    styleName: String,
+    productImageSlideNumbers: [Int] = []
+) -> TemplateStyleGuide {
     TemplateStyleGuide(
         styleName: styleName,
         visualTraits: ["Clean layout"],
@@ -2844,7 +2983,8 @@ private func makeTemplateStyleGuide(styleName: String) -> TemplateStyleGuide {
         recurringMotifs: ["Phone frame"],
         reuseStructurally: ["Hook then proof"],
         avoidCopyingDirectly: ["Creator likeness"],
-        imageGenerationRules: ["No readable text"]
+        imageGenerationRules: ["No readable text"],
+        productImageSlideNumbers: productImageSlideNumbers
     )
 }
 
@@ -2974,7 +3114,8 @@ private func makeAnalysisCacheRecordData(
             "recurringMotifs": styleGuide.recurringMotifs,
             "reuseStructurally": styleGuide.reuseStructurally,
             "avoidCopyingDirectly": styleGuide.avoidCopyingDirectly,
-            "imageGenerationRules": styleGuide.imageGenerationRules
+            "imageGenerationRules": styleGuide.imageGenerationRules,
+            "productImageSlideNumbers": styleGuide.productImageSlideNumbers
         ]
     ])
 }

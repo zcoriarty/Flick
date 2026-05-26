@@ -30,8 +30,10 @@ struct TemplateAnalysisService {
         """
         Convert the selected Flick slideshow template into a compact reusable style guide for AI-generated vertical portrait social carousel images.
         Capture visual style, polish, palette, lighting, recurring motifs, what to reuse structurally, and what not to copy directly.
-        Do not copy people, exact products, logos, creators, captions, or readable text from the reference template.
-        Always include image generation rules that require no readable text, no captions, no logos, no watermarks, and slide-to-slide continuity.
+        Do not copy people, exact products, product screenshots, app UI, logos, creators, captions, or readable text from the reference template.
+        Identify any 1-based slide numbers where a visible product image, app screenshot, product UI, device mockup, product packaging, or product logo is a meaningful subject; return those numbers in productImageSlideNumbers.
+        Treat detected product images as replaceable placeholders only, never as visual details to reuse in generated prompts.
+        Always include image generation rules that require no readable text, no captions, no logos, no watermarks, no copied template products, and slide-to-slide continuity.
         """
     }
 
@@ -48,6 +50,7 @@ struct TemplateAnalysisService {
                 - Creator signature: \(template.creator.signature ?? "Unknown")
 
                 Analyze the attached slide images as visual style references only. Build a reusable guide for new content in the same visual language.
+                Product images from the template are examples from someone else's post. Detect their slide numbers, but exclude their product, app, UI, logo, package, and screenshot details from reusable style guidance.
                 """
             ]
         ]
@@ -55,7 +58,7 @@ struct TemplateAnalysisService {
         for slide in template.slides.prefix(12) {
             content.append([
                 "type": "input_text",
-                "text": "Reference slide \(slide.index). Use only composition, lighting, palette, motifs, and visual-style cues."
+                "text": "Reference slide \(slide.index). Use only composition, lighting, palette, motifs, and visual-style cues. If this slide contains a product image, app screenshot, product UI, device mockup, packaging, or product logo as a meaningful subject, include slide \(slide.index) in productImageSlideNumbers."
             ])
             content.append([
                 "type": "input_image",
@@ -96,7 +99,8 @@ struct TemplateAnalysisService {
             "recurringMotifs",
             "reuseStructurally",
             "avoidCopyingDirectly",
-            "imageGenerationRules"
+            "imageGenerationRules",
+            "productImageSlideNumbers"
         ],
         "properties": [
             "styleName": ["type": "string"],
@@ -106,7 +110,11 @@ struct TemplateAnalysisService {
             "recurringMotifs": stringArraySchema,
             "reuseStructurally": stringArraySchema,
             "avoidCopyingDirectly": stringArraySchema,
-            "imageGenerationRules": stringArraySchema
+            "imageGenerationRules": stringArraySchema,
+            "productImageSlideNumbers": [
+                "type": "array",
+                "items": ["type": "integer"]
+            ]
         ]
     ]
 }

@@ -1550,7 +1550,7 @@ enum SlideshowCreationError: LocalizedError {
         case let .planSlideCountMismatch(expected, actual):
             "The slideshow plan returned \(actual) slides, but the selected template requires \(expected)."
         case .invalidProductImagePlacement:
-            "The slideshow plan must place the selected product image on exactly one slide."
+            "The slideshow plan did not follow the required product-image placement."
         }
     }
 }
@@ -1766,11 +1766,20 @@ private extension FlickAppModel {
             productImage: productImage
         )
 
-        let expectedSlideCount = expectedPlanSlideCount(template: template, productImage: productImage)
+        let expectedSlideCount = expectedPlanSlideCount(
+            template: template,
+            styleGuide: styleGuide,
+            productImage: productImage
+        )
         guard plan.slides.count == expectedSlideCount else {
             throw SlideshowCreationError.planSlideCountMismatch(expected: expectedSlideCount, actual: plan.slides.count)
         }
-        try validateProductImagePlacement(in: plan, productImage: productImage)
+        try validateProductImagePlacement(
+            in: plan,
+            productImage: productImage,
+            styleGuide: styleGuide,
+            template: template
+        )
 
         let now = Date()
         let draft = makeDraft(
@@ -2088,9 +2097,13 @@ private extension FlickAppModel {
 
     func expectedPlanSlideCount(
         template: ExampleSlideshowTemplate,
+        styleGuide: TemplateStyleGuide,
         productImage: SlideshowProductImage?
     ) -> Int {
-        template.slideCount + (productImage == nil ? 0 : 1)
+        guard productImage != nil else { return template.slideCount }
+        return styleGuide.productImageSlideNumbers(limitedTo: template.slideCount).isEmpty
+            ? template.slideCount + 1
+            : template.slideCount
     }
 
     func makeDraft(
@@ -2167,11 +2180,30 @@ private extension FlickAppModel {
 
     func validateProductImagePlacement(
         in plan: PlannedSlideshow,
-        productImage: SlideshowProductImage?
+        productImage: SlideshowProductImage?,
+        styleGuide: TemplateStyleGuide,
+        template: ExampleSlideshowTemplate
     ) throws {
-        guard productImage != nil else { return }
-        let placementCount = plan.slides.filter(\.usesProductImage).count
-        guard placementCount == 1 else {
+        let sortedSlides = plan.slides.sorted { $0.index < $1.index }
+        let productImagePositions = Set(
+            sortedSlides.enumerated().compactMap { offset, slide in
+                slide.usesProductImage ? offset + 1 : nil
+            }
+        )
+
+        guard productImage != nil else {
+            guard productImagePositions.isEmpty else {
+                throw SlideshowCreationError.invalidProductImagePlacement
+            }
+            return
+        }
+
+        let templateProductImagePositions = Set(styleGuide.productImageSlideNumbers(limitedTo: template.slideCount))
+        let expectedPositions: Set<Int> = templateProductImagePositions.isEmpty
+            ? [sortedSlides.count]
+            : templateProductImagePositions
+
+        guard productImagePositions == expectedPositions else {
             throw SlideshowCreationError.invalidProductImagePlacement
         }
     }

@@ -16,7 +16,12 @@ struct SlideshowPlannerService {
         creationModel: SlideshowCreationModelReference? = nil,
         productImage: SlideshowProductImage? = nil
     ) async throws -> PlannedSlideshow {
-        let expectedSlideCount = template.slideCount + (productImage == nil ? 0 : 1)
+        let templateProductImageSlideNumbers = styleGuide.productImageSlideNumbers(limitedTo: template.slideCount)
+        let expectedSlideCount = expectedSlideCount(
+            templateSlideCount: template.slideCount,
+            templateProductImageSlideNumbers: templateProductImageSlideNumbers,
+            productImage: productImage
+        )
         var content: [[String: Any]] = [
             [
                 "type": "input_text",
@@ -30,18 +35,24 @@ struct SlideshowPlannerService {
                 - Template slide count to keep: \(template.slideCount)
                 - Total planned slide count to return: \(expectedSlideCount)
                 - Template product or medium: \(template.subtitle)
+                - Detected template product-image slide numbers: \(slideNumberSummary(templateProductImageSlideNumbers))
 
                 Template style guide:
                 \(styleGuide.promptSummary)
 
                 \(creationModelInstructions(for: creationModel))
 
-                \(productImageInstructions(for: productImage, templateSlideCount: template.slideCount))
+                \(productImageInstructions(
+                    for: productImage,
+                    templateSlideCount: template.slideCount,
+                    templateProductImageSlideNumbers: templateProductImageSlideNumbers
+                ))
 
                 Create a complete slideshow plan with exactly \(expectedSlideCount) planned slides.
                 Create a concise one-line TikTok post title for the post settings title field.
                 Flick will render all text separately, so generated image prompts must forbid readable text, captions, logos, watermarks, fake UI text, and gibberish.
                 Set each slide's textPosition to center and keep the centered text area low-detail.
+                Keep product-image placeholder handling exactly as specified above.
                 """
             ]
         ]
@@ -165,7 +176,9 @@ struct SlideshowPlannerService {
         Do not create image variants or candidate grids.
         Every slide must have editable Flick-rendered overlay text and exactly one vertical portrait image prompt.
         The generated images are backgrounds and must leave clean low-detail room for text overlays.
-        When a selected product image is supplied, choose the single best slide position for that actual product image and write the surrounding slide strings with that image in the carousel.
+        Treat template product images, app screenshots, product UI, logos, packaging, and other product-specific visuals as placeholders only.
+        When a selected product image is supplied, replace detected template product-image placeholders with that actual image; only append a final product-image slide when the template has no detected product-image placeholders.
+        When no selected product image is supplied, generated image prompts must not include or recreate template product imagery.
         """
     }
 
@@ -264,25 +277,74 @@ struct SlideshowPlannerService {
 
     private func productImageInstructions(
         for productImage: SlideshowProductImage?,
-        templateSlideCount: Int
+        templateSlideCount: Int,
+        templateProductImageSlideNumbers: [Int]
     ) -> String {
+        let slideNumbers = slideNumberSummary(templateProductImageSlideNumbers)
+
         guard let productImage else {
-            return "No selected product image was supplied. Set usesProductImage to false for every slide."
+            if templateProductImageSlideNumbers.isEmpty {
+                return """
+                No selected product image was supplied.
+                Set usesProductImage to false for every slide.
+                Generated image prompts must not mention, recreate, imply, or visually describe any template product, app screens, screenshots, device UI, logos, packaging, product names, or store pages.
+                """
+            }
+
+            return """
+            No selected product image was supplied.
+            Detected template product-image slide numbers: \(slideNumbers).
+            Keep the template's pacing and narrative beats, but turn those positions into non-product generated visuals.
+            Set usesProductImage to false for every slide.
+            Image prompts must not mention, recreate, imply, or visually describe the template product, app screens, screenshots, device UI, logos, packaging, product names, or store pages.
+            """
         }
 
         let summary = productImage.product.summary.trimmingCharacters(in: .whitespacesAndNewlines)
-        return """
+        let productDetails = """
         Selected product image:
         - Product name: \(productImage.product.name)
         - Product summary: \(summary.isEmpty ? "Not provided" : summary)
         - Actual image dimensions: \(productImage.asset.width)x\(productImage.asset.height)
-
-        The attached image must be added as one extra actual slide image in the carousel. It must not replace one of the template slides.
-        Keep exactly \(templateSlideCount) non-product generated/template slides, plus this one product-image slide.
-        Choose the best narrative slide position for it and set usesProductImage to true only for that one slide.
-        For the product-image slide, curate the overlay text knowing the actual product image will be shown; keep imagePrompt as a short note that Flick should use the selected product image directly.
-        For all other slides, set usesProductImage to false and keep generated visuals aligned to the selected template's slide style.
         """
+
+        if !templateProductImageSlideNumbers.isEmpty {
+            return """
+            \(productDetails)
+
+            Detected template product-image slide numbers: \(slideNumbers).
+            Replace those template product-image positions with the attached selected product image. Do not add an extra product-image slide.
+            Keep exactly \(templateSlideCount) total slides.
+            Set usesProductImage to true only for those detected template product-image positions and false for every other slide.
+            For each product-image slide, write overlay text and caption language that matches \(productImage.product.name), the selected product summary, and the fact that the actual selected image will be shown.
+            Keep imagePrompt on each product-image slide as a short note that Flick should use the selected product image directly.
+            For generated slides, never include the template product, app screens, screenshots, device UI, logos, packaging, product names, or store pages.
+            """
+        }
+
+        return """
+        \(productDetails)
+
+        No template product-image slides were detected.
+        Append the selected product image as one final actual slide image at the end of the carousel.
+        Keep exactly \(templateSlideCount) non-product generated/template slides, plus this final product-image slide.
+        Set usesProductImage to true only for the final slide and false for every other slide.
+        For the product-image slide, curate the overlay text and caption language knowing the actual product image will be shown; keep imagePrompt as a short note that Flick should use the selected product image directly.
+        For all other slides, set usesProductImage to false, keep generated visuals aligned to the selected template's slide style, and never include the template product, app screens, screenshots, device UI, logos, packaging, product names, or store pages.
+        """
+    }
+
+    private func expectedSlideCount(
+        templateSlideCount: Int,
+        templateProductImageSlideNumbers: [Int],
+        productImage: SlideshowProductImage?
+    ) -> Int {
+        guard productImage != nil else { return templateSlideCount }
+        return templateProductImageSlideNumbers.isEmpty ? templateSlideCount + 1 : templateSlideCount
+    }
+
+    private func slideNumberSummary(_ slideNumbers: [Int]) -> String {
+        slideNumbers.isEmpty ? "none" : slideNumbers.map(String.init).joined(separator: ", ")
     }
 
     private func creationModelInstructions(for creationModel: SlideshowCreationModelReference?) -> String {

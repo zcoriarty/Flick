@@ -14,6 +14,60 @@ struct TemplateStyleGuide: Codable, Hashable {
     var reuseStructurally: [String]
     var avoidCopyingDirectly: [String]
     var imageGenerationRules: [String]
+    var productImageSlideNumbers: [Int]
+
+    private enum CodingKeys: String, CodingKey {
+        case styleName
+        case visualTraits
+        case colorPalette
+        case lighting
+        case recurringMotifs
+        case reuseStructurally
+        case avoidCopyingDirectly
+        case imageGenerationRules
+        case productImageSlideNumbers
+    }
+
+    init(
+        styleName: String,
+        visualTraits: [String],
+        colorPalette: [String],
+        lighting: String,
+        recurringMotifs: [String],
+        reuseStructurally: [String],
+        avoidCopyingDirectly: [String],
+        imageGenerationRules: [String],
+        productImageSlideNumbers: [Int] = []
+    ) {
+        self.styleName = styleName
+        self.visualTraits = visualTraits
+        self.colorPalette = colorPalette
+        self.lighting = lighting
+        self.recurringMotifs = recurringMotifs
+        self.reuseStructurally = reuseStructurally
+        self.avoidCopyingDirectly = avoidCopyingDirectly
+        self.imageGenerationRules = imageGenerationRules
+        self.productImageSlideNumbers = Self.normalizedSlideNumbers(productImageSlideNumbers)
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        styleName = try container.decode(String.self, forKey: .styleName)
+        visualTraits = try container.decode([String].self, forKey: .visualTraits)
+        colorPalette = try container.decode([String].self, forKey: .colorPalette)
+        lighting = try container.decode(String.self, forKey: .lighting)
+        recurringMotifs = try container.decode([String].self, forKey: .recurringMotifs)
+        reuseStructurally = try container.decode([String].self, forKey: .reuseStructurally)
+        avoidCopyingDirectly = try container.decode([String].self, forKey: .avoidCopyingDirectly)
+        imageGenerationRules = try container.decode([String].self, forKey: .imageGenerationRules)
+        productImageSlideNumbers = Self.normalizedSlideNumbers(
+            try container.decodeIfPresent([Int].self, forKey: .productImageSlideNumbers) ?? []
+        )
+    }
+
+    private static func normalizedSlideNumbers(_ slideNumbers: [Int]) -> [Int] {
+        Array(Set(slideNumbers.filter { $0 > 0 })).sorted()
+    }
 
     static var empty: TemplateStyleGuide {
         TemplateStyleGuide(
@@ -24,7 +78,8 @@ struct TemplateStyleGuide: Codable, Hashable {
             recurringMotifs: [],
             reuseStructurally: [],
             avoidCopyingDirectly: [],
-            imageGenerationRules: []
+            imageGenerationRules: [],
+            productImageSlideNumbers: []
         )
     }
 }
@@ -131,6 +186,10 @@ struct SlideshowImageGenerationSettings: Hashable {
 }
 
 extension TemplateStyleGuide {
+    func productImageSlideNumbers(limitedTo slideCount: Int) -> [Int] {
+        productImageSlideNumbers.filter { $0 <= slideCount }
+    }
+
     var promptSummary: String {
         let traits = visualTraits.prefix(5).joined(separator: ", ")
         let palette = colorPalette.prefix(5).joined(separator: ", ")
