@@ -45,6 +45,20 @@ struct MacCreateView: View {
         publishingTikTokAccount(in: appModel)?.displayName
     }
 
+    private var createColumnSubtitle: String {
+        if isAutomated {
+            return "Choose the reusable ingredients and publishing defaults for scheduled runs."
+        }
+        return "Choose the template, model, and product media that seed this post."
+    }
+
+    private var workflowColumnSubtitle: String {
+        if isAutomated {
+            return "Review existing schedules and jump back into any automation that needs tuning."
+        }
+        return "Edit the plan, generate slide images, and prepare TikTok publishing details."
+    }
+
     var body: some View {
         @Bindable var appModel = appModel
         let currentDraftID = activeDraftID(in: appModel)
@@ -65,12 +79,8 @@ struct MacCreateView: View {
             }
         }
         .animation(.snappy, value: showsAutomationStartSuccess)
-        .toolbarTitleDisplayMode(.inline)
+        .navigationTitle(createTitle(in: appModel))
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                createToolbarTitle(in: appModel)
-            }
-            .sharedBackgroundVisibility(.hidden)
             #if os(iOS)
             ToolbarItem(placement: .topBarLeading) {
                 draftsButton
@@ -269,20 +279,39 @@ struct MacCreateView: View {
         currentDraftID: UUID?,
         currentDraftIndex: Int?
     ) -> some View {
-        HStack(spacing: 0) {
-            setupList(
-                in: appModel,
-                currentDraftID: currentDraftID
-            )
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    MacWorkspaceHeader(
+                        title: createTitle(in: appModel),
+                        subtitle: createSubtitle(in: appModel),
+                        metrics: createMetrics(in: appModel)
+                    )
 
-            Divider()
+                    HStack(alignment: .top, spacing: 18) {
+                        setupList(
+                            in: appModel,
+                            currentDraftID: currentDraftID
+                        )
+                        .frame(minWidth: 420, idealWidth: 460, maxWidth: 520)
 
-            workflowList(
-                in: appModel,
-                currentDraftID: currentDraftID,
-                currentDraftIndex: currentDraftIndex
-            )
+                        workflowList(
+                            in: appModel,
+                            currentDraftID: currentDraftID,
+                            currentDraftIndex: currentDraftIndex
+                        )
+                        .frame(maxWidth: .infinity)
+                    }
+                    .frame(minHeight: createColumnHeight(for: proxy.size.height))
+                }
+                .padding(28)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            .scrollIndicators(.visible)
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .id(createFormResetID)
         .flickAppBackground()
         .dismissKeyboardOnTap()
@@ -290,17 +319,32 @@ struct MacCreateView: View {
         .opacity(showsAutomationStartSuccess ? 0 : 1)
     }
 
+    private func createColumnHeight(for availableHeight: CGFloat) -> CGFloat {
+        max(520, availableHeight - 160)
+    }
+
     private func setupList(
         in appModel: FlickAppModel,
         currentDraftID: UUID?
     ) -> some View {
-        List {
+        MacCreateColumn(
+            title: "Setup",
+            subtitle: createColumnSubtitle,
+            systemImage: isAutomated ? "calendar.badge.clock" : "slider.horizontal.3"
+        ) {
             CreateAutomationSection(
                 isAutomated: $isAutomated,
                 schedule: $automationSchedule
             )
+            .macCreateListRows()
 
             if isAutomated {
+                CreateAutomationNameSection(
+                    name: $automationName,
+                    placeholder: automationDefaultName(in: appModel)
+                )
+                .macCreateListRows()
+
                 automatedSetupSections(in: appModel)
             } else {
                 manualSetupSections(
@@ -309,8 +353,6 @@ struct MacCreateView: View {
                 )
             }
         }
-        .flickSettingsListStyle()
-        .frame(minWidth: 400, idealWidth: 440, maxWidth: 500)
     }
 
     private func workflowList(
@@ -318,7 +360,11 @@ struct MacCreateView: View {
         currentDraftID: UUID?,
         currentDraftIndex: Int?
     ) -> some View {
-        List {
+        MacCreateColumn(
+            title: isAutomated ? "Automations" : "Workflow",
+            subtitle: workflowColumnSubtitle,
+            systemImage: isAutomated ? "bolt.badge.automatic" : "rectangle.stack.badge.play"
+        ) {
             if isAutomated {
                 automatedWorkflowSections(in: appModel)
             } else {
@@ -329,34 +375,42 @@ struct MacCreateView: View {
                 )
             }
         }
-        .flickSettingsListStyle()
-        .contentMargins(.top, 0, for: .scrollContent)
         .scrollDismissesKeyboard(.interactively)
+    }
+
+    private func createTitle(in appModel: FlickAppModel) -> String {
+        if isAutomated {
+            return editingAutomationID == nil ? "Automation Builder" : "Edit Automation"
+        }
+        return "Create Post"
+    }
+
+    private func createSubtitle(in appModel: FlickAppModel) -> String {
+        if isAutomated {
+            return "Configure recurring template, product, model, and TikTok settings, then monitor scheduled runs."
+        }
+        return "Build a slideshow draft, generate images, review slides, and prepare TikTok publishing from one workspace."
+    }
+
+    private func createMetrics(in appModel: FlickAppModel) -> [MacWorkspaceMetric] {
+        if isAutomated {
+            return [
+                MacWorkspaceMetric(title: "Automations", value: "\(appModel.overview.automations.count)"),
+                MacWorkspaceMetric(title: "Templates", value: "\(selectedAutomationTemplateIDs.count)"),
+                MacWorkspaceMetric(title: "Images", value: "\(selectedAutomationProductImageAssetIDs.count)")
+            ]
+        }
+
+        return [
+            MacWorkspaceMetric(title: "Drafts", value: "\(appModel.createDrafts.count)"),
+            MacWorkspaceMetric(title: "Slides", value: "\(appModel.activeCreateDraft?.slides.count ?? 0)"),
+            MacWorkspaceMetric(title: "Templates", value: "\(templateStore.templates.count)")
+        ]
     }
 
     private var draftsButton: some View {
         Button("Drafts", systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90") {
             presentedSheet = .drafts
-        }
-    }
-
-    @ViewBuilder
-    private func createToolbarTitle(in appModel: FlickAppModel) -> some View {
-        if isAutomated {
-            TextField(
-                automationDefaultName(in: appModel),
-                text: $automationName,
-                prompt: Text(automationDefaultName(in: appModel))
-            )
-            .textFieldStyle(.plain)
-            .multilineTextAlignment(.center)
-            .font(.system(.body, weight: .semibold))
-            .frame(minWidth: 160, maxWidth: 280)
-            .submitLabel(.done)
-            .accessibilityLabel("Automation name")
-        } else {
-            Text("Create")
-                .font(.system(.body, weight: .semibold))
         }
     }
 
@@ -379,11 +433,13 @@ struct MacCreateView: View {
                 Task { await loadTemplates(forceReload: true) }
             }
         )
+        .macCreateListRows()
 
         CreateModelSection(
             models: appModel.overview.creationModels,
             selectedModel: $selectedCreationModel
         )
+        .macCreateListRows()
 
         CreateAutomationProductImageSection(
             products: appModel.overview.products,
@@ -391,6 +447,7 @@ struct MacCreateView: View {
             selectedProductID: $selectedProductID,
             selectedProductImageAssetIDs: $selectedAutomationProductImageAssetIDs
         )
+        .macCreateListRows()
 
         CreateTikTokSettingsSection(
             accountName: tiktokAccountName,
@@ -402,6 +459,7 @@ struct MacCreateView: View {
             promotesBrandedContent: automationTikTokSettings.promotesBrandedContent,
             action: { presentedSheet = .tikTokSettings }
         )
+        .macCreateListRows()
     }
 
     @ViewBuilder
@@ -413,6 +471,7 @@ struct MacCreateView: View {
             editAction: loadAutomation,
             deleteAction: { deleteAutomation($0, using: appModel) }
         )
+        .macCreateListRows()
     }
 
     @ViewBuilder
@@ -429,11 +488,13 @@ struct MacCreateView: View {
                 Task { await loadTemplates(forceReload: true) }
             }
         )
+        .macCreateListRows()
 
         CreateModelSection(
             models: appModel.overview.creationModels,
             selectedModel: $selectedCreationModel
         )
+        .macCreateListRows()
 
         CreateProductImageSection(
             products: appModel.overview.products,
@@ -441,6 +502,7 @@ struct MacCreateView: View {
             selectedProductID: $selectedProductID,
             selectedProductImageAssetID: $selectedProductImageAssetID
         )
+        .macCreateListRows()
 
         AnalyzeTemplateSection(
             selectedTemplate: selectedTemplate,
@@ -449,6 +511,7 @@ struct MacCreateView: View {
             canAnalyze: canAnalyzeTemplate(in: appModel),
             action: analyzeTemplate
         )
+        .macCreateListRows()
     }
 
     @ViewBuilder
@@ -471,6 +534,7 @@ struct MacCreateView: View {
                     message: "Select a template and analyze it to start editing slides, or open Drafts to resume an unposted draft."
                 )
             }
+            .macCreateListRows()
         }
 
         manualPublishingSettingsSections(
@@ -493,6 +557,7 @@ struct MacCreateView: View {
                 selectedSongs: selectedSongsBinding(in: appModel, draftID: currentDraftID),
                 selectAction: { presentedSheet = .songPicker }
             )
+            .macCreateListRows()
 
             CreateTikTokSettingsSection(
                 accountName: tiktokAccountName,
@@ -504,12 +569,14 @@ struct MacCreateView: View {
                 promotesBrandedContent: tikTokSettings?.promotesBrandedContent ?? false,
                 action: { presentedSheet = .tikTokSettings }
             )
+            .macCreateListRows()
         } else {
             CreateSongSection(
                 selectedSongs: .constant([]),
                 selectAction: {}
             )
             .disabled(true)
+            .macCreateListRows()
 
             CreateTikTokSettingsSection(
                 accountName: tiktokAccountName,
@@ -522,6 +589,7 @@ struct MacCreateView: View {
                 action: {}
             )
             .disabled(true)
+            .macCreateListRows()
         }
     }
 
@@ -922,11 +990,13 @@ private struct CreateDraftWorkflowSections: View {
                     draft: draftBinding,
                     styleGuideJSON: $appModel.overview.templates[templateIndex].styleJSON
                 )
+                .macCreateListRows()
             } else {
                 CreatePlanSection(
                     draft: draftBinding,
                     styleGuideJSON: .constant("")
                 )
+                .macCreateListRows()
             }
 
             CreateGenerationControls(
@@ -944,6 +1014,7 @@ private struct CreateDraftWorkflowSections: View {
                     }
                 }
             )
+            .macCreateListRows()
 
             if draft.hasCompletedCreateImages(assetsByID: assetsByID) {
                 CreateSlideRail(
@@ -954,6 +1025,7 @@ private struct CreateDraftWorkflowSections: View {
                         openEditorAction()
                     }
                 )
+                .macCreateListRows()
             }
         }
     }
@@ -963,6 +1035,87 @@ private struct CreateDraftWorkflowSections: View {
         return appModel.overview.templates.firstIndex { $0.id == templateID }
     }
 
+}
+
+private struct CreateAutomationNameSection: View {
+    @Binding var name: String
+    var placeholder: String
+
+    var body: some View {
+        Section("Name") {
+            FlickSettingsRow(
+                title: "Automation name",
+                systemImage: "text.cursor",
+                iconColor: FlickStyle.appTint
+            ) {
+                TextField(placeholder, text: $name, prompt: Text(placeholder))
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .submitLabel(.done)
+                    .accessibilityLabel("Automation name")
+            }
+        }
+    }
+}
+
+private struct MacCreateColumn<Content: View>: View {
+    var title: String
+    var subtitle: String
+    var systemImage: String
+    let content: Content
+
+    init(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.content = content()
+    }
+
+    var body: some View {
+        MacWorkspaceSection(
+            title: title,
+            subtitle: subtitle,
+            systemImage: systemImage
+        ) {
+            MacWorkspacePanel {
+                List {
+                    content
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .scrollIndicators(.visible)
+                .contentMargins(.top, 0, for: .scrollContent)
+                .contentMargins(.horizontal, 0, for: .scrollContent)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+private struct MacCreateRowBackground: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(.regularMaterial)
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(.white.opacity(0.10), lineWidth: 1)
+            }
+            .padding(.vertical, 3)
+    }
+}
+
+private extension View {
+    func macCreateListRows() -> some View {
+        listRowInsets(EdgeInsets(top: 7, leading: 8, bottom: 7, trailing: 8))
+            .listRowBackground(MacCreateRowBackground())
+            .listRowSeparator(.hidden)
+    }
 }
 
 private extension DraftTikTokSettings {
