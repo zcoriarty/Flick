@@ -363,7 +363,7 @@ struct SlideshowPlannerService {
 
         Person identity rules:
         - Any visible generated person must be based on the selected model JSON.
-        - Keep the selected model's face, hair, skin details, eyes, body, styling, and accessories consistent across slides.
+        - Keep the selected model's face, hair, skin details, eyes, body, styling, accessories, and signature pose consistent across slides.
         - Use template people only for pose, composition, camera framing, environment, and background.
         - Do not copy the template person's face, hair, skin tone, body, age, gender expression, clothing, or accessories when they differ from the selected model.
         - Do not force a person into slides where the visual concept does not need one.
@@ -448,7 +448,7 @@ enum SlideshowPromptBuilder {
 
         Person identity:
         - Any visible generated person must match this selected creation model.
-        - Keep the model's face, hair, skin details, eyes, body, styling, and accessories consistent.
+        - Keep the model's face, hair, skin details, eyes, body, styling, accessories, and signature pose consistent.
         - Use template/source people only for pose, camera framing, environment, and background.
         - Do not copy a template person's face, hair, skin tone, body, age, gender expression, clothing, or accessories when they differ from the model JSON.
         """

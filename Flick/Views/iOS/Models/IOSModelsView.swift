@@ -621,22 +621,20 @@ private extension CreationModelPreset {
     var systemImage: String {
         switch self {
         case .fromScratch: "square.dashed"
-        case .cottageHost: "leaf"
-        case .studioFounder: "briefcase"
-        case .wellnessCreator: "sun.max"
-        case .streetwearEditor: "camera"
-        case .fitnessCoach: "figure.strengthtraining.traditional"
+        case .hotBlondeFitnessInfluencer: "iphone"
+        case .fitBlackGuy: "figure.strengthtraining.traditional"
+        case .attractiveBrunette: "sparkles"
+        case .fitWhiteBrunetteMale: "figure.run"
         }
     }
 
     var tint: Color {
         switch self {
         case .fromScratch: .secondary
-        case .cottageHost: .green
-        case .studioFounder: .blue
-        case .wellnessCreator: .orange
-        case .streetwearEditor: .purple
-        case .fitnessCoach: .teal
+        case .hotBlondeFitnessInfluencer: .pink
+        case .fitBlackGuy: .teal
+        case .attractiveBrunette: .purple
+        case .fitWhiteBrunetteMale: .blue
         }
     }
 }

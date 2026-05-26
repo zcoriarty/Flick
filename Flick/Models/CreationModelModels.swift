@@ -180,22 +180,20 @@ extension CreationModelMetadata {
 
 enum CreationModelPreset: String, CaseIterable, Identifiable, Hashable {
     case fromScratch
-    case cottageHost
-    case studioFounder
-    case wellnessCreator
-    case streetwearEditor
-    case fitnessCoach
+    case hotBlondeFitnessInfluencer
+    case fitBlackGuy
+    case attractiveBrunette
+    case fitWhiteBrunetteMale
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .fromScratch: "From Scratch"
-        case .cottageHost: "Cottage Host"
-        case .studioFounder: "Studio Founder"
-        case .wellnessCreator: "Wellness Creator"
-        case .streetwearEditor: "Streetwear Editor"
-        case .fitnessCoach: "Fitness Coach"
+        case .hotBlondeFitnessInfluencer: "Hot Blonde Fitness Influencer"
+        case .fitBlackGuy: "Fit Black Guy"
+        case .attractiveBrunette: "Attractive Brunette"
+        case .fitWhiteBrunetteMale: "Fit White Brunette Male"
         }
     }
 
@@ -203,16 +201,14 @@ enum CreationModelPreset: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .fromScratch:
             "Blank"
-        case .cottageHost:
-            "Cottagecore"
-        case .studioFounder:
-            "Business casual"
-        case .wellnessCreator:
-            "Coastal"
-        case .streetwearEditor:
-            "Streetwear"
-        case .fitnessCoach:
-            "Athleisure"
+        case .hotBlondeFitnessInfluencer:
+            "Phone selfie, athleisure"
+        case .fitBlackGuy:
+            "Athletic streetwear"
+        case .attractiveBrunette:
+            "Polished brunette"
+        case .fitWhiteBrunetteMale:
+            "Fit brunette male"
         }
     }
 
@@ -220,149 +216,57 @@ enum CreationModelPreset: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .fromScratch:
             return CreationModelMetadata()
-        case .cottageHost:
+        case .hotBlondeFitnessInfluencer:
             var metadata = CreationModelMetadata()
             metadata.identity.gender = "Female"
-            metadata.identity.ageRange = "41-50"
-            metadata.ethnicity.ethnicity = "Samoan"
-            metadata.skinDetails.clarity = "Clear"
+            metadata.identity.ageRange = "25-30"
+            metadata.ethnicity.ethnicity = "White"
+            metadata.skinDetails.clarity = "Dewy"
             metadata.skinDetails.freckles = "Light Subtle"
             metadata.skinDetails.moles = "None"
             metadata.skinDetails.underEyes = "Bright"
             metadata.faceShape.shape = "Oval"
-            metadata.faceDetails.jawline = "Sharp"
-            metadata.faceDetails.cheekbones = "Subtle"
-            metadata.faceDetails.chin = "Receding"
-            metadata.faceDetails.dimples = "Chin Dimple"
-            metadata.faceDetails.lips = "Wide"
-            metadata.hair.color = "Auburn"
-            metadata.hair.style = "Bob"
-            metadata.hair.highlights = "Face Framing Highlights"
-            metadata.eyesAndBrows.shape = "Close Set"
-            metadata.eyesAndBrows.color = "Green"
-            metadata.eyesAndBrows.eyebrows = "Feathered"
-            metadata.noseAndEars.nose = "Straight"
-            metadata.noseAndEars.ears = "Attached Lobe"
-            metadata.body.build = "Athletic"
-            metadata.body.height = "Very Tall"
-            metadata.body.shoulders = "Wide"
-            metadata.styleAndAccessories.aesthetic = "Cottagecore"
-            metadata.styleAndAccessories.glasses = "Prescription Square"
-            metadata.styleAndAccessories.jewelry = "Delicate Chain"
-            metadata.styleAndAccessories.headwear = "None"
-            return metadata
-        case .studioFounder:
-            var metadata = CreationModelMetadata()
-            metadata.identity.gender = "Female"
-            metadata.identity.ageRange = "31-40"
-            metadata.ethnicity.ethnicity = "Mixed"
-            metadata.skinDetails.clarity = "Dewy"
-            metadata.skinDetails.freckles = "None"
-            metadata.skinDetails.moles = "None"
-            metadata.skinDetails.underEyes = "Bright"
-            metadata.faceShape.shape = "Diamond"
             metadata.faceDetails.jawline = "Defined"
             metadata.faceDetails.cheekbones = "High"
-            metadata.faceDetails.chin = "Pointed"
-            metadata.faceDetails.dimples = "None"
-            metadata.faceDetails.lips = "Full"
-            metadata.hair.color = "Dark Brown"
-            metadata.hair.style = "Long Wavy"
-            metadata.hair.highlights = "Subtle Highlights"
-            metadata.eyesAndBrows.shape = "Almond"
-            metadata.eyesAndBrows.color = "Brown"
-            metadata.eyesAndBrows.eyebrows = "Arched"
-            metadata.noseAndEars.nose = "Straight"
-            metadata.noseAndEars.ears = "Free Lobe"
-            metadata.body.build = "Slim"
-            metadata.body.height = "Tall"
-            metadata.body.shoulders = "Average"
-            metadata.styleAndAccessories.aesthetic = "Business Casual"
-            metadata.styleAndAccessories.glasses = "Wire Frames"
-            metadata.styleAndAccessories.jewelry = "Layered Necklaces"
-            metadata.styleAndAccessories.headwear = "None"
-            return metadata
-        case .wellnessCreator:
-            var metadata = CreationModelMetadata()
-            metadata.identity.gender = "Non-binary"
-            metadata.identity.ageRange = "25-30"
-            metadata.ethnicity.ethnicity = "Latine"
-            metadata.skinDetails.clarity = "Natural"
-            metadata.skinDetails.freckles = "Medium"
-            metadata.skinDetails.moles = "None"
-            metadata.skinDetails.underEyes = "Natural"
-            metadata.faceShape.shape = "Heart"
-            metadata.faceDetails.jawline = "Soft"
-            metadata.faceDetails.cheekbones = "Defined"
             metadata.faceDetails.chin = "Rounded"
             metadata.faceDetails.dimples = "Cheek Dimples"
-            metadata.faceDetails.lips = "Bow Shaped"
-            metadata.hair.color = "Brown"
-            metadata.hair.style = "Curly"
+            metadata.faceDetails.lips = "Full"
+            metadata.hair.color = "Blonde"
+            metadata.hair.style = "Long Wavy"
             metadata.hair.highlights = "Balayage"
-            metadata.eyesAndBrows.shape = "Round"
-            metadata.eyesAndBrows.color = "Hazel"
-            metadata.eyesAndBrows.eyebrows = "Natural"
-            metadata.noseAndEars.nose = "Button"
+            metadata.eyesAndBrows.shape = "Almond"
+            metadata.eyesAndBrows.color = "Blue"
+            metadata.eyesAndBrows.eyebrows = "Feathered"
+            metadata.noseAndEars.nose = "Straight"
             metadata.noseAndEars.ears = "Pierced"
-            metadata.body.build = "Average"
-            metadata.body.height = "Average"
-            metadata.body.shoulders = "Sloped"
-            metadata.styleAndAccessories.aesthetic = "Coastal"
-            metadata.styleAndAccessories.glasses = "Round Frames"
-            metadata.styleAndAccessories.jewelry = "Stud Earrings"
-            metadata.styleAndAccessories.headwear = "Headscarf"
+            metadata.body.build = "Athletic"
+            metadata.body.height = "Tall"
+            metadata.body.shoulders = "Average"
+            metadata.styleAndAccessories.aesthetic = "Athleisure"
+            metadata.styleAndAccessories.glasses = "None"
+            metadata.styleAndAccessories.jewelry = "Delicate Chain"
+            metadata.styleAndAccessories.headwear = "None"
+            metadata.styleAndAccessories.signaturePose = "iPhone held in front of face for selfies"
             return metadata
-        case .streetwearEditor:
+        case .fitBlackGuy:
             var metadata = CreationModelMetadata()
             metadata.identity.gender = "Male"
-            metadata.identity.ageRange = "18-24"
-            metadata.ethnicity.ethnicity = "East Asian"
-            metadata.skinDetails.clarity = "Matte"
-            metadata.skinDetails.freckles = "None"
-            metadata.skinDetails.moles = "None"
-            metadata.skinDetails.underEyes = "Soft Shadows"
-            metadata.faceShape.shape = "Square"
-            metadata.faceDetails.jawline = "Square"
-            metadata.faceDetails.cheekbones = "Defined"
-            metadata.faceDetails.chin = "Square"
-            metadata.faceDetails.dimples = "None"
-            metadata.faceDetails.lips = "Natural"
-            metadata.hair.color = "Black"
-            metadata.hair.style = "Short Crop"
-            metadata.hair.highlights = "None"
-            metadata.eyesAndBrows.shape = "Close Set"
-            metadata.eyesAndBrows.color = "Brown"
-            metadata.eyesAndBrows.eyebrows = "Straight"
-            metadata.noseAndEars.nose = "Narrow"
-            metadata.noseAndEars.ears = "Small"
-            metadata.body.build = "Slim"
-            metadata.body.height = "Tall"
-            metadata.body.shoulders = "Narrow"
-            metadata.styleAndAccessories.aesthetic = "Streetwear"
-            metadata.styleAndAccessories.glasses = "Aviators"
-            metadata.styleAndAccessories.jewelry = "Statement Rings"
-            metadata.styleAndAccessories.headwear = "Beanie"
-            return metadata
-        case .fitnessCoach:
-            var metadata = CreationModelMetadata()
-            metadata.identity.gender = "Female"
             metadata.identity.ageRange = "25-30"
             metadata.ethnicity.ethnicity = "Black"
             metadata.skinDetails.clarity = "Clear"
             metadata.skinDetails.freckles = "None"
             metadata.skinDetails.moles = "None"
-            metadata.skinDetails.underEyes = "Bright"
-            metadata.faceShape.shape = "Oblong"
+            metadata.skinDetails.underEyes = "Natural"
+            metadata.faceShape.shape = "Square"
             metadata.faceDetails.jawline = "Defined"
-            metadata.faceDetails.cheekbones = "High"
-            metadata.faceDetails.chin = "Rounded"
-            metadata.faceDetails.dimples = "One-Sided Dimple"
+            metadata.faceDetails.cheekbones = "Defined"
+            metadata.faceDetails.chin = "Square"
+            metadata.faceDetails.dimples = "None"
             metadata.faceDetails.lips = "Full"
             metadata.hair.color = "Black"
-            metadata.hair.style = "Ponytail"
+            metadata.hair.style = "Short Crop"
             metadata.hair.highlights = "None"
-            metadata.eyesAndBrows.shape = "Upturned"
+            metadata.eyesAndBrows.shape = "Almond"
             metadata.eyesAndBrows.color = "Brown"
             metadata.eyesAndBrows.eyebrows = "Thick"
             metadata.noseAndEars.nose = "Wide"
@@ -370,10 +274,75 @@ enum CreationModelPreset: String, CaseIterable, Identifiable, Hashable {
             metadata.body.build = "Athletic"
             metadata.body.height = "Tall"
             metadata.body.shoulders = "Wide"
-            metadata.styleAndAccessories.aesthetic = "Athleisure"
+            metadata.styleAndAccessories.aesthetic = "Streetwear"
             metadata.styleAndAccessories.glasses = "None"
-            metadata.styleAndAccessories.jewelry = "Hoops"
+            metadata.styleAndAccessories.jewelry = "None"
             metadata.styleAndAccessories.headwear = "Baseball Cap"
+            metadata.styleAndAccessories.signaturePose = "None"
+            return metadata
+        case .attractiveBrunette:
+            var metadata = CreationModelMetadata()
+            metadata.identity.gender = "Female"
+            metadata.identity.ageRange = "25-30"
+            metadata.ethnicity.ethnicity = "Mixed"
+            metadata.skinDetails.clarity = "Dewy"
+            metadata.skinDetails.freckles = "Light Subtle"
+            metadata.skinDetails.moles = "None"
+            metadata.skinDetails.underEyes = "Bright"
+            metadata.faceShape.shape = "Heart"
+            metadata.faceDetails.jawline = "Defined"
+            metadata.faceDetails.cheekbones = "High"
+            metadata.faceDetails.chin = "Rounded"
+            metadata.faceDetails.dimples = "Cheek Dimples"
+            metadata.faceDetails.lips = "Bow Shaped"
+            metadata.hair.color = "Dark Brown"
+            metadata.hair.style = "Long Wavy"
+            metadata.hair.highlights = "Subtle Highlights"
+            metadata.eyesAndBrows.shape = "Almond"
+            metadata.eyesAndBrows.color = "Hazel"
+            metadata.eyesAndBrows.eyebrows = "Arched"
+            metadata.noseAndEars.nose = "Button"
+            metadata.noseAndEars.ears = "Pierced"
+            metadata.body.build = "Slim"
+            metadata.body.height = "Tall"
+            metadata.body.shoulders = "Average"
+            metadata.styleAndAccessories.aesthetic = "Old Money"
+            metadata.styleAndAccessories.glasses = "None"
+            metadata.styleAndAccessories.jewelry = "Layered Necklaces"
+            metadata.styleAndAccessories.headwear = "None"
+            metadata.styleAndAccessories.signaturePose = "None"
+            return metadata
+        case .fitWhiteBrunetteMale:
+            var metadata = CreationModelMetadata()
+            metadata.identity.gender = "Male"
+            metadata.identity.ageRange = "25-30"
+            metadata.ethnicity.ethnicity = "White"
+            metadata.skinDetails.clarity = "Clear"
+            metadata.skinDetails.freckles = "None"
+            metadata.skinDetails.moles = "None"
+            metadata.skinDetails.underEyes = "Natural"
+            metadata.faceShape.shape = "Diamond"
+            metadata.faceDetails.jawline = "Sharp"
+            metadata.faceDetails.cheekbones = "Defined"
+            metadata.faceDetails.chin = "Cleft"
+            metadata.faceDetails.dimples = "None"
+            metadata.faceDetails.lips = "Natural"
+            metadata.hair.color = "Dark Brown"
+            metadata.hair.style = "Short Crop"
+            metadata.hair.highlights = "None"
+            metadata.eyesAndBrows.shape = "Hooded"
+            metadata.eyesAndBrows.color = "Brown"
+            metadata.eyesAndBrows.eyebrows = "Straight"
+            metadata.noseAndEars.nose = "Straight"
+            metadata.noseAndEars.ears = "Free Lobe"
+            metadata.body.build = "Athletic"
+            metadata.body.height = "Tall"
+            metadata.body.shoulders = "Wide"
+            metadata.styleAndAccessories.aesthetic = "Minimal"
+            metadata.styleAndAccessories.glasses = "None"
+            metadata.styleAndAccessories.jewelry = "None"
+            metadata.styleAndAccessories.headwear = "None"
+            metadata.styleAndAccessories.signaturePose = "None"
             return metadata
         }
     }
@@ -447,6 +416,38 @@ struct CreationModelStyleAndAccessories: Codable, Hashable {
     var glasses = ""
     var jewelry = ""
     var headwear = ""
+    var signaturePose = ""
+
+    enum CodingKeys: String, CodingKey {
+        case aesthetic
+        case glasses
+        case jewelry
+        case headwear
+        case signaturePose = "signature_pose"
+    }
+
+    init(
+        aesthetic: String = "",
+        glasses: String = "",
+        jewelry: String = "",
+        headwear: String = "",
+        signaturePose: String = ""
+    ) {
+        self.aesthetic = aesthetic
+        self.glasses = glasses
+        self.jewelry = jewelry
+        self.headwear = headwear
+        self.signaturePose = signaturePose
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        aesthetic = try container.decodeIfPresent(String.self, forKey: .aesthetic) ?? ""
+        glasses = try container.decodeIfPresent(String.self, forKey: .glasses) ?? ""
+        jewelry = try container.decodeIfPresent(String.self, forKey: .jewelry) ?? ""
+        headwear = try container.decodeIfPresent(String.self, forKey: .headwear) ?? ""
+        signaturePose = try container.decodeIfPresent(String.self, forKey: .signaturePose) ?? ""
+    }
 }
 
 enum CreationModelSection: String, CaseIterable, Identifiable, Codable, Hashable {
@@ -499,7 +500,7 @@ enum CreationModelSection: String, CaseIterable, Identifiable, Codable, Hashable
         case .body:
             [.build, .height, .shoulders]
         case .styleAndAccessories:
-            [.aesthetic, .glasses, .jewelry, .headwear]
+            [.aesthetic, .glasses, .jewelry, .headwear, .signaturePose]
         }
     }
 
@@ -541,6 +542,7 @@ enum CreationModelField: String, CaseIterable, Identifiable, Codable, Hashable {
     case glasses
     case jewelry
     case headwear
+    case signaturePose
 
     var id: String { rawValue }
 
@@ -573,6 +575,7 @@ enum CreationModelField: String, CaseIterable, Identifiable, Codable, Hashable {
         case .glasses: "Glasses"
         case .jewelry: "Jewelry"
         case .headwear: "Headwear"
+        case .signaturePose: "Signature Pose"
         }
     }
 
@@ -644,6 +647,8 @@ enum CreationModelField: String, CaseIterable, Identifiable, Codable, Hashable {
             ["None", "Delicate Chain", "Hoops", "Stud Earrings", "Layered Necklaces", "Statement Rings"]
         case .headwear:
             ["None", "Baseball Cap", "Beanie", "Headscarf", "Bucket Hat", "Wide Brim Hat"]
+        case .signaturePose:
+            ["None", "iPhone held in front of face for selfies", "Mirror selfie", "Hands on hips", "Walking toward camera", "Over-shoulder glance"]
         }
     }
 
@@ -676,6 +681,7 @@ enum CreationModelField: String, CaseIterable, Identifiable, Codable, Hashable {
         case .glasses: \.styleAndAccessories.glasses
         case .jewelry: \.styleAndAccessories.jewelry
         case .headwear: \.styleAndAccessories.headwear
+        case .signaturePose: \.styleAndAccessories.signaturePose
         }
     }
 
