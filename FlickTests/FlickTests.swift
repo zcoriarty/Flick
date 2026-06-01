@@ -371,6 +371,146 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(repository.state.assets.map(\.id), [sharedAsset.id])
     }
 
+    func testDeletingProductPausesAutomationAndClearsProductImageSelection() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let product = makeProduct(name: "Flick Pro", now: now)
+        let asset = makeMediaAsset(
+            source: .uploaded,
+            publicURL: try XCTUnwrap(URL(string: "https://example.com/product.jpg")),
+            productIDs: [product.id],
+            now: now
+        )
+        let nextScheduledAt = Date(timeInterval: 3_600, since: now)
+        let automation = ContentAutomation(
+            name: "Product posts",
+            templateIDs: ["template-a"],
+            productID: product.id,
+            productImageAssetIDs: [asset.id],
+            schedule: AutomationSchedule(),
+            tikTokSettings: DraftTikTokSettings(title: "Try Flick", privacyLevel: .publicToEveryone),
+            status: .active,
+            nextScheduledAt: nextScheduledAt,
+            createdAt: now,
+            updatedAt: now
+        )
+        var state = FlickEmptyState.make()
+        state.products = [product]
+        state.assets = [asset]
+        state.automations = [automation]
+        let repository = InMemoryFlickRepository(state: state)
+        let model = FlickAppModel(repository: repository, configuration: .current)
+
+        await model.refresh()
+        try await model.deleteProduct(id: product.id)
+
+        let updatedAutomation = try XCTUnwrap(model.overview.automations.first)
+        XCTAssertNil(updatedAutomation.productID)
+        XCTAssertTrue(updatedAutomation.productImageAssetIDs.isEmpty)
+        XCTAssertEqual(updatedAutomation.status, .paused)
+        XCTAssertNil(updatedAutomation.nextScheduledAt)
+        XCTAssertEqual(
+            updatedAutomation.lastErrorMessage,
+            "The selected product was deleted. Choose a new product and images before reactivating this automation."
+        )
+        XCTAssertTrue(repository.state.products.isEmpty)
+        XCTAssertTrue(repository.state.assets.isEmpty)
+        XCTAssertNil(repository.state.automations.first?.productID)
+        XCTAssertTrue(repository.state.automations.first?.productImageAssetIDs.isEmpty == true)
+    }
+
+    func testRemovingProductMediaPrunesAutomationImageSelection() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let product = makeProduct(name: "Flick Pro", now: now)
+        let removedAsset = makeMediaAsset(
+            source: .uploaded,
+            publicURL: try XCTUnwrap(URL(string: "https://example.com/removed.jpg")),
+            productIDs: [product.id],
+            now: now
+        )
+        let retainedAsset = makeMediaAsset(
+            source: .uploaded,
+            publicURL: try XCTUnwrap(URL(string: "https://example.com/retained.jpg")),
+            productIDs: [product.id],
+            now: now
+        )
+        let nextScheduledAt = Date(timeInterval: 3_600, since: now)
+        let automation = ContentAutomation(
+            name: "Product posts",
+            templateIDs: ["template-a"],
+            productID: product.id,
+            productImageAssetIDs: [removedAsset.id, retainedAsset.id],
+            schedule: AutomationSchedule(),
+            tikTokSettings: DraftTikTokSettings(title: "Try Flick", privacyLevel: .publicToEveryone),
+            status: .active,
+            nextScheduledAt: nextScheduledAt,
+            createdAt: now,
+            updatedAt: now
+        )
+        var state = FlickEmptyState.make()
+        state.products = [product]
+        state.assets = [removedAsset, retainedAsset]
+        state.automations = [automation]
+        let repository = InMemoryFlickRepository(state: state)
+        let model = FlickAppModel(repository: repository, configuration: .current)
+
+        await model.refresh()
+        try await model.removeProductMedia(removedAsset)
+
+        let updatedAutomation = try XCTUnwrap(model.overview.automations.first)
+        XCTAssertEqual(updatedAutomation.productImageAssetIDs, [retainedAsset.id])
+        XCTAssertEqual(updatedAutomation.status, .active)
+        XCTAssertEqual(updatedAutomation.nextScheduledAt, nextScheduledAt)
+        XCTAssertNil(updatedAutomation.lastErrorMessage)
+        XCTAssertEqual(repository.state.automations.first?.productImageAssetIDs, [retainedAsset.id])
+        XCTAssertEqual(repository.state.assets.map(\.id), [retainedAsset.id])
+    }
+
+    func testDetachingLastProductImagePausesAutomation() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let originalProduct = makeProduct(name: "Flick Pro", now: now)
+        let retainedProduct = makeProduct(name: "Flick Lite", now: now)
+        let asset = makeMediaAsset(
+            source: .uploaded,
+            publicURL: try XCTUnwrap(URL(string: "https://example.com/product.jpg")),
+            productIDs: [originalProduct.id, retainedProduct.id],
+            now: now
+        )
+        let nextScheduledAt = Date(timeInterval: 3_600, since: now)
+        let automation = ContentAutomation(
+            name: "Product posts",
+            templateIDs: ["template-a"],
+            productID: originalProduct.id,
+            productImageAssetIDs: [asset.id],
+            schedule: AutomationSchedule(),
+            tikTokSettings: DraftTikTokSettings(title: "Try Flick", privacyLevel: .publicToEveryone),
+            status: .active,
+            nextScheduledAt: nextScheduledAt,
+            createdAt: now,
+            updatedAt: now
+        )
+        var state = FlickEmptyState.make()
+        state.products = [originalProduct, retainedProduct]
+        state.assets = [asset]
+        state.automations = [automation]
+        let repository = InMemoryFlickRepository(state: state)
+        let model = FlickAppModel(repository: repository, configuration: .current)
+
+        await model.refresh()
+        try await model.updateProductMediaProducts(assetID: asset.id, productIDs: [retainedProduct.id])
+
+        let updatedAutomation = try XCTUnwrap(model.overview.automations.first)
+        XCTAssertTrue(updatedAutomation.productImageAssetIDs.isEmpty)
+        XCTAssertEqual(updatedAutomation.status, .paused)
+        XCTAssertNil(updatedAutomation.nextScheduledAt)
+        XCTAssertEqual(
+            updatedAutomation.lastErrorMessage,
+            "All selected product images were removed from Flick Pro. Choose at least one product image before reactivating this automation."
+        )
+        XCTAssertEqual(repository.state.assets.first?.productIDs, [retainedProduct.id])
+        XCTAssertTrue(repository.state.automations.first?.productImageAssetIDs.isEmpty == true)
+        XCTAssertEqual(repository.state.automations.first?.status, .paused)
+    }
+
     func testCoreDataRoundTripsCreateDraftPublishFields() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let persistenceController = PersistenceController(inMemory: true)

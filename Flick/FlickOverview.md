@@ -1449,7 +1449,7 @@ user.info.profile
 user.info.profile
 Read access to profile_web_link, profile_deep_link, bio_description, is_verified.
 4. Should generation be local, API-based, or configurable?
-- For generation we can use OpenAI since we have the API key
+- For generation, users can configure their own OpenAI API key.
 5. Will Flick use direct R2 credentials only, or move uploads behind a serverless broker later?
 - V1 uses direct bucket-scoped R2 credentials stored in Keychain.
 6. Should iPhone be allowed to publish directly, or should all publishing route through the Mac worker?

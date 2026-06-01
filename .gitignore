@@ -1,6 +1,11 @@
 # macOS
 .DS_Store
 
+# Local secrets and environment overrides
+.env
+.env.*
+!.env.example
+
 # Xcode user state
 xcuserdata/
 *.xcuserstate

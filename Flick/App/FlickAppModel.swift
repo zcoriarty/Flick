@@ -191,6 +191,7 @@ final class FlickAppModel {
             configuration = .current
             let didReconcileMediaURLs = reconcileStoredMediaPublicURLs()
             let didReconcileLoginKitTokens = reconcileLoginKitAccountTokenStatus()
+            let didReconcileAutomationProductImages = reconcileAutomationProductImageSelections()
             applyConnectedAccounts()
             applyCredentialHealth()
             overview.refreshDerivedState()
@@ -204,6 +205,7 @@ final class FlickAppModel {
                 || reconcileCompletedSlideImages()
                 || didUpdateTikTokStatuses
                 || didReconcilePublishedPosts
+                || didReconcileAutomationProductImages
                 || didPruneProgresses
             {
                 overview.refreshDerivedState()
@@ -575,6 +577,7 @@ final class FlickAppModel {
         guard overview.products.contains(where: { $0.id == productID }) else { return }
 
         let previousOverview = overview
+        let now = Date()
         overview.products.removeAll { $0.id == productID }
         overview.assets = overview.assets.compactMap { asset in
             guard asset.productIDs.contains(productID) else { return asset }
@@ -584,8 +587,11 @@ final class FlickAppModel {
 
             var updatedAsset = asset
             updatedAsset.productIDs = retainedProductIDs
-            updatedAsset.updatedAt = Date()
+            updatedAsset.updatedAt = now
             return updatedAsset
+        }
+        if reconcileAutomationProductImageSelections(now: now) {
+            overview.refreshDerivedState()
         }
 
         do {
@@ -694,30 +700,106 @@ final class FlickAppModel {
             throw ProductManagementError.missingMediaAsset
         }
 
-        let previousAsset = overview.assets[assetIndex]
+        let previousOverview = overview
+        let now = Date()
         overview.assets[assetIndex].productIDs = resolvedProductIDs
-        overview.assets[assetIndex].updatedAt = Date()
+        overview.assets[assetIndex].updatedAt = now
+        if reconcileAutomationProductImageSelections(now: now) {
+            overview.refreshDerivedState()
+        }
 
         do {
-            try await repository.upsertAsset(overview.assets[assetIndex])
+            try await repository.saveOverview(overview)
             lastErrorMessage = nil
         } catch {
-            overview.assets[assetIndex] = previousAsset
+            overview = previousOverview
             throw error
         }
     }
 
     func removeProductMedia(_ asset: MediaAsset) async throws {
         guard let index = overview.assets.firstIndex(where: { $0.id == asset.id }) else { return }
-        let removedAsset = overview.assets.remove(at: index)
+        let previousOverview = overview
+        overview.assets.remove(at: index)
+        if reconcileAutomationProductImageSelections() {
+            overview.refreshDerivedState()
+        }
 
         do {
-            try await repository.deleteAsset(id: asset.id)
+            try await repository.saveOverview(overview)
             lastErrorMessage = nil
         } catch {
-            overview.assets.insert(removedAsset, at: min(index, overview.assets.count))
+            overview = previousOverview
             throw error
         }
+    }
+
+    @discardableResult
+    private func reconcileAutomationProductImageSelections(now: Date = Date()) -> Bool {
+        let productsByID = Dictionary(uniqueKeysWithValues: overview.products.map { ($0.id, $0) })
+        let assetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
+        var didChange = false
+
+        for index in overview.automations.indices {
+            guard let productID = overview.automations[index].productID else {
+                continue
+            }
+
+            guard let product = productsByID[productID] else {
+                if overview.automations[index].productID != nil || !overview.automations[index].productImageAssetIDs.isEmpty {
+                    overview.automations[index].productID = nil
+                    overview.automations[index].productImageAssetIDs = []
+                    overview.automations[index].updatedAt = now
+                    didChange = true
+                }
+                if pauseAutomationForProductImageChange(
+                    at: index,
+                    message: "The selected product was deleted. Choose a new product and images before reactivating this automation.",
+                    now: now
+                ) {
+                    didChange = true
+                }
+                continue
+            }
+
+            let validImageAssetIDs = overview.automations[index].productImageAssetIDs.filter { assetID in
+                guard let asset = assetsByID[assetID] else { return false }
+                return asset.mediaType == .image && asset.productIDs.contains(productID)
+            }
+
+            if validImageAssetIDs != overview.automations[index].productImageAssetIDs {
+                overview.automations[index].productImageAssetIDs = validImageAssetIDs
+                overview.automations[index].updatedAt = now
+                didChange = true
+            }
+
+            if validImageAssetIDs.isEmpty {
+                if pauseAutomationForProductImageChange(
+                    at: index,
+                    message: "All selected product images were removed from \(product.name). Choose at least one product image before reactivating this automation.",
+                    now: now
+                ) {
+                    didChange = true
+                }
+            }
+        }
+
+        return didChange
+    }
+
+    private func pauseAutomationForProductImageChange(at index: Int, message: String, now: Date) -> Bool {
+        guard overview.automations[index].status != .paused
+            || overview.automations[index].nextScheduledAt != nil
+            || overview.automations[index].lastErrorMessage != message
+        else {
+            return false
+        }
+
+        overview.automations[index].status = .paused
+        overview.automations[index].nextScheduledAt = nil
+        overview.automations[index].lastErrorMessage = message
+        overview.automations[index].updatedAt = now
+        return true
     }
 
     private func validateProductIDs(_ productIDs: Set<UUID>) throws -> [UUID] {

@@ -9,6 +9,7 @@ import SwiftUI
 struct IOSDashboardView: View {
     @Environment(FlickAppModel.self) private var appModel
     @State private var exampleTemplates: [ExampleSlideshowTemplate] = []
+    @State private var isTikTokPublishingActivityPresented = false
 
     private var automationSnapshot: AutomationDashboardSnapshot {
         AutomationDashboardSnapshot.make(
@@ -23,17 +24,18 @@ struct IOSDashboardView: View {
             .sorted { $0.updatedAt > $1.updatedAt }
     }
 
-    private var recentPublishedPosts: [PublishedPost] {
-        Array(
-            appModel.overview.publishedPosts
-                .filter { $0.platform == .tiktok }
-                .sorted { $0.publishedAt > $1.publishedAt }
-                .prefix(5)
-        )
+    private var publishedTikTokPosts: [PublishedPost] {
+        appModel.overview.publishedPosts
+            .filter { $0.platform == .tiktok }
+            .sorted { $0.publishedAt > $1.publishedAt }
     }
 
     private var publishedTikTokPostCount: Int {
-        appModel.overview.publishedPosts.filter { $0.platform == .tiktok }.count
+        publishedTikTokPosts.count
+    }
+
+    private var latestTikTokActivityDate: Date? {
+        (awaitingTikTokJobs.map(\.updatedAt) + publishedTikTokPosts.map(\.publishedAt)).max()
     }
 
     var body: some View {
@@ -54,6 +56,12 @@ struct IOSDashboardView: View {
         }
         .task {
             await loadExampleTemplates()
+        }
+        .sheet(isPresented: $isTikTokPublishingActivityPresented) {
+            TikTokPublishingActivitySheet(
+                awaitingJobs: awaitingTikTokJobs,
+                publishedPosts: publishedTikTokPosts
+            )
         }
         .flickToolbarTitle("Dashboard")
     }
@@ -135,7 +143,7 @@ struct IOSDashboardView: View {
 
     private var tiktokPublishingSection: some View {
         Section("TikTok publishing") {
-            if awaitingTikTokJobs.isEmpty && recentPublishedPosts.isEmpty {
+            if awaitingTikTokJobs.isEmpty && publishedTikTokPosts.isEmpty {
                 DashboardMessageRow(
                     title: "No TikTok publish activity yet",
                     message: "Draft uploads and direct posts will appear here after publishing from Create.",
@@ -143,13 +151,17 @@ struct IOSDashboardView: View {
                     iconColor: .secondary
                 )
             } else {
-                ForEach(awaitingTikTokJobs) { job in
-                    TikTokPublishingJobRow(job: job)
+                Button {
+                    isTikTokPublishingActivityPresented = true
+                } label: {
+                    TikTokPublishingActivitySummaryRow(
+                        awaitingJobCount: awaitingTikTokJobs.count,
+                        publishedPostCount: publishedTikTokPosts.count,
+                        latestActivityDate: latestTikTokActivityDate
+                    )
                 }
-
-                ForEach(recentPublishedPosts) { post in
-                    TikTokPublishedPostRow(post: post)
-                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Shows all TikTok publishing activity.")
             }
         }
     }
