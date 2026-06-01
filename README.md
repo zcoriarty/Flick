@@ -1,3 +1,5 @@
+<img width="120" height="120" alt="Flick-01-iOS-Default-60x60@2x" src="https://github.com/user-attachments/assets/f940fc4f-3ba8-4b59-8766-2a470a58abcc" />
+
 # Flick
 
 Flick helps founders, indie builders, and small teams get new products in front of users with simple AI-powered marketing. Bring a product image, a few notes, and your own provider keys; Flick turns them into short-form slideshow drafts, stores the media, and helps move the content into publishing workflows.
