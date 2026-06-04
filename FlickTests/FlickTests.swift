@@ -1472,6 +1472,47 @@ final class FlickTests: XCTestCase {
         XCTAssertNil(try store.data(for: "POSTGRES_URL"))
     }
 
+    func testYouTubeConfigurationReadsOAuthValuesFromCredentialsOnly() {
+        let missingConfiguration = YouTubeConfiguration(values: [:])
+
+        XCTAssertNil(missingConfiguration.clientID)
+        XCTAssertNil(missingConfiguration.reversedClientID)
+        XCTAssertNil(missingConfiguration.redirectURI)
+
+        let credentialConfiguration = YouTubeConfiguration(values: [
+            "GOOGLE_CLIENT_ID": " google-client-id ",
+            "GOOGLE_REVERSED_CLIENT_ID": " com.googleusercontent.apps.flick ",
+            "YOUTUBE_SCOPES": "\(YouTubeConfiguration.uploadScope), \(YouTubeConfiguration.readonlyScope)"
+        ])
+
+        XCTAssertEqual(credentialConfiguration.clientID, "google-client-id")
+        XCTAssertEqual(credentialConfiguration.reversedClientID, "com.googleusercontent.apps.flick")
+        XCTAssertEqual(credentialConfiguration.redirectURI?.absoluteString, "com.googleusercontent.apps.flick:/oauth2redirect")
+        XCTAssertEqual(credentialConfiguration.requestedScopes, [
+            YouTubeConfiguration.uploadScope,
+            YouTubeConfiguration.readonlyScope
+        ])
+    }
+
+    func testCredentialExportDocumentWritesSortedJSON() throws {
+        let document = CredentialExportDocument(values: [
+            "TIKTOK_CLIENT_ID": "tiktok-client-id",
+            "GOOGLE_CLIENT_ID": "google-client-id"
+        ])
+
+        let json = try XCTUnwrap(String(data: document.jsonData(), encoding: .utf8))
+        let decodedValues = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: document.jsonData()) as? [String: String]
+        )
+        let googleKeyRange = try XCTUnwrap(json.range(of: "\"GOOGLE_CLIENT_ID\""))
+        let tiktokKeyRange = try XCTUnwrap(json.range(of: "\"TIKTOK_CLIENT_ID\""))
+
+        XCTAssertEqual(decodedValues["GOOGLE_CLIENT_ID"], "google-client-id")
+        XCTAssertEqual(decodedValues["TIKTOK_CLIENT_ID"], "tiktok-client-id")
+        XCTAssertLessThan(googleKeyRange.lowerBound, tiktokKeyRange.lowerBound)
+        XCTAssertTrue(json.hasSuffix("\n"))
+    }
+
     func testR2ConfigurationRecognizesBucketAndDerivedEndpoint() {
         let configuration = R2StorageConfiguration(values: [
             "R2_ACCOUNT_ID": "account-id",
@@ -3839,7 +3880,7 @@ private func makeTestAppConfiguration(values: [String: String] = [:]) -> AppConf
     return AppConfiguration(
         r2: R2StorageConfiguration(values: mergedValues),
         tiktok: TikTokConfiguration(values: mergedValues),
-        youtube: YouTubeConfiguration(values: mergedValues, infoDictionary: [:]),
+        youtube: YouTubeConfiguration(values: mergedValues),
         openAI: OpenAIConfiguration(values: mergedValues),
         meta: MetaConfiguration(values: mergedValues),
         storagePaths: R2StoragePaths(),

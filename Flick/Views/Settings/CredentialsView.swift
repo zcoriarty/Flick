@@ -3,11 +3,14 @@
 //  Flick
 //
 
+import CoreTransferable
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct CredentialsView: View {
     @Environment(FlickAppModel.self) private var appModel
     @State private var credentialDrafts: [CredentialEditorDraft] = []
+    @State private var credentialsExportDocument = CredentialExportDocument(values: [:])
     @State private var isClearCredentialsConfirmationPresented = false
 
     var body: some View {
@@ -44,7 +47,25 @@ struct CredentialsView: View {
         }
         .flickSettingsListStyle()
         .flickToolbarTitle("Credentials")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                exportButton
+            }
+        }
         .onAppear(perform: reloadCredentialDrafts)
+    }
+
+    @ViewBuilder
+    private var exportButton: some View {
+        ShareLink(
+            item: credentialsExportDocument,
+            subject: Text("Flick Credentials"),
+            preview: SharePreview("flick-credentials.json")
+        ) {
+            Label("Export", systemImage: "square.and.arrow.up")
+        }
+        .disabled(credentialsExportDocument.isEmpty)
+        .accessibilityHint(credentialsExportDocument.isEmpty ? "No stored credentials to export" : "Exports stored credentials as JSON")
     }
 
     private func clearStoredCredentials() {
@@ -67,6 +88,10 @@ struct CredentialsView: View {
 
     private func reloadCredentialDrafts() {
         let keychainValues = appModel.secureCredentialValues()
+        credentialsExportDocument = CredentialExportDocument(values: keychainValues)
+        if credentialsExportDocument.isEmpty {
+            try? CredentialExportDocument.removeTemporaryFile()
+        }
 
         credentialDrafts = CredentialDefinition.supported.map { definition in
             let storedValue = keychainValues[definition.key] ?? ""
@@ -78,5 +103,51 @@ struct CredentialsView: View {
                 isStoredSecurely: keychainValues[definition.key] != nil
             )
         }
+    }
+}
+
+struct CredentialExportDocument: Transferable, Hashable {
+    var values: [String: String]
+
+    var isEmpty: Bool {
+        values.isEmpty
+    }
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(exportedContentType: .json) { document in
+            SentTransferredFile(try document.writeTemporaryFile())
+        }
+    }
+
+    func jsonData() throws -> Data {
+        var data = try JSONSerialization.data(
+            withJSONObject: values,
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        )
+        data.append(contentsOf: [0x0A])
+        return data
+    }
+
+    func writeTemporaryFile() throws -> URL {
+        try Self.removeTemporaryFile()
+        try FileManager.default.createDirectory(at: Self.exportDirectory, withIntermediateDirectories: true)
+
+        let exportURL = Self.exportFileURL
+        try jsonData().write(to: exportURL, options: .atomic)
+        return exportURL
+    }
+
+    private static var exportDirectory: URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("FlickCredentialExports", isDirectory: true)
+    }
+
+    private static var exportFileURL: URL {
+        exportDirectory.appendingPathComponent("flick-credentials.json")
+    }
+
+    static func removeTemporaryFile() throws {
+        guard FileManager.default.fileExists(atPath: exportFileURL.path) else { return }
+        try FileManager.default.removeItem(at: exportFileURL)
     }
 }

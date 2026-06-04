@@ -22,7 +22,7 @@ struct AppConfiguration: Hashable {
         return AppConfiguration(
             r2: R2StorageConfiguration(values: values),
             tiktok: TikTokConfiguration(values: values),
-            youtube: YouTubeConfiguration(values: values, infoDictionary: Bundle.main.infoDictionary ?? [:]),
+            youtube: YouTubeConfiguration(values: values),
             openAI: OpenAIConfiguration(values: values),
             meta: MetaConfiguration(values: values),
             storagePaths: R2StoragePaths(),
@@ -120,13 +120,9 @@ struct YouTubeConfiguration: Hashable {
         reversedClientID
     }
 
-    init(values: [String: String], infoDictionary: [String: Any]) {
+    init(values: [String: String]) {
         clientID = values.nonEmptyString("GOOGLE_CLIENT_ID")
-            ?? infoDictionary.nonEmptyString("GIDClientID")
-            ?? infoDictionary.nonEmptyString("GOOGLE_CLIENT_ID")
         reversedClientID = values.nonEmptyString("GOOGLE_REVERSED_CLIENT_ID")
-            ?? infoDictionary.nonEmptyString("GIDReversedClientID")
-            ?? infoDictionary.nonEmptyString("GOOGLE_REVERSED_CLIENT_ID")
         requestedScopes = values
             .nonEmptyString("YOUTUBE_SCOPES")?
             .split(separator: ",")
@@ -247,13 +243,5 @@ private extension Dictionary where Key == String, Value == String {
             return nil
         }
         return URL(string: value)
-    }
-}
-
-private extension Dictionary where Key == String, Value == Any {
-    func nonEmptyString(_ key: String) -> String? {
-        guard let value = self[key] as? String else { return nil }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
     }
 }
