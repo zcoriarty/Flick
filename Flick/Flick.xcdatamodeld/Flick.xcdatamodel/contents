@@ -43,6 +43,7 @@
         <attribute name="status" optional="YES" attributeType="String"/>
         <attribute name="targetPlatformsJSON" optional="YES" attributeType="String"/>
         <attribute name="templateIDsJSON" optional="YES" attributeType="String"/>
+        <attribute name="templateNicheIDsJSON" optional="YES" attributeType="String"/>
         <attribute name="tikTokSettingsJSON" optional="YES" attributeType="String"/>
         <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="youtubeSettingsJSON" optional="YES" attributeType="String"/>

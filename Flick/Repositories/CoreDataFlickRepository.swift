@@ -617,6 +617,7 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(automation.id, forKey: AutomationKey.id)
         object.setValue(automation.name, forKey: AutomationKey.name)
         object.setValue(automation.templateIDs, asJSONForKey: AutomationKey.templateIDsJSON)
+        object.setValue(automation.templateNicheIDs, asJSONForKey: AutomationKey.templateNicheIDsJSON)
         object.setValue(automation.productID, forKey: AutomationKey.productID)
         object.setValue(automation.productImageAssetIDs.map(\.uuidString), asJSONForKey: AutomationKey.productImageAssetIDsJSON)
         object.setValue(automation.creationModel?.id, forKey: AutomationKey.creationModelID)
@@ -814,6 +815,7 @@ private enum AutomationKey {
     static let status = "status"
     static let targetPlatformsJSON = "targetPlatformsJSON"
     static let templateIDsJSON = "templateIDsJSON"
+    static let templateNicheIDsJSON = "templateNicheIDsJSON"
     static let tikTokSettingsJSON = "tikTokSettingsJSON"
     static let youtubeSettingsJSON = "youtubeSettingsJSON"
     static let updatedAt = "updatedAt"
@@ -1094,6 +1096,7 @@ private extension ContentAutomation {
         }
 
         let templateIDs = managedObject.decodedJSON([String].self, forKey: AutomationKey.templateIDsJSON) ?? []
+        let templateNicheIDs = managedObject.decodedJSON([String].self, forKey: AutomationKey.templateNicheIDsJSON) ?? []
         let productImageAssetIDStrings = managedObject.decodedJSON([String].self, forKey: AutomationKey.productImageAssetIDsJSON) ?? []
         let targetPlatformRawValues = managedObject.decodedJSON([String].self, forKey: AutomationKey.targetPlatformsJSON) ?? []
         let targetPlatforms = targetPlatformRawValues.compactMap(SocialPlatform.init(rawValue:))
@@ -1108,6 +1111,7 @@ private extension ContentAutomation {
             id: id,
             name: managedObject.value(forKey: AutomationKey.name) as? String ?? "",
             templateIDs: templateIDs,
+            templateNicheIDs: templateNicheIDs,
             productID: managedObject.value(forKey: AutomationKey.productID) as? UUID,
             productImageAssetIDs: productImageAssetIDStrings.compactMap(UUID.init(uuidString:)),
             creationModel: managedObject.decodedJSON(SlideshowCreationModelReference.self, forKey: AutomationKey.creationModelJSON),

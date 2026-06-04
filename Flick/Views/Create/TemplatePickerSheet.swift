@@ -158,13 +158,15 @@ struct TemplateNicheSelectionSection: View {
     var selectedNicheID: String?
     var configuration: AppConfiguration
     var templateStore: TemplateLibraryStore
+    @Namespace private var selectionNamespace
 
     var body: some View {
         if !summaries.isEmpty {
             Section("Niche") {
                 ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         ForEach(summaries) { summary in
+                            let isSelected = selectedNicheID == summary.id
                             Button {
                                 Task {
                                     await templateStore.selectNiche(summary.id, configuration: configuration)
@@ -172,19 +174,24 @@ struct TemplateNicheSelectionSection: View {
                             } label: {
                                 Text(summary.title)
                                     .font(.callout.weight(.semibold))
+                                    .foregroundStyle(isSelected ? .primary : .secondary)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 7)
                                     .background(
-                                        selectedNicheID == summary.id
-                                            ? FlickStyle.appTint.opacity(0.18)
-                                            : Color.secondary.opacity(0.10),
-                                        in: .capsule
+                                        ZStack {
+                                            if isSelected {
+                                                Capsule()
+                                                    .fill(Color.gray.opacity(0.12))
+                                                    .matchedGeometryEffect(id: "selectedNiche", in: selectionNamespace)
+                                            }
+                                        }
                                     )
                             }
                             .buttonStyle(.plain)
                         }
                     }
                     .padding(.vertical, 2)
+                    .animation(.snappy(duration: 0.24), value: selectedNicheID)
                 }
                 .scrollIndicators(.hidden)
             }

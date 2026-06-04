@@ -635,6 +635,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
     var id: UUID
     var name: String
     var templateIDs: [String]
+    var templateNicheIDs: [String]
     var productID: UUID?
     var productImageAssetIDs: [UUID]
     var creationModel: SlideshowCreationModelReference?
@@ -655,6 +656,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
         id: UUID = UUID(),
         name: String = "",
         templateIDs: [String],
+        templateNicheIDs: [String] = [],
         productID: UUID?,
         productImageAssetIDs: [UUID],
         creationModel: SlideshowCreationModelReference? = nil,
@@ -674,6 +676,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
         self.id = id
         self.name = name
         self.templateIDs = templateIDs.uniqued()
+        self.templateNicheIDs = templateNicheIDs.uniqued()
         self.productID = productID
         self.productImageAssetIDs = productImageAssetIDs.uniqued()
         self.creationModel = creationModel
@@ -695,6 +698,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
         case id
         case name
         case templateIDs
+        case templateNicheIDs
         case productID
         case productImageAssetIDs
         case creationModel
@@ -717,6 +721,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
         id = try container.decode(UUID.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
         templateIDs = try container.decode([String].self, forKey: .templateIDs).uniqued()
+        templateNicheIDs = try container.decodeIfPresent([String].self, forKey: .templateNicheIDs)?.uniqued() ?? []
         productID = try container.decodeIfPresent(UUID.self, forKey: .productID)
         productImageAssetIDs = try container.decode([UUID].self, forKey: .productImageAssetIDs).uniqued()
         creationModel = try container.decodeIfPresent(SlideshowCreationModelReference.self, forKey: .creationModel)
@@ -751,7 +756,15 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
     ) -> String {
         let templateSummary: String
         let matchingTemplates = templates.filter { templateIDs.contains($0.id) }
-        if matchingTemplates.count == 1, let template = matchingTemplates.first {
+        if templateNicheIDs.count == 1, templateIDs.isEmpty {
+            templateSummary = "1 niche"
+        } else if templateNicheIDs.count > 1, templateIDs.isEmpty {
+            templateSummary = "\(templateNicheIDs.count) niches"
+        } else if !templateNicheIDs.isEmpty {
+            let nicheText = templateNicheIDs.count == 1 ? "1 niche" : "\(templateNicheIDs.count) niches"
+            let templateText = templateIDs.count == 1 ? "1 template" : "\(templateIDs.count) templates"
+            templateSummary = "\(nicheText), \(templateText)"
+        } else if matchingTemplates.count == 1, let template = matchingTemplates.first {
             templateSummary = template.niche
         } else if matchingTemplates.count > 1 {
             templateSummary = "\(matchingTemplates.count) templates"
@@ -773,7 +786,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
     }
 
     var isReadyToSchedule: Bool {
-        !templateIDs.isEmpty
+        (!templateIDs.isEmpty || !templateNicheIDs.isEmpty)
             && productID != nil
             && !productImageAssetIDs.isEmpty
             && schedule.isValid

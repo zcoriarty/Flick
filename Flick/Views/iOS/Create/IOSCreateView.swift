@@ -26,6 +26,7 @@ struct IOSCreateView: View {
     @State private var isAutomated = false
     @State private var selectedTemplate: ExampleSlideshowTemplate?
     @State private var selectedAutomationTemplateIDs: Set<String> = []
+    @State private var selectedAutomationTemplateNicheIDs: Set<String> = []
     @State private var selectedCreationModel: SlideshowCreationModelReference?
     @State private var selectedProductID: UUID?
     @State private var selectedProductImageAssetID: UUID?
@@ -174,7 +175,8 @@ struct IOSCreateView: View {
                     AutomationTemplatePickerSheet(
                         templateStore: templateStore,
                         configuration: appModel.configuration,
-                        selectedTemplateIDs: $selectedAutomationTemplateIDs
+                        selectedTemplateIDs: $selectedAutomationTemplateIDs,
+                        selectedTemplateNicheIDs: $selectedAutomationTemplateNicheIDs
                     )
                 } else {
                     TemplatePickerSheet(
@@ -416,6 +418,7 @@ struct IOSCreateView: View {
         CreateAutomationTemplateSection(
             templateStore: templateStore,
             selectedTemplateIDs: $selectedAutomationTemplateIDs,
+            selectedTemplateNicheIDs: $selectedAutomationTemplateNicheIDs,
             selectAction: { presentedSheet = .templatePicker },
             retryAction: {
                 Task { await loadTemplates(forceReload: true) }
@@ -748,6 +751,7 @@ struct IOSCreateView: View {
         editingAutomationID = nil
         automationName = ""
         selectedAutomationTemplateIDs = []
+        selectedAutomationTemplateNicheIDs = []
         selectedCreationModel = nil
         selectedProductID = nil
         selectedAutomationProductImageAssetIDs = []
@@ -766,6 +770,7 @@ struct IOSCreateView: View {
         editingAutomationID = automation.id
         automationName = automation.name
         selectedAutomationTemplateIDs = Set(automation.templateIDs)
+        selectedAutomationTemplateNicheIDs = Set(automation.templateNicheIDs)
         selectedCreationModel = automation.creationModel
         selectedProductID = automation.productID
         selectedAutomationProductImageAssetIDs = Set(automation.productImageAssetIDs)
@@ -850,6 +855,7 @@ struct IOSCreateView: View {
             id: automationID,
             name: automationName.trimmingCharacters(in: .whitespacesAndNewlines),
             templateIDs: Array(selectedAutomationTemplateIDs).sorted(),
+            templateNicheIDs: Array(selectedAutomationTemplateNicheIDs).sorted(),
             productID: selectedProductID,
             productImageAssetIDs: Array(selectedAutomationProductImageAssetIDs).sorted { $0.uuidString < $1.uuidString },
             creationModel: selectedCreationModel,
@@ -903,9 +909,9 @@ struct IOSCreateView: View {
     }
 
     private func selectedAutomationSelectionsAreAvailable(in appModel: FlickAppModel) -> Bool {
-        let templateIDs = Set(allTemplates().map(\.id))
-        guard !selectedAutomationTemplateIDs.isEmpty else { return false }
-        guard selectedAutomationTemplateIDs.isSubset(of: templateIDs) else { return false }
+        let nicheIDs = Set(templateStore.summaries.map(\.id))
+        guard !selectedAutomationTemplateIDs.isEmpty || !selectedAutomationTemplateNicheIDs.isEmpty else { return false }
+        guard selectedAutomationTemplateNicheIDs.isSubset(of: nicheIDs) else { return false }
         guard let selectedProductID, appModel.overview.products.contains(where: { $0.id == selectedProductID }) else {
             return false
         }

@@ -2000,7 +2000,7 @@ enum AutomationRunError: LocalizedError {
         case .notReady:
             return "Complete the automation templates, product images, cadence, platform settings, and selected accounts before it can publish."
         case .missingTemplate:
-            return "One of the automation templates is no longer available."
+            return "One of the automation template selections is no longer available."
         case let .missingProductImage(message):
             return message.isEmpty ? "One of the automation product images is no longer available." : message
         case let .generationFailed(message):
@@ -2413,22 +2413,153 @@ private extension FlickAppModel {
         for automation: ContentAutomation,
         scheduledAt: Date
     ) async throws -> ExampleSlideshowTemplate {
+        let libraryIndex = try await ExampleSlideshowLibrary.loadIndex(configuration: configuration)
+        let selectedNicheIDs = Set(automation.templateNicheIDs)
         let templates = try await ExampleSlideshowLibrary.loadTemplates(
             matching: Set(automation.templateIDs),
+            index: libraryIndex,
             configuration: configuration
         )
             .filter(\.hasDisplayablePreview)
         let templatesByID = Dictionary(uniqueKeysWithValues: templates.map { ($0.id, $0) })
-        let selectedTemplates = automation.templateIDs.compactMap { templatesByID[$0] }
-        guard !selectedTemplates.isEmpty else {
+        let selectedTemplates = automation.templateIDs
+            .compactMap { templatesByID[$0] }
+            .filter { template in
+                guard let nicheID = templateNicheID(for: template, in: libraryIndex) else { return true }
+                return !selectedNicheIDs.contains(nicheID)
+            }
+        let selectedNichePools = automation.templateNicheIDs.compactMap { nicheID -> AutomationTemplateNichePool? in
+            guard
+                let summary = libraryIndex.collections.first(where: { $0.id == nicheID }),
+                summary.slideshowCount > 0
+            else {
+                return nil
+            }
+            return AutomationTemplateNichePool(summary: summary, count: summary.slideshowCount)
+        }
+        let selectedTemplateCount = selectedTemplates.count + selectedNichePools.reduce(0) { $0 + $1.count }
+        guard selectedTemplateCount > 0 else {
             throw AutomationRunError.missingTemplate
         }
 
         let index = deterministicIndex(
             seed: "\(automation.id.uuidString)-template-\(scheduledAt.timeIntervalSince1970)",
-            count: selectedTemplates.count
+            count: selectedTemplateCount
         )
-        return selectedTemplates[index]
+        if index < selectedTemplates.count {
+            return selectedTemplates[index]
+        }
+
+        var nicheOffset = index - selectedTemplates.count
+        for pool in selectedNichePools {
+            if nicheOffset < pool.count {
+                return try await automationTemplate(
+                    in: pool.summary,
+                    offset: nicheOffset,
+                    libraryIndex: libraryIndex
+                )
+            }
+            nicheOffset -= pool.count
+        }
+
+        throw AutomationRunError.missingTemplate
+    }
+
+    private struct AutomationTemplateNichePool {
+        var summary: ExampleSlideshowCollectionSummary
+        var count: Int
+    }
+
+    private func templateNicheID(
+        for template: ExampleSlideshowTemplate,
+        in index: ExampleSlideshowLibraryIndex
+    ) -> String? {
+        index.collections.first { summary in
+            summary.nicheSlug == template.nicheSlug
+                || summary.title == template.niche
+                || summary.folder == template.niche
+        }?.id
+    }
+
+    private func automationTemplate(
+        in summary: ExampleSlideshowCollectionSummary,
+        offset: Int,
+        libraryIndex: ExampleSlideshowLibraryIndex
+    ) async throws -> ExampleSlideshowTemplate {
+        let pageSize = [summary.pageSize, libraryIndex.pageSize, ExampleSlideshowLibrary.defaultPageSize, 1].max() ?? 1
+        let pageCount = max(summary.pageCount, 1)
+        let pageNumber = min(max(offset / pageSize + 1, 1), pageCount)
+        let pageOffset = offset % pageSize
+        let page = try await ExampleSlideshowLibrary.loadPage(
+            nicheID: summary.id,
+            pageNumber: pageNumber,
+            index: libraryIndex,
+            configuration: configuration
+        )
+        let templates = page.collection.templates.filter(\.hasDisplayablePreview)
+        if templates.indices.contains(pageOffset) {
+            return templates[pageOffset]
+        }
+        if let forwardTemplate = try await firstAutomationTemplate(
+            after: pageNumber,
+            in: summary,
+            libraryIndex: libraryIndex
+        ) {
+            return forwardTemplate
+        }
+        if let fallbackTemplate = templates.last {
+            return fallbackTemplate
+        }
+        if let backwardTemplate = try await firstAutomationTemplate(
+            before: pageNumber,
+            in: summary,
+            libraryIndex: libraryIndex
+        ) {
+            return backwardTemplate
+        }
+
+        throw AutomationRunError.missingTemplate
+    }
+
+    private func firstAutomationTemplate(
+        after pageNumber: Int,
+        in summary: ExampleSlideshowCollectionSummary,
+        libraryIndex: ExampleSlideshowLibraryIndex
+    ) async throws -> ExampleSlideshowTemplate? {
+        let pageCount = max(summary.pageCount, 1)
+        guard pageNumber < pageCount else { return nil }
+        for fallbackPageNumber in (pageNumber + 1)...pageCount {
+            let page = try await ExampleSlideshowLibrary.loadPage(
+                nicheID: summary.id,
+                pageNumber: fallbackPageNumber,
+                index: libraryIndex,
+                configuration: configuration
+            )
+            if let template = page.collection.templates.first(where: \.hasDisplayablePreview) {
+                return template
+            }
+        }
+        return nil
+    }
+
+    private func firstAutomationTemplate(
+        before pageNumber: Int,
+        in summary: ExampleSlideshowCollectionSummary,
+        libraryIndex: ExampleSlideshowLibraryIndex
+    ) async throws -> ExampleSlideshowTemplate? {
+        guard pageNumber > 1 else { return nil }
+        for fallbackPageNumber in stride(from: pageNumber - 1, through: 1, by: -1) {
+            let page = try await ExampleSlideshowLibrary.loadPage(
+                nicheID: summary.id,
+                pageNumber: fallbackPageNumber,
+                index: libraryIndex,
+                configuration: configuration
+            )
+            if let template = page.collection.templates.first(where: \.hasDisplayablePreview) {
+                return template
+            }
+        }
+        return nil
     }
 
     func automationProductImage(

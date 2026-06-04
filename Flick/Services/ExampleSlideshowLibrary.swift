@@ -130,6 +130,21 @@ enum ExampleSlideshowLibrary {
     ) async throws -> [ExampleSlideshowTemplate] {
         guard !templateIDs.isEmpty else { return [] }
         let index = try await loadIndex(configuration: configuration, urlSession: urlSession)
+        return try await loadTemplates(
+            matching: templateIDs,
+            index: index,
+            configuration: configuration,
+            urlSession: urlSession
+        )
+    }
+
+    static func loadTemplates(
+        matching templateIDs: Set<String>,
+        index: ExampleSlideshowLibraryIndex,
+        configuration: AppConfiguration,
+        urlSession: URLSession = .shared
+    ) async throws -> [ExampleSlideshowTemplate] {
+        guard !templateIDs.isEmpty else { return [] }
         var templatesByID: [String: ExampleSlideshowTemplate] = [:]
 
         for summary in index.collections {
