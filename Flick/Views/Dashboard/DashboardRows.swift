@@ -71,14 +71,49 @@ struct DashboardStatusRow: View {
     }
 }
 
+struct PlatformDashboardStatusRow: View {
+    var title: String
+    var message: String
+    var messageLineLimit: Int? = nil
+    var platform: SocialPlatform
+    var badgeTitle: String
+    var badgeTint: Color
+    var badgeSystemImage: String?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            PlatformIcon(platform: platform, size: 22, frameSize: 24)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .foregroundStyle(.primary)
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(messageLineLimit)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .layoutPriority(1)
+
+            Spacer(minLength: 12)
+
+            DashboardStatusIcon(
+                title: badgeTitle,
+                tint: badgeTint,
+                systemImage: badgeSystemImage
+            )
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 struct PublishingJobRow: View {
     var job: PublishingJob
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: job.platform == .tiktok ? "bell.badge" : job.platform.systemImage)
-                .foregroundStyle(job.platform == .tiktok ? .orange : job.platform.tint)
-                .frame(width: 24)
+            PlatformIcon(platform: job.platform, size: 22, frameSize: 24)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(job.awaitingCompletionTitle)

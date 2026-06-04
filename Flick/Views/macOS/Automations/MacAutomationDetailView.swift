@@ -223,17 +223,42 @@ private struct MacAutomationDetailValue: View {
                 .foregroundStyle(tint)
                 .frame(width: 20)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(value)
-                    .font(.callout.weight(.semibold))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            MacAutomationDetailValueText(title: title, value: value)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+    }
+}
+
+private struct MacAutomationPlatformDetailValue: View {
+    var title: String
+    var value: String
+    var platform: SocialPlatform
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            PlatformIcon(platform: platform, size: 18, frameSize: 20)
+
+            MacAutomationDetailValueText(title: title, value: value)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct MacAutomationDetailValueText: View {
+    var title: String
+    var value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.callout.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 
@@ -459,11 +484,10 @@ private struct MacAutomationPostDetailView: View {
                     alignment: .leading,
                     spacing: 12
                 ) {
-                    MacAutomationDetailValue(
+                    MacAutomationPlatformDetailValue(
                         title: "Platform",
                         value: preview.platform.displayName,
-                        systemImage: preview.platform.systemImage,
-                        tint: preview.platform.tint
+                        platform: preview.platform
                     )
                     MacAutomationDetailValue(
                         title: "Account",

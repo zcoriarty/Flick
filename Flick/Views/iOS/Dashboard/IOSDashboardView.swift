@@ -212,12 +212,11 @@ struct IOSDashboardView: View {
                 .buttonStyle(.plain)
             } else {
                 ForEach(appModel.overview.dashboard.connectedAccounts) { account in
-                    DashboardStatusRow(
+                    PlatformDashboardStatusRow(
                         title: account.displayName,
                         message: account.scopes.isEmpty ? "No scopes connected yet" : account.scopes.joined(separator: ", "),
                         messageLineLimit: 2,
-                        systemImage: account.platform.systemImage,
-                        iconColor: account.platform.tint,
+                        platform: account.platform,
                         badgeTitle: account.status.displayName,
                         badgeTint: account.status.tint,
                         badgeSystemImage: "circle.fill"

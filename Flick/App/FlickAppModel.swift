@@ -1732,11 +1732,6 @@ final class FlickAppModel {
             }
 
             guard let bundle else {
-                didChange = markTikTokAccountTokenUnavailable(
-                    accountID: account.id,
-                    tokenStatus: .notStored,
-                    now: now
-                ) || didChange
                 continue
             }
 
@@ -1780,7 +1775,7 @@ final class FlickAppModel {
 
         switch tokenError {
         case .missingStoredToken:
-            return markTikTokAccountTokenUnavailable(accountID: accountID, tokenStatus: .notStored, now: now)
+            return false
         case .refreshTokenExpired:
             return markTikTokAccountTokenUnavailable(accountID: accountID, tokenStatus: .expired, now: now)
         case .keychainReadFailed, .refreshNotConfigured, .refreshRequestFailed:
@@ -1845,7 +1840,22 @@ final class FlickAppModel {
     func canPublish(_ account: ConnectedAccount, on platform: SocialPlatform) -> Bool {
         switch platform {
         case .tiktok:
-            return account.canPublishToTikTok
+            guard
+                account.platform == .tiktok,
+                account.authorizationSource == .loginKit,
+                account.status == .connected,
+                account.isPublishingEnabled,
+                account.tokenStatus != .refreshFailed,
+                account.tokenStatus != .expired
+            else {
+                return false
+            }
+            guard let bundle = try? tiktokLoginKitClient.tokenStore.tokenBundle(for: account) else {
+                return false
+            }
+            let now = Date()
+            return bundle.refreshTokenExpiresAt > now
+                && bundle.scopes.contains { $0 == "video.publish" || $0 == "video.upload" }
         case .youtubeShorts:
             guard
                 account.platform == .youtubeShorts,

@@ -37,8 +37,10 @@ struct IOSAccountsView: View {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
                         ForEach(SocialPlatform.allCases) { platform in
-                            Button(platform.displayName, systemImage: platform.systemImage) {
+                            Button {
                                 connect(platform)
+                            } label: {
+                                PlatformMenuLabel(platform: platform)
                             }
                             .disabled(!appModel.canConnectAccount(platform: platform))
                         }
@@ -65,7 +67,7 @@ struct IOSAccountsView: View {
             AccountConnectionStatusView(
                 title: "Connecting \(platform.displayName)",
                 message: "Complete the authorization window to add this account.",
-                systemImage: platform.systemImage,
+                systemImage: "person.crop.circle",
                 tint: platform.tint,
                 showsProgress: true
             )
@@ -141,7 +143,7 @@ private struct PlatformAccountMessageRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            PlatformIcon(platform: platform, size: 28)
+            PlatformIcon(platform: platform, size: 28, frameSize: 32)
 
             SettingsMessageRow(
                 title: platform.displayName,

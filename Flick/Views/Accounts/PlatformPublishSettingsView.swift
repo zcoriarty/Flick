@@ -155,7 +155,7 @@ private struct PlatformAccountRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            PlatformIcon(platform: account.platform, size: 28)
+            PlatformIcon(platform: account.platform, size: 28, frameSize: 32)
             SettingsMessageRow(title: account.displayName, message: message)
         }
     }
@@ -192,10 +192,9 @@ private struct PlatformAccountDetailView: View {
 
     private var accountSection: some View {
         Section("Account") {
-            FlickSettingsValueRow(
+            PlatformSettingsValueRow(
                 title: "Platform",
-                systemImage: account.platform.systemImage,
-                iconColor: account.platform.tint,
+                platform: account.platform,
                 value: account.platform.displayName
             )
             FlickSettingsValueRow(

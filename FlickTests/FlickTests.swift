@@ -205,7 +205,7 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(loaded.dashboard.connectedAccounts, [account])
     }
 
-    func testPublishingTikTokAccountUsesSelectedAccountID() {
+    func testPublishingTikTokAccountUsesSelectedAccountID() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let firstAccount = makeConnectedAccount(
             id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
@@ -226,7 +226,31 @@ final class FlickTests: XCTestCase {
         var state = FlickEmptyState.make()
         state.accounts = [firstAccount, secondAccount]
         state.drafts = [draft]
-        let model = FlickAppModel(repository: InMemoryFlickRepository(state: state), configuration: .current)
+        let secretStore = MemorySecretStore()
+        let tokenStore = LoginKitTokenStore(store: secretStore)
+        try tokenStore.save(
+            LoginKitTokenBundle(
+                platform: .tiktok,
+                platformUserID: secondAccount.platformUserID,
+                accessToken: "access-token",
+                refreshToken: "refresh-token",
+                tokenType: "Bearer",
+                scopes: secondAccount.scopes,
+                accessTokenExpiresAt: now.addingTimeInterval(3_600),
+                refreshTokenExpiresAt: now.addingTimeInterval(86_400),
+                updatedAt: now
+            ),
+            for: secondAccount
+        )
+        let client = TikTokLoginKitClient(
+            accountStore: LoginKitAccountStore(store: secretStore),
+            tokenStore: tokenStore
+        )
+        let model = FlickAppModel(
+            repository: InMemoryFlickRepository(state: state),
+            configuration: .current,
+            tiktokLoginKitClient: client
+        )
         model.overview = state
 
         XCTAssertEqual(model.publishingTikTokAccount(for: draft)?.id, secondAccount.id)
@@ -2369,7 +2393,7 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(accountStore.loadAccounts().first?.defaultPrivacyLevel, TikTokPrivacyLevel.publicToEveryone.rawValue)
     }
 
-    func testLoginKitTokenReconciliationMarksMissingTikTokTokenNotPublishable() throws {
+    func testLoginKitTokenReconciliationPreservesSyncedTikTokAccountWhenLocalTokenIsMissing() throws {
         let secretStore = MemorySecretStore()
         let account = LoginKitAccountMapper.connectedAccount(
             from: LoginKitAuthorizedUser(
@@ -2391,13 +2415,11 @@ final class FlickTests: XCTestCase {
         )
         model.overview.accounts = [account]
 
-        XCTAssertTrue(model.reconcileLoginKitAccountTokenStatus())
+        XCTAssertFalse(model.reconcileLoginKitAccountTokenStatus())
 
         let reconciledAccount = try XCTUnwrap(model.overview.accounts.first)
-        XCTAssertEqual(reconciledAccount.status, .needsAuth)
-        XCTAssertEqual(reconciledAccount.tokenStatus, .notStored)
-        XCTAssertFalse(reconciledAccount.isPublishingEnabled)
-        XCTAssertFalse(reconciledAccount.canPublishToTikTok)
+        XCTAssertEqual(reconciledAccount, account)
+        XCTAssertFalse(model.canPublish(reconciledAccount, on: .tiktok))
     }
 
     func testLoginKitTokenReconciliationPreservesRefreshFailureUntilNewTokenBundle() throws {

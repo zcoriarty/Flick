@@ -398,10 +398,9 @@ private struct IOSAutomationPostDetailView: View {
 
     private func detailsSection(for preview: AutomationPostPreview) -> some View {
         Section("Details") {
-            FlickSettingsValueRow(
+            PlatformSettingsValueRow(
                 title: "Platform",
-                systemImage: preview.platform.systemImage,
-                iconColor: preview.platform.tint,
+                platform: preview.platform,
                 value: preview.platform.displayName
             )
             FlickSettingsValueRow(
