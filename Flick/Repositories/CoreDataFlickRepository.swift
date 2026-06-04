@@ -586,6 +586,7 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(draft.caption, forKey: DraftKey.caption)
         object.setValue(draft.hashtags, asJSONForKey: DraftKey.hashtagsJSON)
         object.setValue(draft.targetPlatforms.map(\.rawValue), asJSONForKey: DraftKey.targetPlatformsJSON)
+        object.setValue(draft.accountSelections, asJSONForKey: DraftKey.accountSelectionsJSON)
         object.setValue(draft.tikTokSettings, asJSONForKey: DraftKey.tikTokSettingsJSON)
         object.setValue(draft.selectedSongs, asJSONForKey: DraftKey.selectedSongsJSON)
         object.setValue(draft.status.rawValue, forKey: DraftKey.status)
@@ -622,6 +623,7 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(automation.schedule, asJSONForKey: AutomationKey.scheduleJSON)
         object.setValue(automation.tikTokSettings, asJSONForKey: AutomationKey.tikTokSettingsJSON)
         object.setValue(automation.targetPlatforms.map(\.rawValue), asJSONForKey: AutomationKey.targetPlatformsJSON)
+        object.setValue(automation.accountSelections, asJSONForKey: AutomationKey.accountSelectionsJSON)
         object.setValue(automation.status.rawValue, forKey: AutomationKey.status)
         object.setValue(automation.nextScheduledAt, forKey: AutomationKey.nextScheduledAt)
         object.setValue(automation.lastRunAt, forKey: AutomationKey.lastRunAt)
@@ -749,6 +751,7 @@ private enum TemplateKey {
 }
 
 private enum DraftKey {
+    static let accountSelectionsJSON = "accountSelectionsJSON"
     static let brief = "brief"
     static let caption = "caption"
     static let creationModelID = "creationModelID"
@@ -792,6 +795,7 @@ private enum SlideKey {
 }
 
 private enum AutomationKey {
+    static let accountSelectionsJSON = "accountSelectionsJSON"
     static let consecutiveFailureCount = "consecutiveFailureCount"
     static let creationModelID = "creationModelID"
     static let creationModelJSON = "creationModelJSON"
@@ -1008,6 +1012,9 @@ private extension SlideshowDraft {
 
         let targetPlatformsRawValues: [String] = managedObject.decodedJSON([String].self, forKey: DraftKey.targetPlatformsJSON) ?? []
         let targetPlatforms = targetPlatformsRawValues.compactMap(SocialPlatform.init(rawValue:))
+        let accountSelections = managedObject.decodedJSON([PlatformAccountSelection].self, forKey: DraftKey.accountSelectionsJSON)?
+            .normalizedOnePerPlatform()
+            ?? []
         let exportedIDs: [String] = managedObject.decodedJSON([String].self, forKey: DraftKey.exportedImageAssetIDsJSON) ?? []
         let tikTokSettings = managedObject.decodedJSON(DraftTikTokSettings.self, forKey: DraftKey.tikTokSettingsJSON)
         let selectedSongs = managedObject.decodedJSON([SelectedSong].self, forKey: DraftKey.selectedSongsJSON) ?? []
@@ -1029,6 +1036,7 @@ private extension SlideshowDraft {
             caption: managedObject.value(forKey: DraftKey.caption) as? String ?? "",
             hashtags: managedObject.decodedJSON([String].self, forKey: DraftKey.hashtagsJSON) ?? [],
             targetPlatforms: targetPlatforms.isEmpty ? [.tiktok] : targetPlatforms,
+            accountSelections: accountSelections,
             tikTokSettings: tikTokSettings,
             selectedSongs: selectedSongs,
             status: status,
@@ -1083,6 +1091,9 @@ private extension ContentAutomation {
         let productImageAssetIDStrings = managedObject.decodedJSON([String].self, forKey: AutomationKey.productImageAssetIDsJSON) ?? []
         let targetPlatformRawValues = managedObject.decodedJSON([String].self, forKey: AutomationKey.targetPlatformsJSON) ?? []
         let targetPlatforms = targetPlatformRawValues.compactMap(SocialPlatform.init(rawValue:))
+        let accountSelections = managedObject.decodedJSON([PlatformAccountSelection].self, forKey: AutomationKey.accountSelectionsJSON)?
+            .normalizedOnePerPlatform()
+            ?? []
         let statusRawValue = managedObject.value(forKey: AutomationKey.status) as? String
 
         self.init(
@@ -1095,6 +1106,7 @@ private extension ContentAutomation {
             schedule: schedule,
             tikTokSettings: tikTokSettings,
             targetPlatforms: targetPlatforms.isEmpty ? [.tiktok] : targetPlatforms,
+            accountSelections: accountSelections,
             status: statusRawValue.flatMap(ContentAutomationStatus.init(rawValue:)) ?? .active,
             nextScheduledAt: managedObject.value(forKey: AutomationKey.nextScheduledAt) as? Date,
             lastRunAt: managedObject.value(forKey: AutomationKey.lastRunAt) as? Date,

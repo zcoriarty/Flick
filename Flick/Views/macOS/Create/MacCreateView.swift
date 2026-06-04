@@ -31,6 +31,7 @@ struct MacCreateView: View {
     @State private var selectedAutomationProductImageAssetIDs: Set<UUID> = []
     @State private var automationSchedule = AutomationSchedule.default
     @State private var automationTikTokSettings = DraftTikTokSettings()
+    @State private var automationAccountSelections: [PlatformAccountSelection] = []
     @State private var automationName = ""
     @State private var editingAutomationID: UUID?
     @State private var isStartingAutomation = false
@@ -41,8 +42,19 @@ struct MacCreateView: View {
     @State private var selectedSlideID: UUID?
     @State private var slideEditorDetent: PresentationDetent = .large
 
-    private var tiktokAccountName: String? {
-        publishingTikTokAccount(in: appModel)?.displayName
+    private var tikTokAccountSelections: [PlatformAccountSelection] {
+        if isAutomated {
+            return automationAccountSelections
+        }
+        return appModel.activeCreateDraft?.accountSelections ?? []
+    }
+
+    private var tiktokAccountSummary: String {
+        accountSummary(for: tikTokAccountSelections, in: appModel)
+    }
+
+    private var isTikTokAccountReady: Bool {
+        appModel.publishingAccount(for: .tiktok, in: tikTokAccountSelections) != nil
     }
 
     private var createColumnSubtitle: String {
@@ -225,7 +237,8 @@ struct MacCreateView: View {
             case .tikTokSettings:
                 if isAutomated {
                     TikTokSettingsSheet(
-                        accountName: tiktokAccountName,
+                        accounts: tikTokAccounts(in: appModel),
+                        selectedAccountID: automationSelectedTikTokAccountIDBinding,
                         postTitle: $automationTikTokSettings.title,
                         postAsDraft: $automationTikTokSettings.postAsDraft,
                         selectedVisibility: automationSelectedVisibilityBinding,
@@ -238,7 +251,8 @@ struct MacCreateView: View {
                     )
                 } else if let currentDraftID = activeDraftID(in: appModel) {
                     TikTokSettingsSheet(
-                        accountName: tiktokAccountName,
+                        accounts: tikTokAccounts(in: appModel),
+                        selectedAccountID: selectedTikTokAccountIDBinding(in: appModel, draftID: currentDraftID),
                         postTitle: tikTokSettingBinding(in: appModel, draftID: currentDraftID, keyPath: \.title),
                         postAsDraft: tikTokSettingBinding(in: appModel, draftID: currentDraftID, keyPath: \.postAsDraft),
                         selectedVisibility: selectedVisibilityBinding(in: appModel, draftID: currentDraftID),
@@ -423,6 +437,15 @@ struct MacCreateView: View {
         )
     }
 
+    private var automationSelectedTikTokAccountIDBinding: Binding<UUID?> {
+        Binding(
+            get: { automationAccountSelections.accountID(for: .tiktok) },
+            set: { newValue in
+                automationAccountSelections.setAccountID(newValue, for: .tiktok)
+            }
+        )
+    }
+
     @ViewBuilder
     private func automatedSetupSections(in appModel: FlickAppModel) -> some View {
         CreateAutomationTemplateSection(
@@ -450,7 +473,8 @@ struct MacCreateView: View {
         .macCreateListRows()
 
         CreateTikTokSettingsSection(
-            accountName: tiktokAccountName,
+            accountSummary: tiktokAccountSummary,
+            isAccountReady: isTikTokAccountReady,
             hasConfiguredSettings: automationTikTokSettings.automatedPublishSettings(description: "") != nil,
             postAsDraft: automationTikTokSettings.postAsDraft,
             selectedVisibility: automationTikTokSettings.selectedAudience,
@@ -560,7 +584,8 @@ struct MacCreateView: View {
             .macCreateListRows()
 
             CreateTikTokSettingsSection(
-                accountName: tiktokAccountName,
+                accountSummary: tiktokAccountSummary,
+                isAccountReady: isTikTokAccountReady,
                 hasConfiguredSettings: tikTokSettings != nil,
                 postAsDraft: tikTokSettings?.postAsDraft ?? false,
                 selectedVisibility: tikTokSettings?.selectedAudience,
@@ -579,7 +604,8 @@ struct MacCreateView: View {
             .macCreateListRows()
 
             CreateTikTokSettingsSection(
-                accountName: tiktokAccountName,
+                accountSummary: tiktokAccountSummary,
+                isAccountReady: false,
                 hasConfiguredSettings: false,
                 postAsDraft: false,
                 selectedVisibility: nil,
@@ -636,8 +662,25 @@ struct MacCreateView: View {
         )
     }
 
+    private func selectedTikTokAccountIDBinding(in appModel: FlickAppModel, draftID: UUID) -> Binding<UUID?> {
+        Binding(
+            get: {
+                draftAccountSelections(in: appModel, draftID: draftID).accountID(for: .tiktok)
+            },
+            set: { newValue in
+                updateDraft(in: appModel, draftID: draftID) { draft in
+                    draft.accountSelections.setAccountID(newValue, for: .tiktok)
+                }
+            }
+        )
+    }
+
     private func draftTikTokSettings(in appModel: FlickAppModel, draftID: UUID) -> DraftTikTokSettings {
         appModel.overview.drafts.first { $0.id == draftID }?.tikTokSettings ?? DraftTikTokSettings()
+    }
+
+    private func draftAccountSelections(in appModel: FlickAppModel, draftID: UUID) -> [PlatformAccountSelection] {
+        appModel.overview.drafts.first { $0.id == draftID }?.accountSelections ?? []
     }
 
     private func updateTikTokSettings(
@@ -690,6 +733,7 @@ struct MacCreateView: View {
         selectedAutomationProductImageAssetIDs = []
         automationSchedule = .default
         automationTikTokSettings = DraftTikTokSettings()
+        automationAccountSelections = []
     }
 
     private func loadTemplates(forceReload: Bool = false) async {
@@ -707,6 +751,7 @@ struct MacCreateView: View {
         automationSchedule = automation.schedule
         automationSchedule.reconcileFixedTimes()
         automationTikTokSettings = automation.tikTokSettings
+        automationAccountSelections = automation.accountSelections
     }
 
     private func deleteAutomation(_ automation: ContentAutomation, using appModel: FlickAppModel) {
@@ -743,7 +788,7 @@ struct MacCreateView: View {
         let automation = automationDraft(using: appModel, now: Date())
         return automation.isReadyToSchedule
             && selectedAutomationSelectionsAreAvailable(in: appModel)
-            && publishingTikTokAccount(in: appModel) != nil
+            && appModel.publishingTikTokAccount(for: automation) != nil
     }
 
     private func publishAutomation(using appModel: FlickAppModel) {
@@ -790,6 +835,7 @@ struct MacCreateView: View {
             schedule: schedule,
             tikTokSettings: automationTikTokSettings,
             targetPlatforms: [.tiktok],
+            accountSelections: automationAccountSelections,
             status: .active,
             nextScheduledAt: nextScheduledAt,
             createdAt: appModel.overview.automations.first(where: { $0.id == automationID })?.createdAt ?? now,
@@ -903,7 +949,7 @@ struct MacCreateView: View {
         guard let draft = appModel.activeCreateDraft else { return false }
         let assetsByID = Dictionary(uniqueKeysWithValues: appModel.overview.assets.map { ($0.id, $0) })
         return draft.hasCompletedCreateImages(assetsByID: assetsByID)
-            && publishingTikTokAccount(in: appModel) != nil
+            && appModel.publishingTikTokAccount(for: draft) != nil
             && publishSettings(for: draft) != nil
     }
 
@@ -924,8 +970,23 @@ struct MacCreateView: View {
         return settings.manualPublishSettings(description: draft.publishDescription)
     }
 
-    private func publishingTikTokAccount(in appModel: FlickAppModel) -> ConnectedAccount? {
-        appModel.overview.accounts.first { $0.canPublishToTikTok }
+    private func tikTokAccounts(in appModel: FlickAppModel) -> [ConnectedAccount] {
+        appModel.overview.accounts
+            .filter { $0.platform == .tiktok }
+            .sortedForAccountsView
+    }
+
+    private func accountSummary(
+        for selections: [PlatformAccountSelection],
+        in appModel: FlickAppModel
+    ) -> String {
+        if let account = appModel.selectedAccount(for: .tiktok, in: selections) {
+            return account.displayName
+        }
+        if selections.accountID(for: .tiktok) != nil {
+            return "Unavailable account"
+        }
+        return "Select account"
     }
 
     private func activeDraftID(in appModel: FlickAppModel) -> UUID? {

@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "X_twitter_icon.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

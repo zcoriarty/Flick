@@ -237,11 +237,13 @@ struct AutomationTargetSummary: Identifiable, Hashable {
     }
 
     var displayName: String {
-        guard let accountName, !accountName.isEmpty else {
-            return platform.displayName
+        if let accountName, !accountName.isEmpty {
+            return "\(accountName) - \(platform.displayName)"
         }
-
-        return "\(accountName) - \(platform.displayName)"
+        if accountID != nil {
+            return "Unavailable account - \(platform.displayName)"
+        }
+        return platform.displayName
     }
 
     static func targets(
@@ -250,33 +252,17 @@ struct AutomationTargetSummary: Identifiable, Hashable {
     ) -> [AutomationTargetSummary] {
         let targetPlatforms = automation.targetPlatforms.isEmpty ? [SocialPlatform.tiktok] : automation.targetPlatforms
 
-        return targetPlatforms.flatMap { platform in
-            let matchingAccounts = accounts
-                .filter { account in
-                    account.platform == platform
-                        && (platform == .tiktok ? account.canPublishToTikTok : account.isPublishingEnabled)
-                }
-                .sorted { lhs, rhs in
-                    lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
-                }
-
-            guard !matchingAccounts.isEmpty else {
-                return [
-                    AutomationTargetSummary(
-                        platform: platform,
-                        accountID: nil,
-                        accountName: nil
-                    )
-                ]
+        return targetPlatforms.map { platform in
+            let selectedAccountID = automation.accountSelections.accountID(for: platform)
+            let account = selectedAccountID.flatMap { accountID in
+                accounts.first { $0.id == accountID && $0.platform == platform }
             }
 
-            return matchingAccounts.map { account in
-                AutomationTargetSummary(
-                    platform: platform,
-                    accountID: account.id,
-                    accountName: account.displayName
-                )
-            }
+            return AutomationTargetSummary(
+                platform: platform,
+                accountID: selectedAccountID,
+                accountName: account?.displayName
+            )
         }
     }
 }

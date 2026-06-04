@@ -8,6 +8,7 @@ import SwiftUI
 struct PlatformPublishSettingsView: View {
     var platform: SocialPlatform
     var accounts: [ConnectedAccount]
+    var deleteAction: (ConnectedAccount) -> Void
 
     private var sortedAccounts: [ConnectedAccount] {
         accounts.sortedForAccountsView
@@ -26,13 +27,7 @@ struct PlatformPublishSettingsView: View {
     private var platformSection: some View {
         Section("Platform") {
             FlickSettingsValueRow(
-                title: "Adapter",
-                systemImage: "square.stack.3d.up",
-                iconColor: platform.tint,
-                value: adapterStatus
-            )
-            FlickSettingsValueRow(
-                title: "Authorized accounts",
+                title: "Accounts",
                 systemImage: "person.2",
                 iconColor: .blue,
                 value: accounts.count.formatted()
@@ -57,58 +52,14 @@ struct PlatformPublishSettingsView: View {
                 )
             }
         } else {
-            ForEach(sortedAccounts) { account in
-                accountSection(account)
-            }
-        }
-    }
-
-    private func accountSection(_ account: ConnectedAccount) -> some View {
-        Section(account.displayName) {
-            FlickSettingsValueRow(
-                title: "Status",
-                systemImage: "checkmark.circle",
-                iconColor: account.status.tint,
-                value: account.status.displayName
-            )
-            FlickSettingsValueRow(
-                title: "Publishing",
-                systemImage: "paperplane",
-                iconColor: account.isPublishingEnabled ? .green : .secondary,
-                value: account.isPublishingEnabled ? "Enabled" : "Disabled"
-            )
-            FlickSettingsValueRow(
-                title: "Default privacy",
-                systemImage: "lock.shield",
-                iconColor: .blue,
-                value: account.defaultPrivacyLevel,
-                valueLineLimit: 2
-            )
-            FlickSettingsValueRow(
-                title: "Token",
-                systemImage: "key",
-                iconColor: tokenTint(for: account.tokenStatus),
-                value: account.tokenStatus.displayName
-            )
-            FlickSettingsValueRow(
-                title: "Platform ID",
-                systemImage: "number",
-                iconColor: .secondary,
-                value: account.platformUserID.isEmpty ? "Not set" : account.platformUserID
-            )
-            FlickSettingsValueRow(
-                title: "Scopes",
-                systemImage: "checklist",
-                iconColor: .purple,
-                value: account.scopes.isEmpty ? "None" : account.scopes.joined(separator: ", "),
-                valueLineLimit: 2
-            )
-            FlickSettingsRow(
-                title: "Validated",
-                systemImage: "calendar.badge.checkmark",
-                iconColor: .teal
-            ) {
-                validatedAccessory(for: account)
+            Section("Accounts") {
+                ForEach(sortedAccounts) { account in
+                    NavigationLink {
+                        PlatformAccountDetailView(account: account, deleteAction: deleteAction)
+                    } label: {
+                        PlatformAccountRow(account: account)
+                    }
+                }
             }
         }
     }
@@ -154,14 +105,10 @@ struct PlatformPublishSettingsView: View {
                     title: "Availability",
                     systemImage: "clock",
                     iconColor: .secondary,
-                    value: "Future adapter"
+                    value: "Coming soon"
                 )
             }
         }
-    }
-
-    private var adapterStatus: String {
-        platform == .tiktok ? "V1 adapter" : "Future adapter"
     }
 
     private var publishingStatus: String {
@@ -175,20 +122,138 @@ struct PlatformPublishSettingsView: View {
         accounts.contains(where: \.isPublishingEnabled) ? .green : .orange
     }
 
-    private func tokenTint(for status: OAuthTokenStatus) -> Color {
-        switch status {
-        case .valid:
-            .green
-        case .expiresSoon:
-            .orange
-        case .expired:
-            .red
-        case .notStored:
-            .secondary
+}
+
+private struct PlatformAccountRow: View {
+    var account: ConnectedAccount
+
+    var body: some View {
+        HStack(spacing: 12) {
+            PlatformIcon(platform: account.platform, size: 28)
+            SettingsMessageRow(title: account.displayName, message: message)
         }
     }
 
-    private func validatedAccessory(for account: ConnectedAccount) -> some View {
+    private var message: String {
+        let platformID = account.platformUserID.isEmpty ? account.platform.displayName : account.platformUserID
+        return "\(platformID)\n\(account.status.displayName), \(account.tokenStatus.displayName)"
+    }
+}
+
+private struct PlatformAccountDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var account: ConnectedAccount
+    var deleteAction: (ConnectedAccount) -> Void
+
+    var body: some View {
+        List {
+            accountSection
+            publishingSection
+            tokenSection
+            scopesSection
+        }
+        .flickSettingsListStyle()
+        .flickToolbarTitle(account.displayName)
+        .safeAreaInset(edge: .bottom) {
+            removeButton
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+                .padding(.bottom, 12)
+                .background(.regularMaterial)
+        }
+    }
+
+    private var accountSection: some View {
+        Section("Account") {
+            FlickSettingsValueRow(
+                title: "Platform",
+                systemImage: account.platform.systemImage,
+                iconColor: account.platform.tint,
+                value: account.platform.displayName
+            )
+            FlickSettingsValueRow(
+                title: "Status",
+                systemImage: "checkmark.circle",
+                iconColor: account.status.tint,
+                value: account.status.displayName
+            )
+            FlickSettingsValueRow(
+                title: "Platform ID",
+                systemImage: "number",
+                iconColor: .secondary,
+                value: account.platformUserID.isEmpty ? "Not set" : account.platformUserID,
+                valueLineLimit: 2
+            )
+        }
+    }
+
+    private var publishingSection: some View {
+        Section("Publishing") {
+            FlickSettingsValueRow(
+                title: "Publishing",
+                systemImage: "paperplane",
+                iconColor: account.isPublishingEnabled ? .green : .secondary,
+                value: account.isPublishingEnabled ? "Enabled" : "Disabled"
+            )
+            FlickSettingsValueRow(
+                title: "Default privacy",
+                systemImage: "lock.shield",
+                iconColor: .blue,
+                value: account.defaultPrivacyLevel,
+                valueLineLimit: 2
+            )
+        }
+    }
+
+    private var tokenSection: some View {
+        Section("Token") {
+            FlickSettingsValueRow(
+                title: "Token",
+                systemImage: "key",
+                iconColor: platformAccountTokenTint(for: account.tokenStatus),
+                value: account.tokenStatus.displayName
+            )
+            FlickSettingsRow(
+                title: "Validated",
+                systemImage: "calendar.badge.checkmark",
+                iconColor: .teal
+            ) {
+                validatedAccessory
+            }
+        }
+    }
+
+    private var scopesSection: some View {
+        Section("Scopes") {
+            FlickSettingsValueRow(
+                title: "Scopes",
+                systemImage: "checklist",
+                iconColor: .purple,
+                value: account.scopes.isEmpty ? "None" : account.scopes.joined(separator: ", "),
+                valueLineLimit: 4
+            )
+        }
+    }
+
+    private var removeButton: some View {
+        Button(role: .destructive) {
+            deleteAction(account)
+            dismiss()
+        } label: {
+            Label("Remove Account", systemImage: "trash")
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 13)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.red)
+        .background(.red.opacity(0.12), in: .capsule)
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .accessibilityIdentifier("remove-platform-account-button")
+    }
+
+    private var validatedAccessory: some View {
         Group {
             if let lastValidatedAt = account.lastValidatedAt {
                 Text(lastValidatedAt, style: .relative)
@@ -198,5 +263,20 @@ struct PlatformPublishSettingsView: View {
         }
         .foregroundStyle(.secondary)
         .multilineTextAlignment(.trailing)
+    }
+}
+
+private func platformAccountTokenTint(for status: OAuthTokenStatus) -> Color {
+    switch status {
+    case .valid:
+        .green
+    case .expiresSoon:
+        .orange
+    case .refreshFailed:
+        .red
+    case .expired:
+        .red
+    case .notStored:
+        .secondary
     }
 }

@@ -205,6 +205,46 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(loaded.dashboard.connectedAccounts, [account])
     }
 
+    func testPublishingTikTokAccountUsesSelectedAccountID() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let firstAccount = makeConnectedAccount(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+            platformUserID: "first-open-id",
+            displayName: "@alpha",
+            now: now
+        )
+        let secondAccount = makeConnectedAccount(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
+            platformUserID: "second-open-id",
+            displayName: "@zeta",
+            now: now
+        )
+        var draft = makeSlideshowDraft(now: now)
+        draft.accountSelections = [
+            PlatformAccountSelection(platform: .tiktok, accountID: secondAccount.id)
+        ]
+        var state = FlickEmptyState.make()
+        state.accounts = [firstAccount, secondAccount]
+        state.drafts = [draft]
+        let model = FlickAppModel(repository: InMemoryFlickRepository(state: state), configuration: .current)
+        model.overview = state
+
+        XCTAssertEqual(model.publishingTikTokAccount(for: draft)?.id, secondAccount.id)
+    }
+
+    func testPublishingTikTokAccountRequiresSelectedAccount() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let account = makeConnectedAccount(now: now)
+        let draft = makeSlideshowDraft(now: now)
+        var state = FlickEmptyState.make()
+        state.accounts = [account]
+        state.drafts = [draft]
+        let model = FlickAppModel(repository: InMemoryFlickRepository(state: state), configuration: .current)
+        model.overview = state
+
+        XCTAssertNil(model.publishingTikTokAccount(for: draft))
+    }
+
     func testConnectedAccountUpsertUpdateAndDeleteUseRepository() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let repository = InMemoryFlickRepository(state: FlickEmptyState.make())
@@ -237,12 +277,12 @@ final class FlickTests: XCTestCase {
 
         let createdModel = try await model.createCreationModel(
             name: "  Launch Host  ",
-            metadata: CreationModelPreset.cottageHost.metadata
+            metadata: CreationModelPreset.hotBlondeFitnessInfluencer.metadata
         )
 
         XCTAssertEqual(model.overview.creationModels.map(\.id), [createdModel.id])
         XCTAssertEqual(model.overview.creationModels.first?.name, "Launch Host")
-        XCTAssertEqual(model.overview.creationModels.first?.metadata.styleAndAccessories.aesthetic, "Cottagecore")
+        XCTAssertEqual(model.overview.creationModels.first?.metadata.styleAndAccessories.aesthetic, "Athleisure")
         XCTAssertEqual(repository.state.creationModels.first?.name, "Launch Host")
 
         var updatedModel = createdModel
@@ -262,12 +302,12 @@ final class FlickTests: XCTestCase {
     }
 
     func testCreationModelPresetsAndRandomizedMetadataPopulateFields() {
-        let presetMetadata = CreationModelPreset.cottageHost.metadata
+        let presetMetadata = CreationModelPreset.hotBlondeFitnessInfluencer.metadata
         let randomizedMetadata = CreationModelMetadata.randomized()
 
         XCTAssertEqual(CreationModelPreset.fromScratch.metadata, CreationModelMetadata())
-        XCTAssertEqual(presetMetadata.identity.ageRange, "41-50")
-        XCTAssertEqual(presetMetadata.styleAndAccessories.aesthetic, "Cottagecore")
+        XCTAssertEqual(presetMetadata.identity.ageRange, "25-30")
+        XCTAssertEqual(presetMetadata.styleAndAccessories.aesthetic, "Athleisure")
 
         for field in CreationModelField.allCases {
             let value = field.value(in: randomizedMetadata)
@@ -538,6 +578,8 @@ final class FlickTests: XCTestCase {
             )
         ]
         var draft = makeSlideshowDraft(now: now)
+        let accountSelection = PlatformAccountSelection(platform: .tiktok, accountID: UUID())
+        draft.accountSelections = [accountSelection]
         draft.tikTokSettings = tikTokSettings
         draft.selectedSongs = selectedSongs
         var state = FlickEmptyState.make()
@@ -548,7 +590,21 @@ final class FlickTests: XCTestCase {
         let loadedDraft = try XCTUnwrap(loaded.drafts.first)
 
         XCTAssertEqual(loadedDraft.tikTokSettings, tikTokSettings)
+        XCTAssertEqual(loadedDraft.accountSelections, [accountSelection])
         XCTAssertEqual(loadedDraft.selectedSongs, selectedSongs)
+    }
+
+    func testSlideshowDraftDecodesLegacyPayloadWithoutAccountSelections() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var draft = makeSlideshowDraft(now: now)
+        draft.accountSelections = [PlatformAccountSelection(platform: .tiktok, accountID: UUID())]
+        let legacyData = try removingTopLevelJSONKey("accountSelections", from: JSONEncoder().encode(draft))
+
+        let decodedDraft = try JSONDecoder().decode(SlideshowDraft.self, from: legacyData)
+
+        XCTAssertTrue(decodedDraft.accountSelections.isEmpty)
+        XCTAssertEqual(decodedDraft.title, draft.title)
+        XCTAssertEqual(decodedDraft.targetPlatforms, draft.targetPlatforms)
     }
 
     func testAutomationScheduleFindsNextFixedOccurrence() throws {
@@ -690,6 +746,7 @@ final class FlickTests: XCTestCase {
                 privacyLevel: .publicToEveryone,
                 allowComment: true
             ),
+            accountSelections: [PlatformAccountSelection(platform: .tiktok, accountID: UUID())],
             nextScheduledAt: nextScheduledAt,
             createdAt: now,
             updatedAt: now
@@ -708,6 +765,28 @@ final class FlickTests: XCTestCase {
         XCTAssertTrue(loadedAutomation.creationModel?.aiMetadataJSONString().contains("\"skin_details\"") == true)
         XCTAssertEqual(loaded.dashboard.activeAutomationCount, 1)
         XCTAssertEqual(loaded.dashboard.nextAutomationPostAt, nextScheduledAt)
+    }
+
+    func testContentAutomationDecodesLegacyPayloadWithoutAccountSelections() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let automation = ContentAutomation(
+            name: "Weekday launches",
+            templateIDs: ["template-a"],
+            productID: UUID(),
+            productImageAssetIDs: [UUID()],
+            schedule: AutomationSchedule(),
+            tikTokSettings: DraftTikTokSettings(title: "Try Flick", privacyLevel: .publicToEveryone),
+            accountSelections: [PlatformAccountSelection(platform: .tiktok, accountID: UUID())],
+            createdAt: now,
+            updatedAt: now
+        )
+        let legacyData = try removingTopLevelJSONKey("accountSelections", from: JSONEncoder().encode(automation))
+
+        let decodedAutomation = try JSONDecoder().decode(ContentAutomation.self, from: legacyData)
+
+        XCTAssertTrue(decodedAutomation.accountSelections.isEmpty)
+        XCTAssertEqual(decodedAutomation.name, automation.name)
+        XCTAssertEqual(decodedAutomation.targetPlatforms, automation.targetPlatforms)
     }
 
     func testCoreDataRoundTripsAutomationPostProgresses() async throws {
@@ -782,6 +861,42 @@ final class FlickTests: XCTestCase {
 
         XCTAssertEqual(snapshot.activeProgresses.map(\.id), [activeProgress.id])
         XCTAssertEqual(item?.activeProgresses.map(\.id), [activeProgress.id])
+    }
+
+    func testAutomationDashboardSnapshotShowsSelectedAccountOnly() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let selectedAccount = makeConnectedAccount(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000011")!,
+            platformUserID: "selected-open-id",
+            displayName: "@selected",
+            now: now
+        )
+        let otherAccount = makeConnectedAccount(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000012")!,
+            platformUserID: "other-open-id",
+            displayName: "@other",
+            now: now
+        )
+        let automation = ContentAutomation(
+            name: "Weekday launches",
+            templateIDs: ["template-a"],
+            productID: UUID(),
+            productImageAssetIDs: [UUID()],
+            schedule: AutomationSchedule(),
+            tikTokSettings: DraftTikTokSettings(title: "Try Flick", privacyLevel: .publicToEveryone),
+            accountSelections: [PlatformAccountSelection(platform: .tiktok, accountID: selectedAccount.id)],
+            createdAt: now,
+            updatedAt: now
+        )
+        var state = FlickEmptyState.make()
+        state.accounts = [selectedAccount, otherAccount]
+        state.automations = [automation]
+
+        let snapshot = AutomationDashboardSnapshot.make(overview: state)
+        let targets = snapshot.items.first?.targets
+
+        XCTAssertEqual(targets?.map(\.accountID), [selectedAccount.id])
+        XCTAssertEqual(targets?.map(\.accountName), ["@selected"])
     }
 
     func testAutomationDashboardSnapshotShowsFailedCreatedPost() {
@@ -1748,6 +1863,60 @@ final class FlickTests: XCTestCase {
         )
     }
 
+    func testLoginKitAccountMetadataRequestsBasicFieldsOnly() async throws {
+        LoginKitSuccessMetadataURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LoginKitSuccessMetadataURLProtocol.self]
+        let store = MemorySecretStore()
+        let client = TikTokLoginKitClient(
+            urlSession: URLSession(configuration: configuration),
+            accountStore: LoginKitAccountStore(store: store),
+            tokenStore: LoginKitTokenStore(store: store)
+        )
+
+        let account = try await client.refreshAuthorizedAccount(
+            accessToken: "access-token",
+            scopes: ["user.info.basic", "video.publish"]
+        )
+
+        XCTAssertEqual(LoginKitSuccessMetadataURLProtocol.capturedPath, "/v2/user/info")
+        XCTAssertEqual(LoginKitSuccessMetadataURLProtocol.capturedFields, "open_id,avatar_url,display_name")
+        XCTAssertFalse(LoginKitSuccessMetadataURLProtocol.capturedFields?.contains("username") == true)
+        XCTAssertEqual(LoginKitSuccessMetadataURLProtocol.capturedAuthorizationHeader, "Bearer access-token")
+        XCTAssertEqual(account.platformUserID, "real-open-id")
+        XCTAssertEqual(account.displayName, "Creator Name")
+        let storedAccount = try XCTUnwrap(LoginKitAccountStore(store: store).loadAccounts().first)
+        XCTAssertEqual(storedAccount.id, account.id)
+        XCTAssertEqual(storedAccount.platformUserID, "real-open-id")
+        XCTAssertEqual(storedAccount.displayName, "Creator Name")
+    }
+
+    func testLoginKitAccountMetadataFailureIncludesTikTokDiagnostics() async throws {
+        LoginKitFailureMetadataURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LoginKitFailureMetadataURLProtocol.self]
+        let store = MemorySecretStore()
+        let client = TikTokLoginKitClient(
+            urlSession: URLSession(configuration: configuration),
+            accountStore: LoginKitAccountStore(store: store),
+            tokenStore: LoginKitTokenStore(store: store)
+        )
+
+        do {
+            _ = try await client.refreshAuthorizedAccount(
+                accessToken: "access-token",
+                scopes: ["video.publish"]
+            )
+            XCTFail("Expected Login Kit metadata refresh to fail.")
+        } catch let error as LoginKitError {
+            XCTAssertTrue(error.localizedDescription.contains("HTTP 403"))
+            XCTAssertTrue(error.localizedDescription.contains("scope_not_authorized"))
+            XCTAssertTrue(error.localizedDescription.contains("metadata-log-123"))
+            XCTAssertTrue(error.diagnosticDescription.contains("rawResponse="))
+            XCTAssertEqual(LoginKitFailureMetadataURLProtocol.capturedPath, "/v2/user/info")
+        }
+    }
+
     func testLoginKitAccountStoreOnlyReturnsLoginKitAccounts() throws {
         let store = MemorySecretStore()
         let accountStore = LoginKitAccountStore(store: store)
@@ -1772,6 +1941,91 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(accounts.first?.platformUserID, "real-open-id")
         XCTAssertEqual(accounts.first?.displayName, "@realaccount")
         XCTAssertEqual(accounts.first?.authorizationSource, .loginKit)
+    }
+
+    func testLoginKitAccountStorePersistsMultipleTikTokAccounts() throws {
+        let store = MemorySecretStore()
+        let accountStore = LoginKitAccountStore(store: store)
+        let firstAccount = LoginKitAccountMapper.connectedAccount(
+            from: LoginKitAuthorizedUser(
+                platform: .tiktok,
+                openID: "first-open-id",
+                displayName: "@first",
+                avatarURL: nil,
+                scopes: ["user.info.basic", "video.publish"]
+            )
+        )
+        let secondAccount = LoginKitAccountMapper.connectedAccount(
+            from: LoginKitAuthorizedUser(
+                platform: .tiktok,
+                openID: "second-open-id",
+                displayName: "@second",
+                avatarURL: nil,
+                scopes: ["user.info.basic", "video.publish"]
+            )
+        )
+
+        try accountStore.upsert(firstAccount)
+        try accountStore.upsert(secondAccount)
+
+        let accounts = accountStore.loadAccounts()
+        XCTAssertEqual(Set(accounts.map(\.platformUserID)), ["first-open-id", "second-open-id"])
+        XCTAssertEqual(accounts.count, 2)
+    }
+
+    func testLoginKitTokenStoreKeysTokensByTikTokPlatformUserID() throws {
+        let store = MemorySecretStore()
+        let tokenStore = LoginKitTokenStore(store: store)
+        let firstAccount = LoginKitAccountMapper.connectedAccount(
+            from: LoginKitAuthorizedUser(
+                platform: .tiktok,
+                openID: "first-open-id",
+                displayName: "@first",
+                avatarURL: nil,
+                scopes: ["user.info.basic", "video.publish"]
+            )
+        )
+        let secondAccount = LoginKitAccountMapper.connectedAccount(
+            from: LoginKitAuthorizedUser(
+                platform: .tiktok,
+                openID: "second-open-id",
+                displayName: "@second",
+                avatarURL: nil,
+                scopes: ["user.info.basic", "video.publish"]
+            )
+        )
+        let now = Date()
+        try tokenStore.save(
+            LoginKitTokenBundle(
+                platform: .tiktok,
+                platformUserID: firstAccount.platformUserID,
+                accessToken: "first-access",
+                refreshToken: "first-refresh",
+                tokenType: "Bearer",
+                scopes: firstAccount.scopes,
+                accessTokenExpiresAt: now.addingTimeInterval(3_600),
+                refreshTokenExpiresAt: now.addingTimeInterval(86_400),
+                updatedAt: now
+            ),
+            for: firstAccount
+        )
+        try tokenStore.save(
+            LoginKitTokenBundle(
+                platform: .tiktok,
+                platformUserID: secondAccount.platformUserID,
+                accessToken: "second-access",
+                refreshToken: "second-refresh",
+                tokenType: "Bearer",
+                scopes: secondAccount.scopes,
+                accessTokenExpiresAt: now.addingTimeInterval(3_600),
+                refreshTokenExpiresAt: now.addingTimeInterval(86_400),
+                updatedAt: now
+            ),
+            for: secondAccount
+        )
+
+        XCTAssertEqual(try tokenStore.tokenBundle(for: firstAccount)?.accessToken, "first-access")
+        XCTAssertEqual(try tokenStore.tokenBundle(for: secondAccount)?.accessToken, "second-access")
     }
 
     func testLoginKitAccountMapperDefaultsTikTokPrivacyToEveryone() {
@@ -1836,6 +2090,75 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(reconciledAccount.tokenStatus, .notStored)
         XCTAssertFalse(reconciledAccount.isPublishingEnabled)
         XCTAssertFalse(reconciledAccount.canPublishToTikTok)
+    }
+
+    func testLoginKitTokenReconciliationPreservesRefreshFailureUntilNewTokenBundle() throws {
+        let secretStore = MemorySecretStore()
+        let failureDate = Date(timeIntervalSince1970: 1_800_000_000)
+        var account = LoginKitAccountMapper.connectedAccount(
+            from: LoginKitAuthorizedUser(
+                platform: .tiktok,
+                openID: "real-open-id",
+                displayName: "@realaccount",
+                avatarURL: nil,
+                scopes: ["user.info.basic", "video.publish"]
+            ),
+            now: failureDate.addingTimeInterval(-120)
+        )
+        account.status = .needsAuth
+        account.tokenStatus = .refreshFailed
+        account.isPublishingEnabled = false
+        account.updatedAt = failureDate
+        let tokenStore = LoginKitTokenStore(store: secretStore)
+        let staleBundle = LoginKitTokenBundle(
+            platform: .tiktok,
+            platformUserID: account.platformUserID,
+            accessToken: "expired-access-token",
+            refreshToken: "refresh-token",
+            tokenType: "Bearer",
+            scopes: account.scopes,
+            accessTokenExpiresAt: failureDate.addingTimeInterval(-60),
+            refreshTokenExpiresAt: failureDate.addingTimeInterval(3_600),
+            updatedAt: failureDate.addingTimeInterval(-120)
+        )
+        try tokenStore.save(staleBundle, for: account)
+        let client = TikTokLoginKitClient(
+            accountStore: LoginKitAccountStore(store: secretStore),
+            tokenStore: tokenStore
+        )
+        let model = FlickAppModel(
+            repository: InMemoryFlickRepository(state: FlickEmptyState.make()),
+            configuration: makeTestAppConfiguration(),
+            tiktokLoginKitClient: client
+        )
+        model.overview.accounts = [account]
+
+        XCTAssertFalse(model.reconcileLoginKitAccountTokenStatus(now: failureDate.addingTimeInterval(60)))
+        var reconciledAccount = try XCTUnwrap(model.overview.accounts.first)
+        XCTAssertEqual(reconciledAccount.status, .needsAuth)
+        XCTAssertEqual(reconciledAccount.tokenStatus, .refreshFailed)
+        XCTAssertFalse(reconciledAccount.isPublishingEnabled)
+        XCTAssertFalse(reconciledAccount.canPublishToTikTok)
+
+        let refreshedBundle = LoginKitTokenBundle(
+            platform: .tiktok,
+            platformUserID: account.platformUserID,
+            accessToken: "new-access-token",
+            refreshToken: "new-refresh-token",
+            tokenType: "Bearer",
+            scopes: account.scopes,
+            accessTokenExpiresAt: failureDate.addingTimeInterval(86_400),
+            refreshTokenExpiresAt: failureDate.addingTimeInterval(31_536_000),
+            updatedAt: failureDate.addingTimeInterval(120)
+        )
+        try tokenStore.save(refreshedBundle, for: account)
+
+        XCTAssertTrue(model.reconcileLoginKitAccountTokenStatus(now: failureDate.addingTimeInterval(180)))
+        reconciledAccount = try XCTUnwrap(model.overview.accounts.first)
+        XCTAssertEqual(reconciledAccount.status, .connected)
+        XCTAssertEqual(reconciledAccount.tokenStatus, .valid)
+        XCTAssertTrue(reconciledAccount.isPublishingEnabled)
+        XCTAssertTrue(reconciledAccount.canPublishToTikTok)
     }
 
     func testTikTokAdapterUsesCurrentPrivacyOptions() async throws {
@@ -2901,6 +3224,12 @@ private func makePublishingJob(status: PublishingJobStatus = .rendering) -> Publ
     )
 }
 
+private func removingTopLevelJSONKey(_ key: String, from data: Data) throws -> Data {
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    object.removeValue(forKey: key)
+    return try JSONSerialization.data(withJSONObject: object)
+}
+
 private func makeSlideshowDraft(
     id: UUID = UUID(),
     slides: [Slide]? = nil,
@@ -3438,6 +3767,98 @@ private final class CapturingURLProtocol: URLProtocol {
         } catch {
             client?.urlProtocol(self, didFailWithError: error)
         }
+    }
+
+    override func stopLoading() {}
+}
+
+private final class LoginKitSuccessMetadataURLProtocol: URLProtocol {
+    static var capturedPath: String?
+    static var capturedFields: String?
+    static var capturedAuthorizationHeader: String?
+
+    static func reset() {
+        capturedPath = nil
+        capturedFields = nil
+        capturedAuthorizationHeader = nil
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        Self.capturedPath = request.url?.path.removingTrailingSlash
+        Self.capturedFields = request.url.flatMap {
+            URLComponents(url: $0, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .value(named: "fields")
+        }
+        Self.capturedAuthorizationHeader = request.value(forHTTPHeaderField: "Authorization")
+
+        let data = Data(
+            """
+            {
+                "data": {
+                    "user": {
+                        "open_id": "real-open-id",
+                        "avatar_url": "https://example.com/avatar.jpg",
+                        "display_name": "Creator Name"
+                    }
+                },
+                "error": {
+                    "code": "ok",
+                    "message": "",
+                    "log_id": "log-123"
+                }
+            }
+            """.utf8
+        )
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+private final class LoginKitFailureMetadataURLProtocol: URLProtocol {
+    static var capturedPath: String?
+
+    static func reset() {
+        capturedPath = nil
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        Self.capturedPath = request.url?.path.removingTrailingSlash
+        let data = Data(
+            """
+            {
+                "error": {
+                    "code": "scope_not_authorized",
+                    "message": "The access token is missing a required user info scope.",
+                    "log_id": "metadata-log-123"
+                }
+            }
+            """.utf8
+        )
+        let response = HTTPURLResponse(url: request.url!, statusCode: 403, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
     }
 
     override func stopLoading() {}

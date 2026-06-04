@@ -15,18 +15,20 @@ struct IOSAccountsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
-            PlatformAccountTilesSection(authorizedAccounts: authorizedAccounts) { platform in
+        List {
+            PlatformAccountRowsSection(authorizedAccounts: authorizedAccounts) { platform in
                 selectedPlatform = platform
             }
             connectionStatus
-            AuthorizedAccountsSection(accounts: authorizedAccounts, deleteAction: deleteAccount)
-            PlatformAdaptersSection()
         }
-        .flickScrollablePage()
+        .flickSettingsListStyle()
         .sheet(item: $selectedPlatform) { platform in
             NavigationStack {
-                PlatformPublishSettingsView(platform: platform, accounts: accounts(for: platform))
+                PlatformPublishSettingsView(
+                    platform: platform,
+                    accounts: accounts(for: platform),
+                    deleteAction: deleteAccount
+                )
             }
         }
         .flickToolbarTitle("Accounts")
@@ -106,17 +108,17 @@ struct IOSAccountsView: View {
     }
 }
 
-private struct PlatformAccountTilesSection: View {
+private struct PlatformAccountRowsSection: View {
     var authorizedAccounts: [ConnectedAccount]
     var onSelectPlatform: (SocialPlatform) -> Void
 
     var body: some View {
-        ResponsiveGrid(minimum: 180) {
+        Section("Platforms") {
             ForEach(SocialPlatform.allCases) { platform in
                 Button {
                     onSelectPlatform(platform)
                 } label: {
-                    PlatformAccountTile(
+                    PlatformAccountMessageRow(
                         platform: platform,
                         accounts: accounts(for: platform)
                     )
@@ -131,204 +133,31 @@ private struct PlatformAccountTilesSection: View {
     }
 }
 
-private struct PlatformAccountTile: View {
+private struct PlatformAccountMessageRow: View {
     var platform: SocialPlatform
     var accounts: [ConnectedAccount]
+
+    var body: some View {
+        HStack(spacing: 12) {
+            PlatformIcon(platform: platform, size: 28)
+
+            SettingsMessageRow(
+                title: platform.displayName,
+                message: "\(accounts.count.formatted()) accounts, \(publishingEnabledCount.formatted()) publishing enabled"
+            )
+
+            Spacer(minLength: 12)
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .contentShape(.rect)
+        .accessibilityElement(children: .combine)
+    }
 
     private var publishingEnabledCount: Int {
         accounts.filter(\.isPublishingEnabled).count
-    }
-
-    var body: some View {
-        FlickGlassCard(interactive: true) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Image(systemName: platform.systemImage)
-                        .font(.title2)
-                        .foregroundStyle(platform.tint)
-                    Spacer(minLength: 8)
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                }
-
-                Text(platform.displayName)
-                    .font(.headline)
-
-                Text("\(accounts.count) accounts")
-                    .font(.title3.weight(.bold))
-
-                Text("\(publishingEnabledCount) publishing enabled")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .accessibilityElement(children: .combine)
-    }
-}
-
-private struct AuthorizedAccountsSection: View {
-    var accounts: [ConnectedAccount]
-    var deleteAction: (ConnectedAccount) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Authorized accounts")
-            if accounts.isEmpty {
-                NoAuthorizedAccountsView()
-            } else {
-                ResponsiveGrid(minimum: 320) {
-                    ForEach(accounts.sortedForAccountsView) { account in
-                        AccountCard(account: account, deleteAction: deleteAction)
-                    }
-                }
-            }
-        }
-    }
-}
-
-private struct PlatformAdaptersSection: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionTitle(title: "Platform adapters")
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(SocialPlatform.allCases) { platform in
-                        PlatformAdapterChip(platform: platform)
-                    }
-                }
-            }
-        }
-    }
-}
-
-private struct PlatformAdapterChip: View {
-    var platform: SocialPlatform
-
-    private var isEnabled: Bool {
-        platform == .tiktok
-    }
-
-    var body: some View {
-        FlickGlassCard {
-            HStack(spacing: 10) {
-                Image(systemName: platform.systemImage)
-                    .foregroundStyle(platform.tint)
-                    .frame(width: 20)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(platform.displayName)
-                        .font(.callout.weight(.semibold))
-                    Text(isEnabled ? "V1 adapter" : "Future")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 0)
-            }
-        }
-        .frame(width: 150)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-private struct AccountCard: View {
-    var account: ConnectedAccount
-    var deleteAction: (ConnectedAccount) -> Void
-
-    var body: some View {
-        FlickGlassCard(interactive: account.platform == .tiktok) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack {
-                            Image(systemName: account.platform.systemImage)
-                                .foregroundStyle(account.platform.tint)
-                            Text(account.displayName)
-                                .font(.headline)
-                        }
-                        Text(account.platform.displayName)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    StatusBadge(title: account.status.displayName, tint: account.status.tint, systemImage: "circle.fill")
-                }
-
-                Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 8) {
-                    GridRow {
-                        Text("Source")
-                            .foregroundStyle(.secondary)
-                        Text("Login Kit")
-                    }
-                    GridRow {
-                        Text("Platform ID")
-                            .foregroundStyle(.secondary)
-                        Text(account.platformUserID.isEmpty ? "Not set" : account.platformUserID)
-                            .lineLimit(1)
-                    }
-                    GridRow {
-                        Text("Token")
-                            .foregroundStyle(.secondary)
-                        Text(account.tokenStatus.displayName)
-                    }
-                    GridRow {
-                        Text("Privacy")
-                            .foregroundStyle(.secondary)
-                        Text(account.defaultPrivacyLevel)
-                    }
-                    GridRow {
-                        Text("Validated")
-                            .foregroundStyle(.secondary)
-                        if let lastValidatedAt = account.lastValidatedAt {
-                            Text(lastValidatedAt, style: .relative)
-                        } else {
-                            Text("Never")
-                        }
-                    }
-                }
-                .font(.caption)
-
-                Text(account.scopes.isEmpty ? "Scopes are not connected yet." : account.scopes.joined(separator: ", "))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(3)
-
-                Button(role: .destructive) {
-                    deleteAction(account)
-                } label: {
-                    Label("Remove", systemImage: "trash")
-                }
-                .buttonStyle(.borderless)
-            }
-        }
-    }
-}
-
-private struct NoAuthorizedAccountsView: View {
-    var body: some View {
-        FlickGlassCard {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "person.crop.circle.badge.plus")
-                        .font(.title2)
-                        .foregroundStyle(.blue)
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("No authorized accounts yet")
-                            .font(.headline)
-                        Text("Accounts are created only after a platform Login Kit flow returns an authorization code, the app exchanges it for tokens, and `/v2/user/info/` returns the real account identity.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                HStack {
-                    StatusBadge(title: "TikTok Login Kit", tint: .pink, systemImage: "music.note")
-                    StatusBadge(title: "Real account metadata required", tint: .blue, systemImage: "checkmark.shield")
-                }
-            }
-        }
     }
 }
 
@@ -340,28 +169,25 @@ private struct AccountConnectionStatusView: View {
     var showsProgress: Bool
 
     var body: some View {
-        FlickGlassCard {
-            HStack(alignment: .top, spacing: 12) {
-                if showsProgress {
-                    ProgressView()
-                        .tint(tint)
-                        .frame(width: 26, height: 26)
-                } else {
-                    Image(systemName: systemImage)
-                        .font(.title3)
-                        .foregroundStyle(tint)
-                        .frame(width: 26, height: 26)
-                }
+        Section {
+            HStack(alignment: .center, spacing: 12) {
+                statusIcon
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.headline)
-                    Text(message)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                SettingsMessageRow(title: title, message: message)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var statusIcon: some View {
+        if showsProgress {
+            ProgressView()
+                .tint(tint)
+                .frame(width: 24, height: 24)
+        } else {
+            Image(systemName: systemImage)
+                .foregroundStyle(tint)
+                .frame(width: 24, height: 24)
         }
     }
 }

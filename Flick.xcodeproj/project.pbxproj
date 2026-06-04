@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		9B24C1102FD1FFE900A8E352 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 9B24C10F2FD1FFE900A8E352 /* GoogleSignInSwift */; };
 		9B7D10012FBF000100000001 /* TikTokOpenAuthSDK in Frameworks */ = {isa = PBXBuildFile; platformFilter = ios; productRef = 9B7D10042FBF000100000004 /* TikTokOpenAuthSDK */; };
 		9B7D10022FBF000100000002 /* TikTokOpenSDKCore in Frameworks */ = {isa = PBXBuildFile; platformFilter = ios; productRef = 9B7D10052FBF000100000005 /* TikTokOpenSDKCore */; };
 /* End PBXBuildFile section */
@@ -70,6 +71,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9B24C1102FD1FFE900A8E352 /* GoogleSignInSwift in Frameworks */,
 				9B7D10012FBF000100000001 /* TikTokOpenAuthSDK in Frameworks */,
 				9B7D10022FBF000100000002 /* TikTokOpenSDKCore in Frameworks */,
 			);
@@ -134,6 +136,7 @@
 			packageProductDependencies = (
 				9B7D10042FBF000100000004 /* TikTokOpenAuthSDK */,
 				9B7D10052FBF000100000005 /* TikTokOpenSDKCore */,
+				9B24C10F2FD1FFE900A8E352 /* GoogleSignInSwift */,
 			);
 			productName = Flick;
 			productReference = 9B038B892FB2289B007B4287 /* Flick.app */;
@@ -219,6 +222,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				9B7D10032FBF000100000003 /* XCRemoteSwiftPackageReference "tiktok-opensdk-ios" */,
+				9B24C10E2FD1FFE900A8E352 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 9B038B8A2FB2289B007B4287 /* Products */;
@@ -654,6 +658,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		9B24C10E2FD1FFE900A8E352 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.1.0;
+			};
+		};
 		9B7D10032FBF000100000003 /* XCRemoteSwiftPackageReference "tiktok-opensdk-ios" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/tiktok/tiktok-opensdk-ios.git";
@@ -665,6 +677,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		9B24C10F2FD1FFE900A8E352 /* GoogleSignInSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9B24C10E2FD1FFE900A8E352 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignInSwift;
+		};
 		9B7D10042FBF000100000004 /* TikTokOpenAuthSDK */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 9B7D10032FBF000100000003 /* XCRemoteSwiftPackageReference "tiktok-opensdk-ios" */;

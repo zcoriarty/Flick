@@ -18,7 +18,7 @@ struct MacAccountsView: View {
         VStack(alignment: .leading, spacing: 24) {
             MacWorkspaceHeader(
                 title: "Accounts",
-                subtitle: "Review platform authorization, publishing readiness, tokens, privacy defaults, and adapter availability.",
+                subtitle: "Review platform authorization, publishing readiness, tokens, and privacy defaults.",
                 metrics: [
                     MacWorkspaceMetric(title: "Authorized", value: authorizedAccounts.count.formatted()),
                     MacWorkspaceMetric(title: "Publishing", value: authorizedAccounts.filter(\.isPublishingEnabled).count.formatted()),
@@ -28,20 +28,10 @@ struct MacAccountsView: View {
 
             connectionStatus
 
-            HStack(alignment: .top, spacing: 18) {
-                MacAccountPlatformMatrix(
-                    accounts: authorizedAccounts,
-                    selectAction: { selectedPlatform = $0 }
-                )
-                .frame(minWidth: 360, maxWidth: 460)
-
-                MacAuthorizedAccountsPanel(
-                    accounts: authorizedAccounts,
-                    deleteAction: deleteAccount
-                )
-            }
-
-            MacPlatformAdaptersPanel()
+            MacAccountPlatformMatrix(
+                accounts: authorizedAccounts,
+                selectAction: { selectedPlatform = $0 }
+            )
         }
         .macWorkspacePage()
         .navigationTitle("Accounts")
@@ -63,7 +53,11 @@ struct MacAccountsView: View {
         }
         .sheet(item: $selectedPlatform) { platform in
             NavigationStack {
-                PlatformPublishSettingsView(platform: platform, accounts: accounts(for: platform))
+                PlatformPublishSettingsView(
+                    platform: platform,
+                    accounts: accounts(for: platform),
+                    deleteAction: deleteAccount
+                )
             }
             .frame(minWidth: 520, minHeight: 620)
         }
@@ -163,166 +157,22 @@ private struct MacAccountPlatformRow: View {
     }
 
     var body: some View {
-        MacWorkspacePanel {
-            HStack(alignment: .center, spacing: 14) {
-                Image(systemName: platform.systemImage)
-                    .font(.title2)
-                    .foregroundStyle(platform.tint)
-                    .frame(width: 32, height: 32)
+        HStack(alignment: .center, spacing: 12) {
+            PlatformIcon(platform: platform, size: 28)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(platform.displayName)
-                        .font(.headline)
-                    Text("\(accounts.count.formatted()) authorized, \(publishingEnabledCount.formatted()) publishing enabled")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+            SettingsMessageRow(
+                title: platform.displayName,
+                message: "\(accounts.count.formatted()) accounts, \(publishingEnabledCount.formatted()) publishing enabled"
+            )
 
-                Spacer(minLength: 8)
+            Spacer(minLength: 12)
 
-                StatusBadge(
-                    title: platform == .tiktok ? "V1" : "Future",
-                    tint: platform == .tiktok ? .green : .secondary,
-                    systemImage: platform == .tiktok ? "checkmark.circle" : "clock"
-                )
-            }
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
         }
-        .contentShape(.rect(cornerRadius: 20))
-    }
-}
-
-private struct MacAuthorizedAccountsPanel: View {
-    var accounts: [ConnectedAccount]
-    var deleteAction: (ConnectedAccount) -> Void
-
-    var body: some View {
-        MacWorkspaceSection(
-            title: "Authorized Accounts",
-            subtitle: accounts.isEmpty ? nil : "\(accounts.count.formatted()) login-kit accounts",
-            systemImage: "person.2"
-        ) {
-            if accounts.isEmpty {
-                MacInlineEmptyState(
-                    title: "No authorized accounts",
-                    message: "Connected platform identities appear here after Login Kit completes and account metadata syncs.",
-                    systemImage: "person.crop.circle.badge.plus"
-                )
-            } else {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 330, maximum: 520), spacing: 14, alignment: .top)],
-                    alignment: .leading,
-                    spacing: 14
-                ) {
-                    ForEach(accounts.sortedForAccountsView) { account in
-                        MacAccountCard(account: account, deleteAction: deleteAction)
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-    }
-}
-
-private struct MacAccountCard: View {
-    var account: ConnectedAccount
-    var deleteAction: (ConnectedAccount) -> Void
-
-    var body: some View {
-        MacWorkspacePanel(minHeight: 224) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: account.platform.systemImage)
-                        .font(.title3)
-                        .foregroundStyle(account.platform.tint)
-                        .frame(width: 26, height: 26)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(account.displayName)
-                            .font(.headline)
-                            .lineLimit(1)
-                        Text(account.platform.displayName)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .layoutPriority(1)
-
-                    Spacer(minLength: 8)
-
-                    StatusBadge(title: account.status.displayName, tint: account.status.tint, systemImage: "circle.fill")
-                }
-
-                Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 8) {
-                    MacDetailRow(title: "Platform ID", value: account.platformUserID.isEmpty ? "Not set" : account.platformUserID)
-                    MacDetailRow(title: "Token", value: account.tokenStatus.displayName)
-                    MacDetailRow(title: "Privacy", value: account.defaultPrivacyLevel, valueLineLimit: 2)
-                    MacDetailRow(title: "Validated", value: account.lastValidatedAt?.formatted(date: .abbreviated, time: .shortened) ?? "Never")
-                    MacDetailRow(title: "Scopes", value: account.scopes.isEmpty ? "None" : account.scopes.joined(separator: ", "), valueLineLimit: 2)
-                }
-                .font(.caption)
-
-                Spacer(minLength: 0)
-
-                HStack {
-                    StatusBadge(
-                        title: account.isPublishingEnabled ? "Publishing enabled" : "Publishing off",
-                        tint: account.isPublishingEnabled ? .green : .secondary,
-                        systemImage: account.isPublishingEnabled ? "paperplane.fill" : "paperplane"
-                    )
-
-                    Spacer(minLength: 10)
-
-                    Button("Remove", systemImage: "trash", role: .destructive) {
-                        deleteAction(account)
-                    }
-                    .buttonStyle(.borderless)
-                }
-            }
-        }
-    }
-}
-
-private struct MacPlatformAdaptersPanel: View {
-    var body: some View {
-        MacWorkspaceSection(title: "Platform Adapters", systemImage: "square.stack.3d.up") {
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 190, maximum: 260), spacing: 12, alignment: .top)],
-                alignment: .leading,
-                spacing: 12
-            ) {
-                ForEach(SocialPlatform.allCases) { platform in
-                    MacPlatformAdapterTile(platform: platform)
-                }
-            }
-        }
-    }
-}
-
-private struct MacPlatformAdapterTile: View {
-    var platform: SocialPlatform
-
-    private var isEnabled: Bool {
-        platform == .tiktok
-    }
-
-    var body: some View {
-        MacWorkspacePanel {
-            HStack(spacing: 12) {
-                Image(systemName: platform.systemImage)
-                    .font(.title3)
-                    .foregroundStyle(platform.tint)
-                    .frame(width: 26)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(platform.displayName)
-                        .font(.callout.weight(.semibold))
-                    Text(isEnabled ? "V1 adapter" : "Future adapter")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 0)
-            }
-        }
+        .padding(.vertical, 6)
+        .contentShape(.rect)
     }
 }
 

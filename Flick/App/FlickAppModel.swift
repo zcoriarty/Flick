@@ -1161,7 +1161,7 @@ final class FlickAppModel {
             }
             startPublishStep(ManualPublishProgressStepID.validate, detail: "Checking account, media, and TikTok options.")
             reconcileLoginKitAccountTokenStatus()
-            guard let account = publishingTikTokAccount() else {
+            guard let account = publishingTikTokAccount(for: draft) else {
                 throw ManualPublishError.missingTikTokAccount
             }
             completePublishStep(ManualPublishProgressStepID.validate, detail: "Ready to publish with \(account.displayName).")
@@ -1497,6 +1497,15 @@ final class FlickAppModel {
                 continue
             }
 
+            if account.tokenStatus == .refreshFailed, bundle.updatedAt <= account.updatedAt {
+                didChange = markTikTokAccountTokenUnavailable(
+                    accountID: account.id,
+                    tokenStatus: .refreshFailed,
+                    now: now
+                ) || didChange
+                continue
+            }
+
             var updatedAccount = account
             updatedAccount.tokenStatus = bundle.accessTokenExpiresAt <= now.addingTimeInterval(60) ? .expiresSoon : .valid
             updatedAccount.status = account.scopes.contains("user.info.basic") ? .connected : .missingScope
@@ -1523,7 +1532,9 @@ final class FlickAppModel {
         case .refreshTokenExpired:
             return markTikTokAccountTokenUnavailable(accountID: accountID, tokenStatus: .expired, now: now)
         case .keychainReadFailed, .refreshNotConfigured, .refreshRequestFailed:
-            return false
+            logger.error("TikTok account token refresh unavailable accountID=\(accountID.uuidString, privacy: .public) details=\(tokenError.diagnosticDescription, privacy: .public)")
+            print("[TikTokPublishing] Account token refresh unavailable accountID=\(accountID.uuidString) details=\(tokenError.diagnosticDescription)")
+            return markTikTokAccountTokenUnavailable(accountID: accountID, tokenStatus: .refreshFailed, now: now)
         }
     }
 
@@ -1560,6 +1571,33 @@ final class FlickAppModel {
             }
             return $0.platform.displayName < $1.platform.displayName
         }
+    }
+
+    func selectedAccount(for platform: SocialPlatform, in selections: [PlatformAccountSelection]) -> ConnectedAccount? {
+        guard let accountID = selections.accountID(for: platform) else { return nil }
+        return overview.accounts.first { $0.id == accountID && $0.platform == platform }
+    }
+
+    func canPublish(_ account: ConnectedAccount, on platform: SocialPlatform) -> Bool {
+        switch platform {
+        case .tiktok:
+            account.canPublishToTikTok
+        case .instagram, .threads, .x:
+            account.platform == platform && account.isPublishingEnabled
+        }
+    }
+
+    func publishingAccount(for platform: SocialPlatform, in selections: [PlatformAccountSelection]) -> ConnectedAccount? {
+        guard let account = selectedAccount(for: platform, in: selections) else { return nil }
+        return canPublish(account, on: platform) ? account : nil
+    }
+
+    func publishingTikTokAccount(for draft: SlideshowDraft) -> ConnectedAccount? {
+        publishingAccount(for: .tiktok, in: draft.accountSelections)
+    }
+
+    func publishingTikTokAccount(for automation: ContentAutomation) -> ConnectedAccount? {
+        publishingAccount(for: .tiktok, in: automation.accountSelections)
     }
 
     private func applyCredentialHealth() {
@@ -1942,7 +1980,7 @@ private extension FlickAppModel {
             }
 
             reconcileLoginKitAccountTokenStatus()
-            guard publishingTikTokAccount() != nil else {
+            guard publishingTikTokAccount(for: automation) != nil else {
                 throw ManualPublishError.missingTikTokAccount
             }
 
@@ -2004,11 +2042,15 @@ private extension FlickAppModel {
             if result.shouldInsertCreativeTemplate {
                 overview.templates.insert(result.creativeTemplate, at: 0)
             }
-            overview.drafts.insert(result.draft, at: 0)
+            var generatedDraft = result.draft
+            generatedDraft.accountSelections = automation.accountSelections.normalizedOnePerPlatform()
+            generatedDraft.updatedAt = Date()
+            let generatedDraftID = generatedDraft.id
+            overview.drafts.insert(generatedDraft, at: 0)
             await updateAutomationPostProgress(
                 progressID,
-                draftID: result.draft.id,
-                title: result.draft.title
+                draftID: generatedDraftID,
+                title: generatedDraft.title
             )
             try await repository.saveOverview(overview)
 
@@ -2017,8 +2059,8 @@ private extension FlickAppModel {
                 AutomationPostProgressStepID.generateImages,
                 detail: "Generating \(result.draft.slides.count) slide visuals."
             )
-            await generateMissingSlideImages(for: result.draft.id)
-            guard let generatedDraft = overview.drafts.first(where: { $0.id == result.draft.id }) else {
+            await generateMissingSlideImages(for: generatedDraftID)
+            guard let generatedDraft = overview.drafts.first(where: { $0.id == generatedDraftID }) else {
                 throw SlideshowCreationError.missingDraft
             }
 
@@ -2537,10 +2579,6 @@ private extension FlickAppModel {
         try await repository.saveOverview(overview)
         logPublish("Rendered publish image sequence draftID=\(draftID.uuidString) renderedCount=\(renderedAssetIDs.count)")
         return renderedAssetIDs
-    }
-
-    func publishingTikTokAccount() -> ConnectedAccount? {
-        overview.accounts.first { $0.canPublishToTikTok }
     }
 
     private func currentPublishedPostIDs() -> Set<UUID> {

@@ -24,5 +24,9 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<key>GOOGLE_REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.137683702501-mj080k8h81c99imhm8fllfqp5kvuk4sl</string>
+	<key>GOOGLE_CLIENT_ID</key>
+	<string>137683702501-mj080k8h81c99imhm8fllfqp5kvuk4sl.apps.googleusercontent.com</string>
 </dict>
 </plist>

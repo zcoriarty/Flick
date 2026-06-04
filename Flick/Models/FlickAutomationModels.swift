@@ -641,6 +641,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
     var schedule: AutomationSchedule
     var tikTokSettings: DraftTikTokSettings
     var targetPlatforms: [SocialPlatform]
+    var accountSelections: [PlatformAccountSelection]
     var status: ContentAutomationStatus
     var nextScheduledAt: Date?
     var lastRunAt: Date?
@@ -659,6 +660,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
         schedule: AutomationSchedule,
         tikTokSettings: DraftTikTokSettings,
         targetPlatforms: [SocialPlatform] = [.tiktok],
+        accountSelections: [PlatformAccountSelection] = [],
         status: ContentAutomationStatus = .active,
         nextScheduledAt: Date? = nil,
         lastRunAt: Date? = nil,
@@ -676,6 +678,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
         self.schedule = schedule
         self.tikTokSettings = tikTokSettings
         self.targetPlatforms = targetPlatforms.uniqued()
+        self.accountSelections = accountSelections.normalizedOnePerPlatform()
         self.status = status
         self.nextScheduledAt = nextScheduledAt
         self.lastRunAt = lastRunAt
@@ -683,6 +686,49 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
         self.consecutiveFailureCount = consecutiveFailureCount
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case templateIDs
+        case productID
+        case productImageAssetIDs
+        case creationModel
+        case schedule
+        case tikTokSettings
+        case targetPlatforms
+        case accountSelections
+        case status
+        case nextScheduledAt
+        case lastRunAt
+        case lastErrorMessage
+        case consecutiveFailureCount
+        case createdAt
+        case updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        templateIDs = try container.decode([String].self, forKey: .templateIDs).uniqued()
+        productID = try container.decodeIfPresent(UUID.self, forKey: .productID)
+        productImageAssetIDs = try container.decode([UUID].self, forKey: .productImageAssetIDs).uniqued()
+        creationModel = try container.decodeIfPresent(SlideshowCreationModelReference.self, forKey: .creationModel)
+        schedule = try container.decode(AutomationSchedule.self, forKey: .schedule)
+        tikTokSettings = try container.decode(DraftTikTokSettings.self, forKey: .tikTokSettings)
+        targetPlatforms = try container.decode([SocialPlatform].self, forKey: .targetPlatforms).uniqued()
+        accountSelections = try container.decodeIfPresent([PlatformAccountSelection].self, forKey: .accountSelections)?
+            .normalizedOnePerPlatform()
+            ?? []
+        status = try container.decode(ContentAutomationStatus.self, forKey: .status)
+        nextScheduledAt = try container.decodeIfPresent(Date.self, forKey: .nextScheduledAt)
+        lastRunAt = try container.decodeIfPresent(Date.self, forKey: .lastRunAt)
+        lastErrorMessage = try container.decodeIfPresent(String.self, forKey: .lastErrorMessage)
+        consecutiveFailureCount = try container.decode(Int.self, forKey: .consecutiveFailureCount)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
     }
 
     func displayName(

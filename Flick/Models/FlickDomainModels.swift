@@ -39,6 +39,7 @@ enum AccountStatus: String, CaseIterable, Codable, Identifiable {
 enum OAuthTokenStatus: String, CaseIterable, Codable, Identifiable {
     case valid
     case expiresSoon
+    case refreshFailed
     case expired
     case notStored
 
@@ -193,12 +194,45 @@ struct ConnectedAccount: Identifiable, Codable, Hashable {
     var updatedAt: Date
 }
 
+struct PlatformAccountSelection: Identifiable, Codable, Hashable {
+    var platform: SocialPlatform
+    var accountID: UUID
+
+    var id: String {
+        "\(platform.rawValue)-\(accountID.uuidString)"
+    }
+}
+
+extension Array where Element == PlatformAccountSelection {
+    func accountID(for platform: SocialPlatform) -> UUID? {
+        first { $0.platform == platform }?.accountID
+    }
+
+    func normalizedOnePerPlatform() -> [PlatformAccountSelection] {
+        var seenPlatforms = Set<SocialPlatform>()
+        var selections: [PlatformAccountSelection] = []
+        for selection in self where !seenPlatforms.contains(selection.platform) {
+            selections.append(selection)
+            seenPlatforms.insert(selection.platform)
+        }
+        return selections
+    }
+
+    mutating func setAccountID(_ accountID: UUID?, for platform: SocialPlatform) {
+        removeAll { $0.platform == platform }
+        guard let accountID else { return }
+        append(PlatformAccountSelection(platform: platform, accountID: accountID))
+        self = normalizedOnePerPlatform()
+    }
+}
+
 extension ConnectedAccount {
     var canPublishToTikTok: Bool {
         platform == .tiktok
             && authorizationSource == .loginKit
             && status == .connected
             && isPublishingEnabled
+            && tokenStatus != .refreshFailed
             && tokenStatus != .expired
             && tokenStatus != .notStored
     }
@@ -474,6 +508,7 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
     var caption: String
     var hashtags: [String]
     var targetPlatforms: [SocialPlatform]
+    var accountSelections: [PlatformAccountSelection]
     var tikTokSettings: DraftTikTokSettings?
     var selectedSongs: [SelectedSong]
     var status: SlideshowDraftStatus
@@ -498,6 +533,7 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
         caption: String,
         hashtags: [String],
         targetPlatforms: [SocialPlatform],
+        accountSelections: [PlatformAccountSelection] = [],
         tikTokSettings: DraftTikTokSettings? = nil,
         selectedSongs: [SelectedSong] = [],
         status: SlideshowDraftStatus,
@@ -521,6 +557,7 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
         self.caption = caption
         self.hashtags = hashtags
         self.targetPlatforms = targetPlatforms
+        self.accountSelections = accountSelections.normalizedOnePerPlatform()
         self.tikTokSettings = tikTokSettings
         self.selectedSongs = selectedSongs
         self.status = status
@@ -546,6 +583,7 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
         case caption
         case hashtags
         case targetPlatforms
+        case accountSelections
         case tikTokSettings
         case selectedSongs
         case status
@@ -572,6 +610,9 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
         caption = try container.decode(String.self, forKey: .caption)
         hashtags = try container.decode([String].self, forKey: .hashtags)
         targetPlatforms = try container.decode([SocialPlatform].self, forKey: .targetPlatforms)
+        accountSelections = try container.decodeIfPresent([PlatformAccountSelection].self, forKey: .accountSelections)?
+            .normalizedOnePerPlatform()
+            ?? []
         tikTokSettings = try container.decodeIfPresent(DraftTikTokSettings.self, forKey: .tikTokSettings)
         selectedSongs = try container.decodeIfPresent([SelectedSong].self, forKey: .selectedSongs) ?? []
         status = try container.decode(SlideshowDraftStatus.self, forKey: .status)

@@ -217,7 +217,7 @@ private struct R2SmokeTestRow: View {
                     Label(isRunning ? "Testing" : "Run Test", systemImage: isRunning ? "clock" : "play.fill")
                 }
                 .buttonStyle(.glassProminent)
-                .foregroundStyle(Color.primary)
+                .foregroundStyle(Color.white)
                 .disabled(isRunning)
 
                 StatusBadge(title: statusTitle, tint: statusTint, systemImage: statusSystemImage)

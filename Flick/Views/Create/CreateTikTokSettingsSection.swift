@@ -6,7 +6,8 @@
 import SwiftUI
 
 struct CreateTikTokSettingsSection: View {
-    var accountName: String?
+    var accountSummary: String
+    var isAccountReady: Bool
     var hasConfiguredSettings: Bool
     var postAsDraft: Bool
     var selectedVisibility: TikTokAudience?
@@ -63,10 +64,10 @@ struct CreateTikTokSettingsSection: View {
             FlickSettingsRow(
                 title: "Posting account",
                 systemImage: "person.crop.circle",
-                iconColor: accountName == nil ? .orange : .blue
+                iconColor: isAccountReady ? .blue : .orange
             ) {
-                Text(accountName ?? "Not connected")
-                    .foregroundStyle(accountName == nil ? .orange : .secondary)
+                Text(accountSummary)
+                    .foregroundStyle(isAccountReady ? Color.secondary : Color.orange)
                     .multilineTextAlignment(.trailing)
                     .lineLimit(1)
             }

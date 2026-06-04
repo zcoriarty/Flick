@@ -54,12 +54,14 @@ final class TikTokLoginKitClient {
         _ authorizationCode: TikTokAuthorizationCode,
         configuration: TikTokConfiguration
     ) async throws -> ConnectedAccount {
+        logger.info("Completing TikTok Login Kit authorization scopes=\(authorizationCode.scopes.joined(separator: ","), privacy: .public)")
         let tokenResponse = try await exchangeCode(
             authorizationCode.code,
             codeVerifier: authorizationCode.codeVerifier,
             configuration: configuration
         )
         let scopes = authorizationCode.scopes.isEmpty ? tokenResponse.scopes : authorizationCode.scopes
+        logger.info("TikTok Login Kit token exchange succeeded openID=\(tokenResponse.openID, privacy: .public) scopes=\(scopes.joined(separator: ","), privacy: .public)")
         let account = try await refreshAuthorizedAccount(accessToken: tokenResponse.accessToken, scopes: scopes)
         try tokenStore.save(tokenResponse.tokenBundle(for: account, scopes: scopes), for: account)
         logger.info("Stored TikTok Login Kit account metadata and token bundle.")
@@ -68,22 +70,67 @@ final class TikTokLoginKitClient {
 
     func refreshAuthorizedAccount(accessToken: String, scopes: [String]) async throws -> ConnectedAccount {
         var components = URLComponents(string: "https://open.tiktokapis.com/v2/user/info/")!
+        let fields = ["open_id", "avatar_url", "display_name"]
         components.queryItems = [
-            URLQueryItem(name: "fields", value: "open_id,avatar_url,display_name,username")
+            URLQueryItem(name: "fields", value: fields.joined(separator: ","))
         ]
 
         var request = URLRequest(url: components.url!)
         request.httpMethod = "GET"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
 
+        logger.info("Refreshing TikTok Login Kit account metadata fields=\(fields.joined(separator: ","), privacy: .public) scopes=\(scopes.joined(separator: ","), privacy: .public)")
         let (data, response) = try await urlSession.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
-            throw LoginKitError.userInfoRequestFailed
+        let rawResponse = String(data: data, encoding: .utf8) ?? ""
+        guard let httpResponse = response as? HTTPURLResponse else {
+            let error = LoginKitError.userInfoRequestFailed(
+                statusCode: nil,
+                code: nil,
+                message: "TikTok did not return a valid account metadata response.",
+                logID: nil,
+                rawResponse: rawResponse
+            )
+            logUserInfoFailure(error)
+            throw error
         }
 
-        let payload = try JSONDecoder().decode(TikTokUserInfoResponse.self, from: data)
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            let payload = try? JSONDecoder().decode(TikTokUserInfoErrorResponse.self, from: data)
+            let error = LoginKitError.userInfoRequestFailed(
+                statusCode: httpResponse.statusCode,
+                code: payload?.error.code,
+                message: payload?.error.displayMessage ?? "TikTok account metadata request failed with HTTP \(httpResponse.statusCode).",
+                logID: payload?.error.logID,
+                rawResponse: rawResponse
+            )
+            logUserInfoFailure(error)
+            throw error
+        }
+
+        let payload: TikTokUserInfoResponse
+        do {
+            payload = try JSONDecoder().decode(TikTokUserInfoResponse.self, from: data)
+        } catch {
+            let loginError = LoginKitError.userInfoRequestFailed(
+                statusCode: httpResponse.statusCode,
+                code: nil,
+                message: "Could not decode TikTok account metadata: \(error.localizedDescription)",
+                logID: nil,
+                rawResponse: rawResponse
+            )
+            logUserInfoFailure(loginError)
+            throw loginError
+        }
         guard payload.error.code == "ok" else {
-            throw LoginKitError.platformError(payload.error.message)
+            let error = LoginKitError.userInfoRequestFailed(
+                statusCode: httpResponse.statusCode,
+                code: payload.error.code,
+                message: payload.error.displayMessage,
+                logID: payload.error.logID,
+                rawResponse: rawResponse
+            )
+            logUserInfoFailure(error)
+            throw error
         }
 
         let user = LoginKitAuthorizedUser(
@@ -96,6 +143,11 @@ final class TikTokLoginKitClient {
         let account = LoginKitAccountMapper.connectedAccount(from: user)
         try accountStore.upsert(account)
         return account
+    }
+
+    private func logUserInfoFailure(_ error: LoginKitError) {
+        logger.error("TikTok Login Kit account metadata failure: \(error.diagnosticDescription, privacy: .public)")
+        print("[TikTokLoginKit] Account metadata failure: \(error.diagnosticDescription)")
     }
 
     private func requestAuthorizationCode(configuration: TikTokConfiguration) async throws -> TikTokAuthorizationCode {
@@ -243,31 +295,68 @@ enum LoginKitError: LocalizedError {
     case stateMismatch
     case missingAuthorizationCode
     case tokenExchangeFailed(String)
-    case userInfoRequestFailed
+    case userInfoRequestFailed(statusCode: Int?, code: String?, message: String, logID: String?, rawResponse: String)
     case platformError(String)
 
     var errorDescription: String? {
         switch self {
         case let .notConfigured(message):
-            message
+            return message
         case .authorizationUnavailableOnThisPlatform:
-            AccountManagementPolicy.unavailableMessage
+            return AccountManagementPolicy.unavailableMessage
         case .authorizationCanceled:
-            "TikTok authorization was canceled."
+            return "TikTok authorization was canceled."
         case .authorizationTimedOut:
-            "TikTok authorization timed out. TikTok redirected to the configured Universal Link, but Flick did not receive the callback. Verify the thready.it.com apple-app-site-association file, Apple CDN cache, and reinstall the app after the Associated Domain is live."
+            return "TikTok authorization timed out. TikTok redirected to the configured Universal Link, but Flick did not receive the callback. Verify the thready.it.com apple-app-site-association file, Apple CDN cache, and reinstall the app after the Associated Domain is live."
         case let .authorizationFailedMessage(message):
-            message
+            return message
         case .stateMismatch:
-            "TikTok authorization state did not match the active login request."
+            return "TikTok authorization state did not match the active login request."
         case .missingAuthorizationCode:
-            "TikTok did not return an authorization code."
+            return "TikTok did not return an authorization code."
         case let .tokenExchangeFailed(message):
-            message
-        case .userInfoRequestFailed:
-            "Could not refresh Login Kit account metadata."
+            return message
+        case let .userInfoRequestFailed(statusCode, code, message, logID, _):
+            let http = statusCode.map { " HTTP \($0)." } ?? ""
+            let codeSuffix = code.map { " TikTok code: \($0)." } ?? ""
+            let logSuffix = logID.map { " TikTok log ID: \($0)." } ?? ""
+            return "Could not refresh Login Kit account metadata.\(http) \(message)\(codeSuffix)\(logSuffix)"
         case let .platformError(message):
-            message.isEmpty ? "Login Kit returned an error." : message
+            return message.isEmpty ? "Login Kit returned an error." : message
+        }
+    }
+
+    var diagnosticDescription: String {
+        switch self {
+        case let .notConfigured(message):
+            "notConfigured message=\(message)"
+        case .authorizationUnavailableOnThisPlatform:
+            "authorizationUnavailableOnThisPlatform"
+        case .authorizationCanceled:
+            "authorizationCanceled"
+        case .authorizationTimedOut:
+            "authorizationTimedOut"
+        case let .authorizationFailedMessage(message):
+            "authorizationFailed message=\(message)"
+        case .stateMismatch:
+            "stateMismatch"
+        case .missingAuthorizationCode:
+            "missingAuthorizationCode"
+        case let .tokenExchangeFailed(message):
+            "tokenExchangeFailed message=\(message)"
+        case let .userInfoRequestFailed(statusCode, code, message, logID, rawResponse):
+            [
+                "userInfoRequestFailed",
+                statusCode.map { "status=\($0)" },
+                code.map { "code=\($0)" },
+                logID.map { "logID=\($0)" },
+                "message=\(message)",
+                rawResponse.isEmpty ? nil : "rawResponse=\(rawResponse)"
+            ]
+            .compactMap(\.self)
+            .joined(separator: " ")
+        case let .platformError(message):
+            "platformError message=\(message)"
         }
     }
 
@@ -405,12 +494,8 @@ private struct TikTokUserInfoResponse: Decodable {
         var openID: String
         var avatarURL: URL?
         var displayName: String?
-        var username: String?
 
         var bestDisplayName: String {
-            if let username, !username.isEmpty {
-                return "@\(username)"
-            }
             return displayName ?? "TikTok account"
         }
 
@@ -418,12 +503,26 @@ private struct TikTokUserInfoResponse: Decodable {
             case openID = "open_id"
             case avatarURL = "avatar_url"
             case displayName = "display_name"
-            case username
         }
     }
 
     struct ErrorContainer: Decodable {
         var code: String
         var message: String
+        var logID: String?
+
+        var displayMessage: String {
+            message.isEmpty ? code : message
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case code
+            case message
+            case logID = "log_id"
+        }
     }
+}
+
+private struct TikTokUserInfoErrorResponse: Decodable {
+    var error: TikTokUserInfoResponse.ErrorContainer
 }
