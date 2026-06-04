@@ -21,3 +21,18 @@ struct TikTokManualPublishSettings: Hashable {
         postAsDraft ? .photoUploadForCompletion : .photoDirectPost
     }
 }
+
+struct YouTubeManualPublishSettings: Hashable {
+    var title: String
+    var description: String
+    var tags: [String]
+    var privacyStatus: YouTubePrivacyStatus
+    var categoryID: String
+    var selfDeclaredMadeForKids: Bool
+    var containsSyntheticMedia: Bool
+    var notifySubscribers: Bool
+
+    var publishMode: PublishMode {
+        .videoDirectPost
+    }
+}

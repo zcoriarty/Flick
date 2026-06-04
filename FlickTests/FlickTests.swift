@@ -245,6 +245,196 @@ final class FlickTests: XCTestCase {
         XCTAssertNil(model.publishingTikTokAccount(for: draft))
     }
 
+    func testPlatformAccountSelectionsNormalizeUniquePlatformAccountPairs() {
+        let firstTikTokID = UUID(uuidString: "00000000-0000-0000-0000-000000000101")!
+        let secondTikTokID = UUID(uuidString: "00000000-0000-0000-0000-000000000102")!
+        let youtubeID = UUID(uuidString: "00000000-0000-0000-0000-000000000201")!
+        let selections = [
+            PlatformAccountSelection(platform: .tiktok, accountID: firstTikTokID),
+            PlatformAccountSelection(platform: .tiktok, accountID: secondTikTokID),
+            PlatformAccountSelection(platform: .tiktok, accountID: firstTikTokID),
+            PlatformAccountSelection(platform: .youtubeShorts, accountID: youtubeID),
+            PlatformAccountSelection(platform: .youtubeShorts, accountID: youtubeID)
+        ]
+
+        let normalized = selections.normalizedUniqueSelections()
+
+        XCTAssertEqual(normalized.accountIDs(for: .tiktok), [firstTikTokID, secondTikTokID])
+        XCTAssertEqual(normalized.accountIDs(for: .youtubeShorts), [youtubeID])
+        XCTAssertEqual(normalized.count, 3)
+    }
+
+    func testPublishingAccountsUsesLocalYouTubeTokenStore() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let account = makeYouTubeAccount(now: now)
+        let tokenStore = YouTubeTokenStore(store: MemorySecretStore())
+        var state = FlickEmptyState.make()
+        state.accounts = [account]
+        let model = FlickAppModel(
+            repository: InMemoryFlickRepository(state: state),
+            configuration: makeTestAppConfiguration(),
+            youtubeOAuthClient: YouTubeOAuthClient(tokenStore: tokenStore)
+        )
+        model.overview = state
+        let selections = [PlatformAccountSelection(platform: .youtubeShorts, accountID: account.id)]
+
+        XCTAssertTrue(model.publishingAccounts(for: .youtubeShorts, in: selections).isEmpty)
+
+        try tokenStore.save(
+            LoginKitTokenBundle(
+                platform: .youtubeShorts,
+                platformUserID: account.platformUserID,
+                accessToken: "access-token",
+                refreshToken: "refresh-token",
+                tokenType: "Bearer",
+                scopes: [YouTubeConfiguration.uploadScope, YouTubeConfiguration.readonlyScope],
+                accessTokenExpiresAt: now.addingTimeInterval(3_600),
+                refreshTokenExpiresAt: now.addingTimeInterval(86_400),
+                updatedAt: now
+            ),
+            for: account
+        )
+
+        XCTAssertEqual(model.publishingAccounts(for: .youtubeShorts, in: selections).map(\.id), [account.id])
+    }
+
+    func testYouTubeShortsAdapterBuildsVideosInsertResumableUploadRequest() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let account = makeYouTubeAccount(now: now)
+        let tokenStore = YouTubeTokenStore(store: MemorySecretStore())
+        try tokenStore.save(
+            LoginKitTokenBundle(
+                platform: .youtubeShorts,
+                platformUserID: account.platformUserID,
+                accessToken: "youtube-access-token",
+                refreshToken: "youtube-refresh-token",
+                tokenType: "Bearer",
+                scopes: [YouTubeConfiguration.uploadScope, YouTubeConfiguration.readonlyScope],
+                accessTokenExpiresAt: now.addingTimeInterval(3_600),
+                refreshTokenExpiresAt: now.addingTimeInterval(86_400),
+                updatedAt: now
+            ),
+            for: account
+        )
+
+        let insertURL = CapturingURLProtocol.CapturedValue()
+        let insertAuthorizationHeader = CapturingURLProtocol.CapturedValue()
+        let insertContentType = CapturingURLProtocol.CapturedValue()
+        let uploadContentType = CapturingURLProtocol.CapturedValue()
+        let uploadContentLength = CapturingURLProtocol.CapturedValue()
+        let insertBody = CapturingURLProtocol.CapturedValue()
+        let uploadMethod = CapturingURLProtocol.CapturedValue()
+        CapturingURLProtocol.requestHandler = { request in
+            let url = try XCTUnwrap(request.url)
+            if url.host == "www.googleapis.com" {
+                insertURL.value = url.absoluteString
+                insertAuthorizationHeader.value = request.value(forHTTPHeaderField: "Authorization")
+                insertContentType.value = request.value(forHTTPHeaderField: "Content-Type")
+                uploadContentType.value = request.value(forHTTPHeaderField: "X-Upload-Content-Type")
+                uploadContentLength.value = request.value(forHTTPHeaderField: "X-Upload-Content-Length")
+                insertBody.value = request.httpBodyStringForTests
+                return (
+                    try XCTUnwrap(HTTPURLResponse(
+                        url: url,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: ["Location": "https://upload.example.com/session"]
+                    )),
+                    Data()
+                )
+            }
+
+            uploadMethod.value = request.httpMethod
+            return (
+                try XCTUnwrap(HTTPURLResponse(
+                    url: url,
+                    statusCode: 201,
+                    httpVersion: nil,
+                    headerFields: nil
+                )),
+                Data("""
+                {
+                    "id": "shorts-video-id",
+                    "status": {
+                        "uploadStatus": "uploaded",
+                        "privacyStatus": "private"
+                    }
+                }
+                """.utf8)
+            )
+        }
+        defer { CapturingURLProtocol.requestHandler = nil }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CapturingURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let videoURL = FileManager.default.temporaryDirectory
+            .appending(path: "youtube-shorts-adapter-\(UUID().uuidString).mp4")
+        try Data([0, 1, 2, 3]).write(to: videoURL)
+        defer { try? FileManager.default.removeItem(at: videoURL) }
+        let adapter = YouTubeShortsAdapter(
+            configuration: makeTestAppConfiguration(values: ["GOOGLE_CLIENT_ID": "client-id"]).youtube,
+            tokenStore: tokenStore,
+            urlSession: session
+        )
+        let settings = YouTubeManualPublishSettings(
+            title: "Shorts title",
+            description: "Shorts description",
+            tags: ["flick", "launch"],
+            privacyStatus: .private,
+            categoryID: "22",
+            selfDeclaredMadeForKids: false,
+            containsSyntheticMedia: true,
+            notifySubscribers: false
+        )
+        let job = PublishingJob(
+            id: UUID(),
+            platform: .youtubeShorts,
+            accountID: account.id,
+            automationID: nil,
+            draftID: UUID(),
+            status: .publishing,
+            publishMode: .videoDirectPost,
+            attemptCount: 0,
+            lastAttemptAt: nil,
+            lastError: nil,
+            platformPublishID: nil,
+            createdAt: now,
+            updatedAt: now
+        )
+
+        let result = try await adapter.publish(
+            job,
+            account: account,
+            media: PreparedPlatformMedia(mode: .videoDirectPost, imageURLs: [], videoURL: videoURL, warnings: []),
+            settings: settings
+        )
+
+        XCTAssertEqual(result.platform, .youtubeShorts)
+        XCTAssertEqual(result.platformPostID, "shorts-video-id")
+        XCTAssertEqual(result.platformURL, URL(string: "https://www.youtube.com/shorts/shorts-video-id"))
+        XCTAssertEqual(insertAuthorizationHeader.value, "Bearer youtube-access-token")
+        XCTAssertEqual(insertContentType.value, "application/json; charset=UTF-8")
+        XCTAssertEqual(uploadContentType.value, "video/mp4")
+        XCTAssertEqual(uploadContentLength.value, "4")
+        XCTAssertTrue(try XCTUnwrap(insertURL.value).contains("uploadType=resumable"))
+        XCTAssertTrue(try XCTUnwrap(insertURL.value).contains("part=snippet,status"))
+        XCTAssertTrue(try XCTUnwrap(insertURL.value).contains("notifySubscribers=false"))
+        XCTAssertEqual(uploadMethod.value, "PUT")
+
+        let bodyData = Data(try XCTUnwrap(insertBody.value).utf8)
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: bodyData) as? [String: Any])
+        let snippet = try XCTUnwrap(body["snippet"] as? [String: Any])
+        let status = try XCTUnwrap(body["status"] as? [String: Any])
+        XCTAssertEqual(snippet["title"] as? String, "Shorts title")
+        XCTAssertEqual(snippet["description"] as? String, "Shorts description")
+        XCTAssertEqual(snippet["tags"] as? [String], ["flick", "launch"])
+        XCTAssertEqual(snippet["categoryId"] as? String, "22")
+        XCTAssertEqual(status["privacyStatus"] as? String, "private")
+        XCTAssertEqual(status["selfDeclaredMadeForKids"] as? Bool, false)
+        XCTAssertEqual(status["containsSyntheticMedia"] as? Bool, true)
+    }
+
     func testConnectedAccountUpsertUpdateAndDeleteUseRepository() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let repository = InMemoryFlickRepository(state: FlickEmptyState.make())
@@ -579,8 +769,21 @@ final class FlickTests: XCTestCase {
         ]
         var draft = makeSlideshowDraft(now: now)
         let accountSelection = PlatformAccountSelection(platform: .tiktok, accountID: UUID())
+        let youtubeAccountSelection = PlatformAccountSelection(platform: .youtubeShorts, accountID: UUID())
+        let youtubeSettings = DraftYouTubeSettings(
+            title: "Launch Shorts",
+            description: "Shorts description",
+            tags: ["flick", "launch"],
+            privacyStatus: .unlisted,
+            categoryID: "22",
+            selfDeclaredMadeForKids: false,
+            containsSyntheticMedia: true,
+            notifySubscribers: true
+        )
         draft.accountSelections = [accountSelection]
+        draft.accountSelections.append(youtubeAccountSelection)
         draft.tikTokSettings = tikTokSettings
+        draft.youtubeSettings = youtubeSettings
         draft.selectedSongs = selectedSongs
         var state = FlickEmptyState.make()
         state.drafts = [draft]
@@ -590,7 +793,8 @@ final class FlickTests: XCTestCase {
         let loadedDraft = try XCTUnwrap(loaded.drafts.first)
 
         XCTAssertEqual(loadedDraft.tikTokSettings, tikTokSettings)
-        XCTAssertEqual(loadedDraft.accountSelections, [accountSelection])
+        XCTAssertEqual(loadedDraft.youtubeSettings, youtubeSettings)
+        XCTAssertEqual(loadedDraft.accountSelections, [accountSelection, youtubeAccountSelection])
         XCTAssertEqual(loadedDraft.selectedSongs, selectedSongs)
     }
 
@@ -715,6 +919,55 @@ final class FlickTests: XCTestCase {
         )
     }
 
+    func testAutomationRequiresSelectedAccountForEveryTargetAndDashboardFansOutTargets() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let tikTokAccount = makeConnectedAccount(now: now)
+        let firstYouTubeAccount = makeYouTubeAccount(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000301")!,
+            displayName: "Main Channel",
+            now: now
+        )
+        let secondYouTubeAccount = makeYouTubeAccount(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000302")!,
+            platformUserID: "youtube-channel-id-2",
+            displayName: "Backup Channel",
+            now: now
+        )
+        var automation = ContentAutomation(
+            name: "Weekday launches",
+            templateIDs: ["template-a"],
+            productID: UUID(),
+            productImageAssetIDs: [UUID()],
+            schedule: AutomationSchedule.default,
+            tikTokSettings: DraftTikTokSettings(title: "Try Flick", privacyLevel: .publicToEveryone),
+            youtubeSettings: DraftYouTubeSettings(title: "Try Flick Shorts"),
+            targetPlatforms: [.tiktok, .youtubeShorts],
+            accountSelections: [
+                PlatformAccountSelection(platform: .tiktok, accountID: tikTokAccount.id)
+            ],
+            createdAt: now,
+            updatedAt: now
+        )
+
+        XCTAssertFalse(automation.isReadyToSchedule)
+
+        automation.accountSelections.append(contentsOf: [
+            PlatformAccountSelection(platform: .youtubeShorts, accountID: firstYouTubeAccount.id),
+            PlatformAccountSelection(platform: .youtubeShorts, accountID: secondYouTubeAccount.id)
+        ])
+
+        XCTAssertTrue(automation.isReadyToSchedule)
+
+        let targets = AutomationTargetSummary.targets(
+            for: automation,
+            accounts: [tikTokAccount, firstYouTubeAccount, secondYouTubeAccount]
+        )
+
+        XCTAssertEqual(targets.map(\.accountID), [tikTokAccount.id, firstYouTubeAccount.id, secondYouTubeAccount.id])
+        XCTAssertEqual(targets.map(\.platform), [.tiktok, .youtubeShorts, .youtubeShorts])
+        XCTAssertEqual(targets.map(\.accountName), [tikTokAccount.displayName, "Main Channel", "Backup Channel"])
+    }
+
     func testCoreDataRoundTripsAutomations() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let persistenceController = PersistenceController(inMemory: true)
@@ -746,7 +999,21 @@ final class FlickTests: XCTestCase {
                 privacyLevel: .publicToEveryone,
                 allowComment: true
             ),
-            accountSelections: [PlatformAccountSelection(platform: .tiktok, accountID: UUID())],
+            youtubeSettings: DraftYouTubeSettings(
+                title: "Try Flick Shorts",
+                description: "Scheduled YouTube description",
+                tags: ["flick"],
+                privacyStatus: .private,
+                categoryID: "22",
+                selfDeclaredMadeForKids: false,
+                containsSyntheticMedia: true,
+                notifySubscribers: false
+            ),
+            targetPlatforms: [.tiktok, .youtubeShorts],
+            accountSelections: [
+                PlatformAccountSelection(platform: .tiktok, accountID: UUID()),
+                PlatformAccountSelection(platform: .youtubeShorts, accountID: UUID())
+            ],
             nextScheduledAt: nextScheduledAt,
             createdAt: now,
             updatedAt: now
@@ -2724,12 +2991,14 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(status.publiclyAvailablePostIDs, ["7123456789012345678"])
     }
 
-    func testAccountManagementPolicyIsIOSOnly() {
+    func testAccountManagementPolicySupportsYouTubeOnEveryDeviceAndTikTokOnIOSOnly() {
         #if os(iOS) && !targetEnvironment(macCatalyst)
-        XCTAssertTrue(AccountManagementPolicy.canAuthorizeAccountsOnThisDevice)
+        XCTAssertTrue(AccountManagementPolicy.canAuthorize(.tiktok))
         #else
-        XCTAssertFalse(AccountManagementPolicy.canAuthorizeAccountsOnThisDevice)
+        XCTAssertFalse(AccountManagementPolicy.canAuthorize(.tiktok))
         #endif
+        XCTAssertTrue(AccountManagementPolicy.canAuthorize(.youtubeShorts))
+        XCTAssertTrue(AccountManagementPolicy.canAuthorizeAccountsOnThisDevice)
     }
 
     func testLoginKitStoresUseSynchronizableKeychainByDefault() {
@@ -3387,6 +3656,30 @@ private func makeConnectedAccount(
     )
 }
 
+private func makeYouTubeAccount(
+    id: UUID = UUID(),
+    platformUserID: String = "youtube-channel-id",
+    displayName: String = "Flick Channel",
+    now: Date = Date()
+) -> ConnectedAccount {
+    ConnectedAccount(
+        id: id,
+        platform: .youtubeShorts,
+        displayName: displayName,
+        platformUserID: platformUserID,
+        avatarURL: URL(string: "https://example.com/youtube-avatar.jpg"),
+        scopes: [YouTubeConfiguration.uploadScope, YouTubeConfiguration.readonlyScope],
+        status: .connected,
+        authorizationSource: .nativeOAuth,
+        tokenStatus: .valid,
+        isPublishingEnabled: true,
+        defaultPrivacyLevel: YouTubePrivacyStatus.private.rawValue,
+        lastValidatedAt: now,
+        createdAt: now,
+        updatedAt: now
+    )
+}
+
 private func makeExampleSlideshowTemplate(
     id: String? = nil,
     slideCount: Int = 2,
@@ -3546,6 +3839,7 @@ private func makeTestAppConfiguration(values: [String: String] = [:]) -> AppConf
     return AppConfiguration(
         r2: R2StorageConfiguration(values: mergedValues),
         tiktok: TikTokConfiguration(values: mergedValues),
+        youtube: YouTubeConfiguration(values: mergedValues, infoDictionary: [:]),
         openAI: OpenAIConfiguration(values: mergedValues),
         meta: MetaConfiguration(values: mergedValues),
         storagePaths: R2StoragePaths(),
@@ -3770,6 +4064,33 @@ private final class CapturingURLProtocol: URLProtocol {
     }
 
     override func stopLoading() {}
+}
+
+private extension URLRequest {
+    var httpBodyStringForTests: String? {
+        if let httpBody {
+            return String(data: httpBody, encoding: .utf8)
+        }
+        guard let stream = httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+
+        var data = Data()
+        let bufferSize = 1_024
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+        defer { buffer.deallocate() }
+
+        while stream.hasBytesAvailable {
+            let bytesRead = stream.read(buffer, maxLength: bufferSize)
+            if bytesRead > 0 {
+                data.append(buffer, count: bytesRead)
+            } else {
+                break
+            }
+        }
+
+        return String(data: data, encoding: .utf8)
+    }
 }
 
 private final class LoginKitSuccessMetadataURLProtocol: URLProtocol {

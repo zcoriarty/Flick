@@ -11,7 +11,7 @@ struct IOSAccountsView: View {
     @State private var selectedPlatform: SocialPlatform?
 
     private var authorizedAccounts: [ConnectedAccount] {
-        appModel.overview.accounts.filter { $0.authorizationSource == .loginKit }
+        appModel.overview.accounts.filter { $0.authorizationSource == .loginKit || $0.authorizationSource == .nativeOAuth }
     }
 
     var body: some View {
@@ -40,6 +40,7 @@ struct IOSAccountsView: View {
                             Button(platform.displayName, systemImage: platform.systemImage) {
                                 connect(platform)
                             }
+                            .disabled(!appModel.canConnectAccount(platform: platform))
                         }
                     } label: {
                         Label("Add Account", systemImage: "plus")
@@ -63,7 +64,7 @@ struct IOSAccountsView: View {
         } else if let platform = appModel.connectingPlatform {
             AccountConnectionStatusView(
                 title: "Connecting \(platform.displayName)",
-                message: "Complete the Login Kit authorization window to add this account.",
+                message: "Complete the authorization window to add this account.",
                 systemImage: platform.systemImage,
                 tint: platform.tint,
                 showsProgress: true
@@ -92,6 +93,7 @@ struct IOSAccountsView: View {
     }
 
     private func connect(_ platform: SocialPlatform) {
+        guard appModel.canConnectAccount(platform: platform) else { return }
         Task {
             await appModel.connectAccount(platform: platform)
         }

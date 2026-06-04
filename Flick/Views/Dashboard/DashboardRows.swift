@@ -71,19 +71,19 @@ struct DashboardStatusRow: View {
     }
 }
 
-struct TikTokPublishingJobRow: View {
+struct PublishingJobRow: View {
     var job: PublishingJob
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "bell.badge")
-                .foregroundStyle(.orange)
+            Image(systemName: job.platform == .tiktok ? "bell.badge" : job.platform.systemImage)
+                .foregroundStyle(job.platform == .tiktok ? .orange : job.platform.tint)
                 .frame(width: 24)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Waiting for TikTok")
+                Text(job.awaitingCompletionTitle)
                     .font(.subheadline.weight(.semibold))
-                Text("Open the TikTok inbox notification to finish posting.")
+                Text(job.awaitingCompletionMessage)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -98,14 +98,14 @@ struct TikTokPublishingJobRow: View {
 
             Spacer(minLength: 12)
 
-            DashboardStatusIcon(title: "Draft sent", tint: .orange, systemImage: "clock")
+            DashboardStatusIcon(title: job.awaitingCompletionBadgeTitle, tint: .orange, systemImage: "clock")
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
     }
 }
 
-struct TikTokPublishedPostRow: View {
+struct PublishedPostRow: View {
     var post: PublishedPost
 
     var body: some View {
@@ -156,6 +156,23 @@ private extension PublishedPost {
         let trimmedCaption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedCaption.isEmpty else { return "\(platform.displayName) post" }
         return trimmedCaption
+    }
+}
+
+private extension PublishingJob {
+    var awaitingCompletionTitle: String {
+        platform == .tiktok ? "Waiting for TikTok" : "Waiting for \(platform.displayName)"
+    }
+
+    var awaitingCompletionMessage: String {
+        if platform == .tiktok {
+            return "Open the TikTok inbox notification to finish posting."
+        }
+        return "The platform needs a final account-side action before this post can complete."
+    }
+
+    var awaitingCompletionBadgeTitle: String {
+        platform == .tiktok ? "Draft sent" : "Needs action"
     }
 }
 

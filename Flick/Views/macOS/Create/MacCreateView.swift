@@ -12,6 +12,7 @@ private enum CreateSheet: String, Identifiable {
     case drafts
     case slideEditor
     case tikTokSettings
+    case youtubeSettings
     case songPicker
     case publishProgress
 
@@ -31,6 +32,7 @@ struct MacCreateView: View {
     @State private var selectedAutomationProductImageAssetIDs: Set<UUID> = []
     @State private var automationSchedule = AutomationSchedule.default
     @State private var automationTikTokSettings = DraftTikTokSettings()
+    @State private var automationYouTubeSettings = DraftYouTubeSettings()
     @State private var automationAccountSelections: [PlatformAccountSelection] = []
     @State private var automationName = ""
     @State private var editingAutomationID: UUID?
@@ -49,12 +51,27 @@ struct MacCreateView: View {
         return appModel.activeCreateDraft?.accountSelections ?? []
     }
 
+    private var youtubeAccountSelections: [PlatformAccountSelection] {
+        if isAutomated {
+            return automationAccountSelections
+        }
+        return appModel.activeCreateDraft?.accountSelections ?? []
+    }
+
     private var tiktokAccountSummary: String {
-        accountSummary(for: tikTokAccountSelections, in: appModel)
+        accountSummary(for: .tiktok, selections: tikTokAccountSelections, in: appModel)
     }
 
     private var isTikTokAccountReady: Bool {
-        appModel.publishingAccount(for: .tiktok, in: tikTokAccountSelections) != nil
+        !appModel.publishingAccounts(for: .tiktok, in: tikTokAccountSelections).isEmpty
+    }
+
+    private var youtubeAccountSummary: String {
+        accountSummary(for: .youtubeShorts, selections: youtubeAccountSelections, in: appModel)
+    }
+
+    private var isYouTubeAccountReady: Bool {
+        !appModel.publishingAccounts(for: .youtubeShorts, in: youtubeAccountSelections).isEmpty
     }
 
     private var createColumnSubtitle: String {
@@ -68,7 +85,7 @@ struct MacCreateView: View {
         if isAutomated {
             return "Review existing schedules and jump back into any automation that needs tuning."
         }
-        return "Edit the plan, generate slide images, and prepare TikTok publishing details."
+        return "Edit the plan, generate slide images, and prepare publishing details."
     }
 
     var body: some View {
@@ -238,7 +255,7 @@ struct MacCreateView: View {
                 if isAutomated {
                     TikTokSettingsSheet(
                         accounts: tikTokAccounts(in: appModel),
-                        selectedAccountID: automationSelectedTikTokAccountIDBinding,
+                        selectedAccountIDs: automationSelectedTikTokAccountIDsBinding,
                         postTitle: $automationTikTokSettings.title,
                         postAsDraft: $automationTikTokSettings.postAsDraft,
                         selectedVisibility: automationSelectedVisibilityBinding,
@@ -252,7 +269,7 @@ struct MacCreateView: View {
                 } else if let currentDraftID = activeDraftID(in: appModel) {
                     TikTokSettingsSheet(
                         accounts: tikTokAccounts(in: appModel),
-                        selectedAccountID: selectedTikTokAccountIDBinding(in: appModel, draftID: currentDraftID),
+                        selectedAccountIDs: selectedTikTokAccountIDsBinding(in: appModel, draftID: currentDraftID),
                         postTitle: tikTokSettingBinding(in: appModel, draftID: currentDraftID, keyPath: \.title),
                         postAsDraft: tikTokSettingBinding(in: appModel, draftID: currentDraftID, keyPath: \.postAsDraft),
                         selectedVisibility: selectedVisibilityBinding(in: appModel, draftID: currentDraftID),
@@ -267,6 +284,39 @@ struct MacCreateView: View {
                     CreateMessageRow(
                         title: "No draft selected",
                         message: "Create or resume a slideshow draft before editing TikTok settings."
+                    )
+                }
+            case .youtubeSettings:
+                if isAutomated {
+                    YouTubeSettingsSheet(
+                        accounts: youtubeAccounts(in: appModel),
+                        selectedAccountIDs: automationSelectedYouTubeAccountIDsBinding,
+                        title: $automationYouTubeSettings.title,
+                        description: $automationYouTubeSettings.description,
+                        tags: $automationYouTubeSettings.tags,
+                        privacyStatus: $automationYouTubeSettings.privacyStatus,
+                        categoryID: $automationYouTubeSettings.categoryID,
+                        selfDeclaredMadeForKids: $automationYouTubeSettings.selfDeclaredMadeForKids,
+                        containsSyntheticMedia: $automationYouTubeSettings.containsSyntheticMedia,
+                        notifySubscribers: $automationYouTubeSettings.notifySubscribers
+                    )
+                } else if let currentDraftID = activeDraftID(in: appModel) {
+                    YouTubeSettingsSheet(
+                        accounts: youtubeAccounts(in: appModel),
+                        selectedAccountIDs: selectedYouTubeAccountIDsBinding(in: appModel, draftID: currentDraftID),
+                        title: youtubeSettingBinding(in: appModel, draftID: currentDraftID, keyPath: \.title),
+                        description: youtubeSettingBinding(in: appModel, draftID: currentDraftID, keyPath: \.description),
+                        tags: youtubeSettingBinding(in: appModel, draftID: currentDraftID, keyPath: \.tags),
+                        privacyStatus: youtubeSettingBinding(in: appModel, draftID: currentDraftID, keyPath: \.privacyStatus),
+                        categoryID: youtubeSettingBinding(in: appModel, draftID: currentDraftID, keyPath: \.categoryID),
+                        selfDeclaredMadeForKids: youtubeSettingBinding(in: appModel, draftID: currentDraftID, keyPath: \.selfDeclaredMadeForKids),
+                        containsSyntheticMedia: youtubeSettingBinding(in: appModel, draftID: currentDraftID, keyPath: \.containsSyntheticMedia),
+                        notifySubscribers: youtubeSettingBinding(in: appModel, draftID: currentDraftID, keyPath: \.notifySubscribers)
+                    )
+                } else {
+                    CreateMessageRow(
+                        title: "No draft selected",
+                        message: "Create or resume a slideshow draft before editing YouTube Shorts settings."
                     )
                 }
             case .songPicker:
@@ -401,9 +451,9 @@ struct MacCreateView: View {
 
     private func createSubtitle(in appModel: FlickAppModel) -> String {
         if isAutomated {
-            return "Configure recurring template, product, model, and TikTok settings, then monitor scheduled runs."
+            return "Configure recurring template, product, model, and platform settings, then monitor scheduled runs."
         }
-        return "Build a slideshow draft, generate images, review slides, and prepare TikTok publishing from one workspace."
+        return "Build a slideshow draft, generate images, review slides, and prepare publishing from one workspace."
     }
 
     private func createMetrics(in appModel: FlickAppModel) -> [MacWorkspaceMetric] {
@@ -437,11 +487,20 @@ struct MacCreateView: View {
         )
     }
 
-    private var automationSelectedTikTokAccountIDBinding: Binding<UUID?> {
+    private var automationSelectedTikTokAccountIDsBinding: Binding<[UUID]> {
         Binding(
-            get: { automationAccountSelections.accountID(for: .tiktok) },
+            get: { automationAccountSelections.accountIDs(for: .tiktok) },
             set: { newValue in
-                automationAccountSelections.setAccountID(newValue, for: .tiktok)
+                automationAccountSelections.setAccountIDs(newValue, for: .tiktok)
+            }
+        )
+    }
+
+    private var automationSelectedYouTubeAccountIDsBinding: Binding<[UUID]> {
+        Binding(
+            get: { automationAccountSelections.accountIDs(for: .youtubeShorts) },
+            set: { newValue in
+                automationAccountSelections.setAccountIDs(newValue, for: .youtubeShorts)
             }
         )
     }
@@ -482,6 +541,17 @@ struct MacCreateView: View {
             promotesYourBrand: automationTikTokSettings.promotesYourBrand,
             promotesBrandedContent: automationTikTokSettings.promotesBrandedContent,
             action: { presentedSheet = .tikTokSettings }
+        )
+        .macCreateListRows()
+
+        CreateYouTubeSettingsSection(
+            accountSummary: youtubeAccountSummary,
+            isAccountReady: isYouTubeAccountReady,
+            hasConfiguredSettings: true,
+            privacyStatus: automationYouTubeSettings.privacyStatus,
+            containsSyntheticMedia: automationYouTubeSettings.containsSyntheticMedia,
+            notifySubscribers: automationYouTubeSettings.notifySubscribers,
+            action: { presentedSheet = .youtubeSettings }
         )
         .macCreateListRows()
     }
@@ -576,6 +646,7 @@ struct MacCreateView: View {
     ) -> some View {
         if let currentDraftID, let currentDraftIndex {
             let tikTokSettings = appModel.overview.drafts[currentDraftIndex].tikTokSettings
+            let youtubeSettings = appModel.overview.drafts[currentDraftIndex].youtubeSettings
 
             CreateSongSection(
                 selectedSongs: selectedSongsBinding(in: appModel, draftID: currentDraftID),
@@ -595,6 +666,17 @@ struct MacCreateView: View {
                 action: { presentedSheet = .tikTokSettings }
             )
             .macCreateListRows()
+
+            CreateYouTubeSettingsSection(
+                accountSummary: youtubeAccountSummary,
+                isAccountReady: isYouTubeAccountReady,
+                hasConfiguredSettings: youtubeSettings != nil,
+                privacyStatus: youtubeSettings?.privacyStatus ?? .private,
+                containsSyntheticMedia: youtubeSettings?.containsSyntheticMedia ?? false,
+                notifySubscribers: youtubeSettings?.notifySubscribers ?? false,
+                action: { presentedSheet = .youtubeSettings }
+            )
+            .macCreateListRows()
         } else {
             CreateSongSection(
                 selectedSongs: .constant([]),
@@ -612,6 +694,18 @@ struct MacCreateView: View {
                 disclosesVideoContent: false,
                 promotesYourBrand: false,
                 promotesBrandedContent: false,
+                action: {}
+            )
+            .disabled(true)
+            .macCreateListRows()
+
+            CreateYouTubeSettingsSection(
+                accountSummary: youtubeAccountSummary,
+                isAccountReady: false,
+                hasConfiguredSettings: false,
+                privacyStatus: .private,
+                containsSyntheticMedia: false,
+                notifySubscribers: false,
                 action: {}
             )
             .disabled(true)
@@ -662,14 +756,27 @@ struct MacCreateView: View {
         )
     }
 
-    private func selectedTikTokAccountIDBinding(in appModel: FlickAppModel, draftID: UUID) -> Binding<UUID?> {
+    private func selectedTikTokAccountIDsBinding(in appModel: FlickAppModel, draftID: UUID) -> Binding<[UUID]> {
         Binding(
             get: {
-                draftAccountSelections(in: appModel, draftID: draftID).accountID(for: .tiktok)
+                draftAccountSelections(in: appModel, draftID: draftID).accountIDs(for: .tiktok)
             },
             set: { newValue in
                 updateDraft(in: appModel, draftID: draftID) { draft in
-                    draft.accountSelections.setAccountID(newValue, for: .tiktok)
+                    draft.accountSelections.setAccountIDs(newValue, for: .tiktok)
+                }
+            }
+        )
+    }
+
+    private func selectedYouTubeAccountIDsBinding(in appModel: FlickAppModel, draftID: UUID) -> Binding<[UUID]> {
+        Binding(
+            get: {
+                draftAccountSelections(in: appModel, draftID: draftID).accountIDs(for: .youtubeShorts)
+            },
+            set: { newValue in
+                updateDraft(in: appModel, draftID: draftID) { draft in
+                    draft.accountSelections.setAccountIDs(newValue, for: .youtubeShorts)
                 }
             }
         )
@@ -677,6 +784,10 @@ struct MacCreateView: View {
 
     private func draftTikTokSettings(in appModel: FlickAppModel, draftID: UUID) -> DraftTikTokSettings {
         appModel.overview.drafts.first { $0.id == draftID }?.tikTokSettings ?? DraftTikTokSettings()
+    }
+
+    private func draftYouTubeSettings(in appModel: FlickAppModel, draftID: UUID) -> DraftYouTubeSettings {
+        appModel.overview.drafts.first { $0.id == draftID }?.youtubeSettings ?? DraftYouTubeSettings()
     }
 
     private func draftAccountSelections(in appModel: FlickAppModel, draftID: UUID) -> [PlatformAccountSelection] {
@@ -692,6 +803,35 @@ struct MacCreateView: View {
             var settings = draft.tikTokSettings ?? DraftTikTokSettings()
             update(&settings)
             draft.tikTokSettings = settings
+        }
+    }
+
+    private func youtubeSettingBinding<Value>(
+        in appModel: FlickAppModel,
+        draftID: UUID,
+        keyPath: WritableKeyPath<DraftYouTubeSettings, Value>
+    ) -> Binding<Value> {
+        Binding(
+            get: {
+                draftYouTubeSettings(in: appModel, draftID: draftID)[keyPath: keyPath]
+            },
+            set: { newValue in
+                updateYouTubeSettings(in: appModel, draftID: draftID) { settings in
+                    settings[keyPath: keyPath] = newValue
+                }
+            }
+        )
+    }
+
+    private func updateYouTubeSettings(
+        in appModel: FlickAppModel,
+        draftID: UUID,
+        _ update: (inout DraftYouTubeSettings) -> Void
+    ) {
+        updateDraft(in: appModel, draftID: draftID) { draft in
+            var settings = draft.youtubeSettings ?? DraftYouTubeSettings()
+            update(&settings)
+            draft.youtubeSettings = settings
         }
     }
 
@@ -733,6 +873,7 @@ struct MacCreateView: View {
         selectedAutomationProductImageAssetIDs = []
         automationSchedule = .default
         automationTikTokSettings = DraftTikTokSettings()
+        automationYouTubeSettings = DraftYouTubeSettings()
         automationAccountSelections = []
     }
 
@@ -751,6 +892,7 @@ struct MacCreateView: View {
         automationSchedule = automation.schedule
         automationSchedule.reconcileFixedTimes()
         automationTikTokSettings = automation.tikTokSettings
+        automationYouTubeSettings = automation.youtubeSettings
         automationAccountSelections = automation.accountSelections
     }
 
@@ -788,7 +930,6 @@ struct MacCreateView: View {
         let automation = automationDraft(using: appModel, now: Date())
         return automation.isReadyToSchedule
             && selectedAutomationSelectionsAreAvailable(in: appModel)
-            && appModel.publishingTikTokAccount(for: automation) != nil
     }
 
     private func publishAutomation(using appModel: FlickAppModel) {
@@ -834,13 +975,25 @@ struct MacCreateView: View {
             creationModel: selectedCreationModel,
             schedule: schedule,
             tikTokSettings: automationTikTokSettings,
-            targetPlatforms: [.tiktok],
+            youtubeSettings: automationYouTubeSettings,
+            targetPlatforms: automationTargetPlatforms(),
             accountSelections: automationAccountSelections,
             status: .active,
             nextScheduledAt: nextScheduledAt,
             createdAt: appModel.overview.automations.first(where: { $0.id == automationID })?.createdAt ?? now,
             updatedAt: now
         )
+    }
+
+    private func automationTargetPlatforms() -> [SocialPlatform] {
+        var platforms: [SocialPlatform] = []
+        if !automationAccountSelections.accountIDs(for: .tiktok).isEmpty {
+            platforms.append(.tiktok)
+        }
+        if !automationAccountSelections.accountIDs(for: .youtubeShorts).isEmpty {
+            platforms.append(.youtubeShorts)
+        }
+        return platforms.isEmpty ? [.tiktok] : platforms
     }
 
     private func analyzeTemplate() {
@@ -949,17 +1102,25 @@ struct MacCreateView: View {
         guard let draft = appModel.activeCreateDraft else { return false }
         let assetsByID = Dictionary(uniqueKeysWithValues: appModel.overview.assets.map { ($0.id, $0) })
         return draft.hasCompletedCreateImages(assetsByID: assetsByID)
-            && appModel.publishingTikTokAccount(for: draft) != nil
-            && publishSettings(for: draft) != nil
+            && (publishSettings(for: draft) != nil || youtubePublishSettings(for: draft) != nil)
+            && (!appModel.publishingAccounts(for: .tiktok, in: draft.accountSelections).isEmpty
+                || !appModel.publishingAccounts(for: .youtubeShorts, in: draft.accountSelections).isEmpty)
     }
 
     private func publishManualPost(using appModel: FlickAppModel) {
-        guard let draft = appModel.activeCreateDraft, let settings = publishSettings(for: draft) else { return }
+        guard let draft = appModel.activeCreateDraft else { return }
+        let tikTokSettings = publishSettings(for: draft)
+        let youtubeSettings = youtubePublishSettings(for: draft)
+        guard tikTokSettings != nil || youtubeSettings != nil else { return }
         appModel.beginManualPublishProgress(for: draft)
         presentedSheet = .publishProgress
         Task { @MainActor in
-            let didPublish = await appModel.publishManualSlideshow(draftID: draft.id, settings: settings)
-            if didPublish, !settings.postAsDraft {
+            let didPublish = await appModel.publishManualSlideshow(
+                draftID: draft.id,
+                tikTokSettings: tikTokSettings,
+                youtubeSettings: youtubeSettings
+            )
+            if didPublish, tikTokSettings?.postAsDraft != true {
                 resetCreateFlowAfterSuccessfulManualPublish(draftID: draft.id, using: appModel)
             }
         }
@@ -970,23 +1131,43 @@ struct MacCreateView: View {
         return settings.manualPublishSettings(description: draft.publishDescription)
     }
 
+    private func youtubePublishSettings(for draft: SlideshowDraft) -> YouTubeManualPublishSettings? {
+        guard let settings = draft.youtubeSettings else { return nil }
+        return settings.manualPublishSettings(
+            fallbackTitle: draft.title,
+            fallbackDescription: draft.publishDescription,
+            fallbackHashtags: draft.hashtags
+        )
+    }
+
     private func tikTokAccounts(in appModel: FlickAppModel) -> [ConnectedAccount] {
         appModel.overview.accounts
             .filter { $0.platform == .tiktok }
             .sortedForAccountsView
     }
 
+    private func youtubeAccounts(in appModel: FlickAppModel) -> [ConnectedAccount] {
+        appModel.overview.accounts
+            .filter { $0.platform == .youtubeShorts }
+            .sortedForAccountsView
+    }
+
     private func accountSummary(
-        for selections: [PlatformAccountSelection],
+        for platform: SocialPlatform = .tiktok,
+        selections: [PlatformAccountSelection],
         in appModel: FlickAppModel
     ) -> String {
-        if let account = appModel.selectedAccount(for: .tiktok, in: selections) {
+        let accounts = appModel.selectedAccounts(for: platform, in: selections)
+        if accounts.count == 1, let account = accounts.first {
             return account.displayName
         }
-        if selections.accountID(for: .tiktok) != nil {
-            return "Unavailable account"
+        if accounts.count > 1 {
+            return "\(accounts.count) \(platform == .youtubeShorts ? "channels" : "accounts")"
         }
-        return "Select account"
+        if !selections.accountIDs(for: platform).isEmpty {
+            return platform == .youtubeShorts ? "Unavailable channel" : "Unavailable account"
+        }
+        return platform == .youtubeShorts ? "Select channels" : "Select accounts"
     }
 
     private func activeDraftID(in appModel: FlickAppModel) -> UUID? {

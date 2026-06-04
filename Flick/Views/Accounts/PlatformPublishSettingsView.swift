@@ -100,6 +100,32 @@ struct PlatformPublishSettingsView: View {
                     value: "Brand organic per job",
                     valueLineLimit: 2
                 )
+            } else if platform == .youtubeShorts {
+                FlickSettingsValueRow(
+                    title: "Upload format",
+                    systemImage: "film",
+                    iconColor: .red,
+                    value: "Vertical MP4"
+                )
+                FlickSettingsValueRow(
+                    title: "Privacy levels",
+                    systemImage: "eye",
+                    iconColor: .blue,
+                    value: YouTubePrivacyStatus.allCases.map(\.displayName).joined(separator: ", "),
+                    valueLineLimit: 2
+                )
+                FlickSettingsValueRow(
+                    title: "Default category",
+                    systemImage: "tag",
+                    iconColor: .purple,
+                    value: "People & Blogs"
+                )
+                FlickSettingsValueRow(
+                    title: "Scheduled posting",
+                    systemImage: "desktopcomputer",
+                    iconColor: .teal,
+                    value: "Authorize on the Mac runner"
+                )
             } else {
                 FlickSettingsValueRow(
                     title: "Availability",
@@ -115,7 +141,7 @@ struct PlatformPublishSettingsView: View {
         if accounts.contains(where: \.isPublishingEnabled) {
             return "Enabled"
         }
-        return platform == .tiktok ? "Needs account" : "Not enabled"
+        return platform == .tiktok || platform == .youtubeShorts ? "Needs account" : "Not enabled"
     }
 
     private var publishingTint: Color {

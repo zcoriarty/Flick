@@ -35,7 +35,7 @@ final class TikTokLoginKitClient {
     }
 
     func authorize(configuration: TikTokConfiguration) async throws -> ConnectedAccount {
-        guard AccountManagementPolicy.canAuthorizeAccountsOnThisDevice else {
+        guard AccountManagementPolicy.canAuthorize(.tiktok) else {
             throw LoginKitError.authorizationUnavailableOnThisPlatform
         }
 

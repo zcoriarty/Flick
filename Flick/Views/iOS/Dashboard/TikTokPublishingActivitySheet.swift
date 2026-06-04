@@ -1,12 +1,12 @@
 //
-//  TikTokPublishingActivitySheet.swift
+//  PublishingActivitySheet.swift
 //  Flick
 //
 
 #if !os(macOS)
 import SwiftUI
 
-struct TikTokPublishingActivitySummaryRow: View {
+struct PublishingActivitySummaryRow: View {
     var awaitingJobCount: Int
     var publishedPostCount: Int
     var latestActivityDate: Date?
@@ -18,7 +18,7 @@ struct TikTokPublishingActivitySummaryRow: View {
                 .frame(width: 24)
 
             VStack(alignment: .leading, spacing: 5) {
-                Text("TikTok activity")
+                Text("Publishing activity")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
 
@@ -68,7 +68,7 @@ struct TikTokPublishingActivitySummaryRow: View {
     }
 }
 
-struct TikTokPublishingActivitySheet: View {
+struct PublishingActivitySheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var awaitingJobs: [PublishingJob]
@@ -80,7 +80,7 @@ struct TikTokPublishingActivitySheet: View {
                 if !awaitingJobs.isEmpty {
                     Section(awaitingJobsSectionTitle) {
                         ForEach(awaitingJobs) { job in
-                            TikTokPublishingJobRow(job: job)
+                            PublishingJobRow(job: job)
                         }
                     }
                 }
@@ -88,13 +88,13 @@ struct TikTokPublishingActivitySheet: View {
                 if !publishedPosts.isEmpty {
                     Section(publishedPostsSectionTitle) {
                         ForEach(publishedPosts) { post in
-                            TikTokPublishedPostRow(post: post)
+                            PublishedPostRow(post: post)
                         }
                     }
                 }
             }
             .flickSettingsListStyle()
-            .flickToolbarTitle("TikTok Publishing")
+            .flickToolbarTitle("Publishing")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {

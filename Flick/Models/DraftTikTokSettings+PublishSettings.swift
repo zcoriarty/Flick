@@ -39,6 +39,64 @@ extension DraftTikTokSettings {
     }
 }
 
+extension DraftYouTubeSettings {
+    func manualPublishSettings(
+        fallbackTitle: String,
+        fallbackDescription: String,
+        fallbackHashtags: [String]
+    ) -> YouTubeManualPublishSettings? {
+        publishSettings(
+            fallbackTitle: fallbackTitle,
+            fallbackDescription: fallbackDescription,
+            fallbackHashtags: fallbackHashtags
+        )
+    }
+
+    func automatedPublishSettings(
+        fallbackTitle: String,
+        fallbackDescription: String,
+        fallbackHashtags: [String]
+    ) -> YouTubeManualPublishSettings? {
+        publishSettings(
+            fallbackTitle: fallbackTitle,
+            fallbackDescription: fallbackDescription,
+            fallbackHashtags: fallbackHashtags
+        )
+    }
+
+    private func publishSettings(
+        fallbackTitle: String,
+        fallbackDescription: String,
+        fallbackHashtags: [String]
+    ) -> YouTubeManualPublishSettings? {
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedTitle = normalizedTitle.isEmpty
+            ? fallbackTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            : normalizedTitle
+        guard !resolvedTitle.isEmpty else { return nil }
+
+        let normalizedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedDescription = normalizedDescription.isEmpty
+            ? fallbackDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+            : normalizedDescription
+        let resolvedTags = (tags + fallbackHashtags)
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "# \n\t")) }
+            .filter { !$0.isEmpty }
+            .uniqued()
+
+        return YouTubeManualPublishSettings(
+            title: resolvedTitle,
+            description: resolvedDescription,
+            tags: resolvedTags,
+            privacyStatus: privacyStatus,
+            categoryID: categoryID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "22" : categoryID,
+            selfDeclaredMadeForKids: selfDeclaredMadeForKids,
+            containsSyntheticMedia: containsSyntheticMedia,
+            notifySubscribers: notifySubscribers
+        )
+    }
+}
+
 extension SlideshowDraft {
     var publishDescription: String {
         let trimmedCaption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -53,5 +111,12 @@ extension SlideshowDraft {
         return [trimmedCaption, formattedHashtags]
             .filter { !$0.isEmpty }
             .joined(separator: "\n\n")
+    }
+}
+
+private extension Array where Element: Hashable {
+    func uniqued() -> [Element] {
+        var seen = Set<Element>()
+        return filter { seen.insert($0).inserted }
     }
 }

@@ -8,6 +8,7 @@ import Foundation
 struct AppConfiguration: Hashable {
     var r2: R2StorageConfiguration
     var tiktok: TikTokConfiguration
+    var youtube: YouTubeConfiguration
     var openAI: OpenAIConfiguration
     var meta: MetaConfiguration
     var storagePaths: R2StoragePaths
@@ -21,6 +22,7 @@ struct AppConfiguration: Hashable {
         return AppConfiguration(
             r2: R2StorageConfiguration(values: values),
             tiktok: TikTokConfiguration(values: values),
+            youtube: YouTubeConfiguration(values: values, infoDictionary: Bundle.main.infoDictionary ?? [:]),
             openAI: OpenAIConfiguration(values: values),
             meta: MetaConfiguration(values: values),
             storagePaths: R2StoragePaths(),
@@ -101,6 +103,39 @@ struct TikTokConfiguration: Hashable {
     }
 }
 
+struct YouTubeConfiguration: Hashable {
+    static let uploadScope = "https://www.googleapis.com/auth/youtube.upload"
+    static let readonlyScope = "https://www.googleapis.com/auth/youtube.readonly"
+
+    var clientID: String?
+    var reversedClientID: String?
+    var requestedScopes: [String]
+
+    var clientIDPresent: Bool { clientID != nil }
+    var reversedClientIDPresent: Bool { reversedClientID != nil }
+    var redirectURI: URL? {
+        reversedClientID.flatMap { URL(string: "\($0):/oauth2redirect") }
+    }
+    var callbackScheme: String? {
+        reversedClientID
+    }
+
+    init(values: [String: String], infoDictionary: [String: Any]) {
+        clientID = values.nonEmptyString("GOOGLE_CLIENT_ID")
+            ?? infoDictionary.nonEmptyString("GIDClientID")
+            ?? infoDictionary.nonEmptyString("GOOGLE_CLIENT_ID")
+        reversedClientID = values.nonEmptyString("GOOGLE_REVERSED_CLIENT_ID")
+            ?? infoDictionary.nonEmptyString("GIDReversedClientID")
+            ?? infoDictionary.nonEmptyString("GOOGLE_REVERSED_CLIENT_ID")
+        requestedScopes = values
+            .nonEmptyString("YOUTUBE_SCOPES")?
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            ?? [Self.uploadScope, Self.readonlyScope]
+    }
+}
+
 struct OpenAIConfiguration: Hashable {
     var apiKeyPresent: Bool
 
@@ -156,7 +191,10 @@ struct CredentialDefinition: Identifiable, Hashable {
         CredentialDefinition(key: "TIKTOK_CLIENT_SECRET", name: "TikTok client secret"),
         CredentialDefinition(key: "TIKTOK_REDIRECT_URI", name: "TikTok redirect URI"),
         CredentialDefinition(key: "TIKTOK_SCOPES", name: "TikTok scopes"),
-        CredentialDefinition(key: "TIKTOK_VERIFIED_BASE_URL", name: "TikTok verified URL prefix")
+        CredentialDefinition(key: "TIKTOK_VERIFIED_BASE_URL", name: "TikTok verified URL prefix"),
+        CredentialDefinition(key: "GOOGLE_CLIENT_ID", name: "Google OAuth client ID"),
+        CredentialDefinition(key: "GOOGLE_REVERSED_CLIENT_ID", name: "Google reversed client ID"),
+        CredentialDefinition(key: "YOUTUBE_SCOPES", name: "YouTube OAuth scopes")
     ]
 
     static var supportedKeys: [String] {
@@ -209,5 +247,13 @@ private extension Dictionary where Key == String, Value == String {
             return nil
         }
         return URL(string: value)
+    }
+}
+
+private extension Dictionary where Key == String, Value == Any {
+    func nonEmptyString(_ key: String) -> String? {
+        guard let value = self[key] as? String else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

@@ -640,6 +640,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
     var creationModel: SlideshowCreationModelReference?
     var schedule: AutomationSchedule
     var tikTokSettings: DraftTikTokSettings
+    var youtubeSettings: DraftYouTubeSettings
     var targetPlatforms: [SocialPlatform]
     var accountSelections: [PlatformAccountSelection]
     var status: ContentAutomationStatus
@@ -659,6 +660,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
         creationModel: SlideshowCreationModelReference? = nil,
         schedule: AutomationSchedule,
         tikTokSettings: DraftTikTokSettings,
+        youtubeSettings: DraftYouTubeSettings = DraftYouTubeSettings(),
         targetPlatforms: [SocialPlatform] = [.tiktok],
         accountSelections: [PlatformAccountSelection] = [],
         status: ContentAutomationStatus = .active,
@@ -677,8 +679,9 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
         self.creationModel = creationModel
         self.schedule = schedule
         self.tikTokSettings = tikTokSettings
+        self.youtubeSettings = youtubeSettings
         self.targetPlatforms = targetPlatforms.uniqued()
-        self.accountSelections = accountSelections.normalizedOnePerPlatform()
+        self.accountSelections = accountSelections.normalizedUniqueSelections()
         self.status = status
         self.nextScheduledAt = nextScheduledAt
         self.lastRunAt = lastRunAt
@@ -697,6 +700,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
         case creationModel
         case schedule
         case tikTokSettings
+        case youtubeSettings
         case targetPlatforms
         case accountSelections
         case status
@@ -718,9 +722,10 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
         creationModel = try container.decodeIfPresent(SlideshowCreationModelReference.self, forKey: .creationModel)
         schedule = try container.decode(AutomationSchedule.self, forKey: .schedule)
         tikTokSettings = try container.decode(DraftTikTokSettings.self, forKey: .tikTokSettings)
+        youtubeSettings = try container.decodeIfPresent(DraftYouTubeSettings.self, forKey: .youtubeSettings) ?? DraftYouTubeSettings()
         targetPlatforms = try container.decode([SocialPlatform].self, forKey: .targetPlatforms).uniqued()
         accountSelections = try container.decodeIfPresent([PlatformAccountSelection].self, forKey: .accountSelections)?
-            .normalizedOnePerPlatform()
+            .normalizedUniqueSelections()
             ?? []
         status = try container.decode(ContentAutomationStatus.self, forKey: .status)
         nextScheduledAt = try container.decodeIfPresent(Date.self, forKey: .nextScheduledAt)
@@ -772,7 +777,33 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
             && productID != nil
             && !productImageAssetIDs.isEmpty
             && schedule.isValid
-            && tikTokSettings.automatedPublishSettings(description: "") != nil
+            && hasValidPublishSettings
+            && hasSelectedAccountForEachTarget
+    }
+
+    var hasValidPublishSettings: Bool {
+        let targets = targetPlatforms.isEmpty ? [SocialPlatform.tiktok] : targetPlatforms
+        return targets.allSatisfy { platform in
+            switch platform {
+            case .tiktok:
+                tikTokSettings.automatedPublishSettings(description: "") != nil
+            case .youtubeShorts:
+                youtubeSettings.automatedPublishSettings(
+                    fallbackTitle: name.isEmpty ? "Flick post" : name,
+                    fallbackDescription: "",
+                    fallbackHashtags: []
+                ) != nil
+            case .instagram, .threads, .x:
+                false
+            }
+        }
+    }
+
+    var hasSelectedAccountForEachTarget: Bool {
+        let targets = targetPlatforms.isEmpty ? [SocialPlatform.tiktok] : targetPlatforms
+        return targets.allSatisfy { platform in
+            !accountSelections.accountIDs(for: platform).isEmpty
+        }
     }
 }
 

@@ -588,6 +588,7 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(draft.targetPlatforms.map(\.rawValue), asJSONForKey: DraftKey.targetPlatformsJSON)
         object.setValue(draft.accountSelections, asJSONForKey: DraftKey.accountSelectionsJSON)
         object.setValue(draft.tikTokSettings, asJSONForKey: DraftKey.tikTokSettingsJSON)
+        object.setValue(draft.youtubeSettings, asJSONForKey: DraftKey.youtubeSettingsJSON)
         object.setValue(draft.selectedSongs, asJSONForKey: DraftKey.selectedSongsJSON)
         object.setValue(draft.status.rawValue, forKey: DraftKey.status)
         object.setValue(draft.exportedImageAssetIDs.map(\.uuidString), asJSONForKey: DraftKey.exportedImageAssetIDsJSON)
@@ -622,6 +623,7 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(automation.creationModel, asJSONForKey: AutomationKey.creationModelJSON)
         object.setValue(automation.schedule, asJSONForKey: AutomationKey.scheduleJSON)
         object.setValue(automation.tikTokSettings, asJSONForKey: AutomationKey.tikTokSettingsJSON)
+        object.setValue(automation.youtubeSettings, asJSONForKey: AutomationKey.youtubeSettingsJSON)
         object.setValue(automation.targetPlatforms.map(\.rawValue), asJSONForKey: AutomationKey.targetPlatformsJSON)
         object.setValue(automation.accountSelections, asJSONForKey: AutomationKey.accountSelectionsJSON)
         object.setValue(automation.status.rawValue, forKey: AutomationKey.status)
@@ -770,6 +772,7 @@ private enum DraftKey {
     static let targetPlatformsJSON = "targetPlatformsJSON"
     static let templateID = "templateID"
     static let tikTokSettingsJSON = "tikTokSettingsJSON"
+    static let youtubeSettingsJSON = "youtubeSettingsJSON"
     static let title = "title"
     static let tone = "tone"
     static let topic = "topic"
@@ -812,6 +815,7 @@ private enum AutomationKey {
     static let targetPlatformsJSON = "targetPlatformsJSON"
     static let templateIDsJSON = "templateIDsJSON"
     static let tikTokSettingsJSON = "tikTokSettingsJSON"
+    static let youtubeSettingsJSON = "youtubeSettingsJSON"
     static let updatedAt = "updatedAt"
 }
 
@@ -1013,10 +1017,11 @@ private extension SlideshowDraft {
         let targetPlatformsRawValues: [String] = managedObject.decodedJSON([String].self, forKey: DraftKey.targetPlatformsJSON) ?? []
         let targetPlatforms = targetPlatformsRawValues.compactMap(SocialPlatform.init(rawValue:))
         let accountSelections = managedObject.decodedJSON([PlatformAccountSelection].self, forKey: DraftKey.accountSelectionsJSON)?
-            .normalizedOnePerPlatform()
+            .normalizedUniqueSelections()
             ?? []
         let exportedIDs: [String] = managedObject.decodedJSON([String].self, forKey: DraftKey.exportedImageAssetIDsJSON) ?? []
         let tikTokSettings = managedObject.decodedJSON(DraftTikTokSettings.self, forKey: DraftKey.tikTokSettingsJSON)
+        let youtubeSettings = managedObject.decodedJSON(DraftYouTubeSettings.self, forKey: DraftKey.youtubeSettingsJSON)
         let selectedSongs = managedObject.decodedJSON([SelectedSong].self, forKey: DraftKey.selectedSongsJSON) ?? []
 
         self.init(
@@ -1038,6 +1043,7 @@ private extension SlideshowDraft {
             targetPlatforms: targetPlatforms.isEmpty ? [.tiktok] : targetPlatforms,
             accountSelections: accountSelections,
             tikTokSettings: tikTokSettings,
+            youtubeSettings: youtubeSettings,
             selectedSongs: selectedSongs,
             status: status,
             exportedImageAssetIDs: exportedIDs.compactMap(UUID.init(uuidString:)),
@@ -1092,8 +1098,10 @@ private extension ContentAutomation {
         let targetPlatformRawValues = managedObject.decodedJSON([String].self, forKey: AutomationKey.targetPlatformsJSON) ?? []
         let targetPlatforms = targetPlatformRawValues.compactMap(SocialPlatform.init(rawValue:))
         let accountSelections = managedObject.decodedJSON([PlatformAccountSelection].self, forKey: AutomationKey.accountSelectionsJSON)?
-            .normalizedOnePerPlatform()
+            .normalizedUniqueSelections()
             ?? []
+        let youtubeSettings = managedObject.decodedJSON(DraftYouTubeSettings.self, forKey: AutomationKey.youtubeSettingsJSON)
+            ?? DraftYouTubeSettings()
         let statusRawValue = managedObject.value(forKey: AutomationKey.status) as? String
 
         self.init(
@@ -1105,6 +1113,7 @@ private extension ContentAutomation {
             creationModel: managedObject.decodedJSON(SlideshowCreationModelReference.self, forKey: AutomationKey.creationModelJSON),
             schedule: schedule,
             tikTokSettings: tikTokSettings,
+            youtubeSettings: youtubeSettings,
             targetPlatforms: targetPlatforms.isEmpty ? [.tiktok] : targetPlatforms,
             accountSelections: accountSelections,
             status: statusRawValue.flatMap(ContentAutomationStatus.init(rawValue:)) ?? .active,

@@ -20,6 +20,7 @@ extension SocialPlatform {
     var assetImageName: String {
         switch self {
         case .tiktok: "tiktok_icon"
+        case .youtubeShorts: "Youtube_shorts_icon.svg"
         case .instagram: "instagram_icon"
         case .threads: "threads_icon"
         case .x: "X_twitter_icon"
@@ -29,6 +30,7 @@ extension SocialPlatform {
     var tint: Color {
         switch self {
         case .tiktok: .pink
+        case .youtubeShorts: .red
         case .instagram: .purple
         case .threads: .indigo
         case .x: .primary

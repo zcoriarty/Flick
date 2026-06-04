@@ -252,17 +252,26 @@ struct AutomationTargetSummary: Identifiable, Hashable {
     ) -> [AutomationTargetSummary] {
         let targetPlatforms = automation.targetPlatforms.isEmpty ? [SocialPlatform.tiktok] : automation.targetPlatforms
 
-        return targetPlatforms.map { platform in
-            let selectedAccountID = automation.accountSelections.accountID(for: platform)
-            let account = selectedAccountID.flatMap { accountID in
-                accounts.first { $0.id == accountID && $0.platform == platform }
+        return targetPlatforms.flatMap { platform in
+            let selectedAccountIDs = automation.accountSelections.accountIDs(for: platform)
+            guard !selectedAccountIDs.isEmpty else {
+                return [
+                    AutomationTargetSummary(
+                        platform: platform,
+                        accountID: nil,
+                        accountName: nil
+                    )
+                ]
             }
 
-            return AutomationTargetSummary(
-                platform: platform,
-                accountID: selectedAccountID,
-                accountName: account?.displayName
-            )
+            return selectedAccountIDs.map { selectedAccountID in
+                let account = accounts.first { $0.id == selectedAccountID && $0.platform == platform }
+                return AutomationTargetSummary(
+                    platform: platform,
+                    accountID: selectedAccountID,
+                    accountName: account?.displayName
+                )
+            }
         }
     }
 }
@@ -339,7 +348,7 @@ enum AutomationPostPreviewStatus: String, Hashable {
         case .publishing:
             "Publishing"
         case .awaitingUserCompletion:
-            "Awaiting TikTok"
+            "Awaiting completion"
         case .published:
             "Published"
         case .failed:

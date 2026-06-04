@@ -94,6 +94,12 @@ struct AutomationPostProgress: Identifiable, Codable, Hashable {
                     systemImage: "photo.on.rectangle"
                 ),
                 AutomationPostProgressStep(
+                    id: AutomationPostProgressStepID.renderVideo,
+                    title: "Render video",
+                    detail: "Encoding a vertical video for video platforms.",
+                    systemImage: "film"
+                ),
+                AutomationPostProgressStep(
                     id: AutomationPostProgressStepID.uploadMedia,
                     title: "Upload media",
                     detail: "Uploading rendered images for publishing.",
@@ -101,8 +107,8 @@ struct AutomationPostProgress: Identifiable, Codable, Hashable {
                 ),
                 AutomationPostProgressStep(
                     id: AutomationPostProgressStepID.publishTikTok,
-                    title: "Publish to TikTok",
-                    detail: "Sending the prepared image sequence.",
+                    title: "Publish",
+                    detail: "Sending prepared media to the selected platforms.",
                     systemImage: "paperplane"
                 ),
                 AutomationPostProgressStep(
@@ -137,6 +143,7 @@ enum AutomationPostProgressStepID {
     static let planSlideshow = "plan-slideshow"
     static let generateImages = "generate-images"
     static let renderImages = "render-images"
+    static let renderVideo = "render-video"
     static let uploadMedia = "upload-media"
     static let publishTikTok = "publish-tiktok"
     static let recordResult = "record-result"

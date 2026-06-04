@@ -52,6 +52,7 @@ extension SocialPlatform {
     var systemImage: String {
         switch self {
         case .tiktok: "music.note"
+        case .youtubeShorts: "play.rectangle"
         case .instagram: "camera"
         case .threads: "text.bubble"
         case .x: "xmark"

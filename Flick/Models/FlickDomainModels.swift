@@ -9,6 +9,7 @@ import Foundation
 
 enum SocialPlatform: String, CaseIterable, Codable, Identifiable, Hashable {
     case tiktok
+    case youtubeShorts = "youtube_shorts"
     case instagram
     case threads
     case x
@@ -18,6 +19,7 @@ enum SocialPlatform: String, CaseIterable, Codable, Identifiable, Hashable {
     var displayName: String {
         switch self {
         case .tiktok: "TikTok"
+        case .youtubeShorts: "YouTube Shorts"
         case .instagram: "Instagram"
         case .threads: "Threads"
         case .x: "X"
@@ -48,6 +50,7 @@ enum OAuthTokenStatus: String, CaseIterable, Codable, Identifiable {
 
 enum AccountAuthorizationSource: String, CaseIterable, Codable, Identifiable {
     case loginKit
+    case nativeOAuth
     case manualImport
     case unavailable
 
@@ -208,21 +211,49 @@ extension Array where Element == PlatformAccountSelection {
         first { $0.platform == platform }?.accountID
     }
 
-    func normalizedOnePerPlatform() -> [PlatformAccountSelection] {
-        var seenPlatforms = Set<SocialPlatform>()
+    func accountIDs(for platform: SocialPlatform) -> [UUID] {
+        filter { $0.platform == platform }.map(\.accountID)
+    }
+
+    func contains(accountID: UUID, for platform: SocialPlatform) -> Bool {
+        contains { $0.platform == platform && $0.accountID == accountID }
+    }
+
+    func normalizedUniqueSelections() -> [PlatformAccountSelection] {
+        var seen = Set<String>()
         var selections: [PlatformAccountSelection] = []
-        for selection in self where !seenPlatforms.contains(selection.platform) {
+        for selection in self {
+            let key = selection.id
+            guard seen.insert(key).inserted else { continue }
             selections.append(selection)
-            seenPlatforms.insert(selection.platform)
         }
         return selections
+    }
+
+    func normalizedOnePerPlatform() -> [PlatformAccountSelection] {
+        normalizedUniqueSelections()
     }
 
     mutating func setAccountID(_ accountID: UUID?, for platform: SocialPlatform) {
         removeAll { $0.platform == platform }
         guard let accountID else { return }
         append(PlatformAccountSelection(platform: platform, accountID: accountID))
-        self = normalizedOnePerPlatform()
+        self = normalizedUniqueSelections()
+    }
+
+    mutating func setAccountIDs(_ accountIDs: [UUID], for platform: SocialPlatform) {
+        removeAll { $0.platform == platform }
+        append(contentsOf: accountIDs.map { PlatformAccountSelection(platform: platform, accountID: $0) })
+        self = normalizedUniqueSelections()
+    }
+
+    mutating func setAccountID(_ accountID: UUID, isSelected: Bool, for platform: SocialPlatform) {
+        if isSelected {
+            append(PlatformAccountSelection(platform: platform, accountID: accountID))
+        } else {
+            removeAll { $0.platform == platform && $0.accountID == accountID }
+        }
+        self = normalizedUniqueSelections()
     }
 }
 
@@ -230,6 +261,16 @@ extension ConnectedAccount {
     var canPublishToTikTok: Bool {
         platform == .tiktok
             && authorizationSource == .loginKit
+            && status == .connected
+            && isPublishingEnabled
+            && tokenStatus != .refreshFailed
+            && tokenStatus != .expired
+            && tokenStatus != .notStored
+    }
+
+    var canPublishToYouTubeShorts: Bool {
+        platform == .youtubeShorts
+            && authorizationSource == .nativeOAuth
             && status == .connected
             && isPublishingEnabled
             && tokenStatus != .refreshFailed
@@ -510,6 +551,7 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
     var targetPlatforms: [SocialPlatform]
     var accountSelections: [PlatformAccountSelection]
     var tikTokSettings: DraftTikTokSettings?
+    var youtubeSettings: DraftYouTubeSettings?
     var selectedSongs: [SelectedSong]
     var status: SlideshowDraftStatus
     var exportedImageAssetIDs: [UUID]
@@ -535,6 +577,7 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
         targetPlatforms: [SocialPlatform],
         accountSelections: [PlatformAccountSelection] = [],
         tikTokSettings: DraftTikTokSettings? = nil,
+        youtubeSettings: DraftYouTubeSettings? = nil,
         selectedSongs: [SelectedSong] = [],
         status: SlideshowDraftStatus,
         exportedImageAssetIDs: [UUID] = [],
@@ -557,8 +600,9 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
         self.caption = caption
         self.hashtags = hashtags
         self.targetPlatforms = targetPlatforms
-        self.accountSelections = accountSelections.normalizedOnePerPlatform()
+        self.accountSelections = accountSelections.normalizedUniqueSelections()
         self.tikTokSettings = tikTokSettings
+        self.youtubeSettings = youtubeSettings
         self.selectedSongs = selectedSongs
         self.status = status
         self.exportedImageAssetIDs = exportedImageAssetIDs
@@ -585,6 +629,7 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
         case targetPlatforms
         case accountSelections
         case tikTokSettings
+        case youtubeSettings
         case selectedSongs
         case status
         case exportedImageAssetIDs
@@ -611,9 +656,10 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
         hashtags = try container.decode([String].self, forKey: .hashtags)
         targetPlatforms = try container.decode([SocialPlatform].self, forKey: .targetPlatforms)
         accountSelections = try container.decodeIfPresent([PlatformAccountSelection].self, forKey: .accountSelections)?
-            .normalizedOnePerPlatform()
+            .normalizedUniqueSelections()
             ?? []
         tikTokSettings = try container.decodeIfPresent(DraftTikTokSettings.self, forKey: .tikTokSettings)
+        youtubeSettings = try container.decodeIfPresent(DraftYouTubeSettings.self, forKey: .youtubeSettings)
         selectedSongs = try container.decodeIfPresent([SelectedSong].self, forKey: .selectedSongs) ?? []
         status = try container.decode(SlideshowDraftStatus.self, forKey: .status)
         exportedImageAssetIDs = try container.decodeIfPresent([UUID].self, forKey: .exportedImageAssetIDs) ?? []

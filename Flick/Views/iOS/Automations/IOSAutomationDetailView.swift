@@ -234,7 +234,7 @@ struct IOSAutomationDetailView: View {
     private func runsSection(for item: AutomationDashboardItem) -> some View {
         Section("Runs") {
             FlickSettingsValueRow(
-                title: "Awaiting TikTok",
+                title: "Awaiting action",
                 systemImage: "bell.badge",
                 iconColor: .orange,
                 value: item.awaitingDraftUploadCount.formatted()

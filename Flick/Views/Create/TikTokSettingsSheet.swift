@@ -9,7 +9,7 @@ struct TikTokSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var accounts: [ConnectedAccount]
-    @Binding var selectedAccountID: UUID?
+    @Binding var selectedAccountIDs: [UUID]
     @Binding var postTitle: String
     @Binding var postAsDraft: Bool
     @Binding var selectedVisibility: TikTokAudience?
@@ -25,24 +25,27 @@ struct TikTokSettingsSheet: View {
         accounts.sortedForAccountsView
     }
 
-    private var selectedAccount: ConnectedAccount? {
-        selectedAccountID.flatMap { accountID in
+    private var selectedAccounts: [ConnectedAccount] {
+        selectedAccountIDs.compactMap { accountID in
             accounts.first { $0.id == accountID }
         }
     }
 
     private var accountSummary: String {
-        if let selectedAccount {
-            return selectedAccount.displayName
+        if selectedAccounts.count == 1, let account = selectedAccounts.first {
+            return account.displayName
         }
-        if selectedAccountID != nil {
+        if selectedAccounts.count > 1 {
+            return "\(selectedAccounts.count) accounts"
+        }
+        if !selectedAccountIDs.isEmpty {
             return "Unavailable account"
         }
-        return "Select account"
+        return "Select accounts"
     }
 
     private var isSelectedAccountReady: Bool {
-        selectedAccount?.canPublishToTikTok == true
+        !selectedAccounts.isEmpty && selectedAccounts.allSatisfy(\.canPublishToTikTok)
     }
 
     var body: some View {
@@ -98,52 +101,47 @@ struct TikTokSettingsSheet: View {
         Section("Account") {
             if sortedAccounts.isEmpty {
                 FlickSettingsValueRow(
-                    title: "Posting account",
+                    title: "Posting accounts",
                     systemImage: "person.crop.circle.badge.xmark",
                     iconColor: .orange,
                     value: "No TikTok accounts"
                 )
             } else {
-                Menu {
-                    ForEach(sortedAccounts) { account in
-                        Button {
-                            selectedAccountID = account.id
-                        } label: {
-                            AccountPickerOptionLabel(
-                                account: account,
-                                isSelected: selectedAccountID == account.id
-                            )
-                        }
-                        .disabled(!account.canPublishToTikTok)
-                    }
-
-                    if selectedAccountID != nil {
-                        Divider()
-                        Button("Clear Selection", systemImage: "xmark.circle") {
-                            selectedAccountID = nil
-                        }
-                    }
-                } label: {
-                    FlickSettingsRow(
-                        title: "Posting account",
-                        systemImage: "person.crop.circle",
-                        iconColor: isSelectedAccountReady ? .blue : .orange
-                    ) {
-                        Text(accountSummary)
-                            .foregroundStyle(isSelectedAccountReady ? Color.secondary : Color.orange)
-                            .multilineTextAlignment(.trailing)
-                            .lineLimit(1)
-
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                    }
+                FlickSettingsRow(
+                    title: "Posting accounts",
+                    systemImage: "person.crop.circle",
+                    iconColor: isSelectedAccountReady ? .blue : .orange
+                ) {
+                    Text(accountSummary)
+                        .foregroundStyle(isSelectedAccountReady ? Color.secondary : Color.orange)
+                        .multilineTextAlignment(.trailing)
+                        .lineLimit(1)
                 }
 
-                if selectedAccountID == nil {
+                ForEach(sortedAccounts) { account in
+                    Button {
+                        toggleAccount(account)
+                    } label: {
+                        HStack(spacing: 12) {
+                            AccountPickerOptionLabel(
+                                account: account,
+                                isSelected: selectedAccountIDs.contains(account.id)
+                            )
+                            Spacer(minLength: 12)
+                            if selectedAccountIDs.contains(account.id) {
+                                Image(systemName: "checkmark")
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(.blue)
+                            }
+                        }
+                    }
+                    .disabled(!account.canPublishToTikTok)
+                }
+
+                if selectedAccountIDs.isEmpty {
                     CreateMessageRow(
-                        title: "Select a TikTok account",
-                        message: "Choose the account Flick should use for this post."
+                        title: "Select TikTok accounts",
+                        message: "Choose every TikTok account Flick should post to."
                     )
                 } else if !isSelectedAccountReady {
                     CreateMessageRow(
@@ -156,7 +154,7 @@ struct TikTokSettingsSheet: View {
     }
 
     private var selectedAccountUnavailableMessage: String {
-        guard let selectedAccount else {
+        guard let selectedAccount = selectedAccounts.first(where: { !$0.canPublishToTikTok }) else {
             return "This synced account no longer exists on this device. Reconnect it or choose another account."
         }
         if selectedAccount.tokenStatus == .notStored {
@@ -175,6 +173,14 @@ struct TikTokSettingsSheet: View {
             return "This account is not publishing enabled. Reconnect TikTok with the required publishing scope."
         }
         return "Choose another TikTok account or reconnect this one from Accounts."
+    }
+
+    private func toggleAccount(_ account: ConnectedAccount) {
+        if selectedAccountIDs.contains(account.id) {
+            selectedAccountIDs.removeAll { $0 == account.id }
+        } else {
+            selectedAccountIDs.append(account.id)
+        }
     }
 
     private var titleSection: some View {
@@ -291,7 +297,7 @@ struct TikTokSettingsSheet: View {
     }
 }
 
-private struct AccountPickerOptionLabel: View {
+struct AccountPickerOptionLabel: View {
     var account: ConnectedAccount
     var isSelected: Bool
 

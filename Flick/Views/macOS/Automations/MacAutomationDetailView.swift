@@ -333,7 +333,7 @@ private struct MacAutomationDetailRuns: View {
                 spacing: 12
             ) {
                 MacAutomationDetailValue(
-                    title: "Awaiting TikTok",
+                    title: "Awaiting action",
                     value: item.awaitingDraftUploadCount.formatted(),
                     systemImage: "bell.badge",
                     tint: .orange

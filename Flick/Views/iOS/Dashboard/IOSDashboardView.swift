@@ -9,7 +9,7 @@ import SwiftUI
 struct IOSDashboardView: View {
     @Environment(FlickAppModel.self) private var appModel
     @State private var exampleTemplates: [ExampleSlideshowTemplate] = []
-    @State private var isTikTokPublishingActivityPresented = false
+    @State private var isPublishingActivityPresented = false
 
     private var automationSnapshot: AutomationDashboardSnapshot {
         AutomationDashboardSnapshot.make(
@@ -18,24 +18,23 @@ struct IOSDashboardView: View {
         )
     }
 
-    private var awaitingTikTokJobs: [PublishingJob] {
+    private var awaitingPublishingJobs: [PublishingJob] {
         appModel.overview.publishingJobs
-            .filter { $0.platform == .tiktok && $0.status == .awaitingUserCompletion }
+            .filter { $0.status == .awaitingUserCompletion }
             .sorted { $0.updatedAt > $1.updatedAt }
     }
 
-    private var publishedTikTokPosts: [PublishedPost] {
+    private var publishedPosts: [PublishedPost] {
         appModel.overview.publishedPosts
-            .filter { $0.platform == .tiktok }
             .sorted { $0.publishedAt > $1.publishedAt }
     }
 
-    private var publishedTikTokPostCount: Int {
-        publishedTikTokPosts.count
+    private var publishedPostCount: Int {
+        publishedPosts.count
     }
 
-    private var latestTikTokActivityDate: Date? {
-        (awaitingTikTokJobs.map(\.updatedAt) + publishedTikTokPosts.map(\.publishedAt)).max()
+    private var latestPublishingActivityDate: Date? {
+        (awaitingPublishingJobs.map(\.updatedAt) + publishedPosts.map(\.publishedAt)).max()
     }
 
     var body: some View {
@@ -45,7 +44,7 @@ struct IOSDashboardView: View {
                 inProgressSection
             }
             automationsSection
-            tiktokPublishingSection
+            publishingSection
             syncStatusSection
             apiHealthSection
             accountHealthSection
@@ -57,10 +56,10 @@ struct IOSDashboardView: View {
         .task {
             await loadExampleTemplates()
         }
-        .sheet(isPresented: $isTikTokPublishingActivityPresented) {
-            TikTokPublishingActivitySheet(
-                awaitingJobs: awaitingTikTokJobs,
-                publishedPosts: publishedTikTokPosts
+        .sheet(isPresented: $isPublishingActivityPresented) {
+            PublishingActivitySheet(
+                awaitingJobs: awaitingPublishingJobs,
+                publishedPosts: publishedPosts
             )
         }
         .flickToolbarTitle("Dashboard")
@@ -72,13 +71,13 @@ struct IOSDashboardView: View {
                 title: "Draft uploads",
                 systemImage: "bell.badge",
                 iconColor: .orange,
-                value: awaitingTikTokJobs.count.formatted()
+                value: awaitingPublishingJobs.count.formatted()
             )
             FlickSettingsValueRow(
                 title: "Published posts",
                 systemImage: "checkmark.seal",
                 iconColor: .green,
-                value: publishedTikTokPostCount.formatted()
+                value: publishedPostCount.formatted()
             )
             FlickSettingsValueRow(
                 title: "Active automations",
@@ -141,27 +140,27 @@ struct IOSDashboardView: View {
         }
     }
 
-    private var tiktokPublishingSection: some View {
-        Section("TikTok publishing") {
-            if awaitingTikTokJobs.isEmpty && publishedTikTokPosts.isEmpty {
+    private var publishingSection: some View {
+        Section("Publishing") {
+            if awaitingPublishingJobs.isEmpty && publishedPosts.isEmpty {
                 DashboardMessageRow(
-                    title: "No TikTok publish activity yet",
+                    title: "No publish activity yet",
                     message: "Draft uploads and direct posts will appear here after publishing from Create.",
                     systemImage: "paperplane",
                     iconColor: .secondary
                 )
             } else {
                 Button {
-                    isTikTokPublishingActivityPresented = true
+                    isPublishingActivityPresented = true
                 } label: {
-                    TikTokPublishingActivitySummaryRow(
-                        awaitingJobCount: awaitingTikTokJobs.count,
-                        publishedPostCount: publishedTikTokPosts.count,
-                        latestActivityDate: latestTikTokActivityDate
+                    PublishingActivitySummaryRow(
+                        awaitingJobCount: awaitingPublishingJobs.count,
+                        publishedPostCount: publishedPosts.count,
+                        latestActivityDate: latestPublishingActivityDate
                     )
                 }
                 .buttonStyle(.plain)
-                .accessibilityHint("Shows all TikTok publishing activity.")
+                .accessibilityHint("Shows all publishing activity.")
             }
         }
     }
@@ -202,7 +201,7 @@ struct IOSDashboardView: View {
                 Button(action: openAccounts) {
                     DashboardStatusRow(
                         title: "No authorized accounts",
-                        message: "Connect a platform account with Login Kit before scheduling posts.",
+                        message: "Connect a platform account before scheduling posts.",
                         systemImage: "person.crop.circle.badge.plus",
                         iconColor: .secondary,
                         badgeTitle: "Open Settings",

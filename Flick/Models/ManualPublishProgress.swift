@@ -31,7 +31,7 @@ struct ManualPublishProgress: Identifiable, Hashable {
             ManualPublishProgressStep(
                 id: ManualPublishProgressStepID.validate,
                 title: "Validate settings",
-                detail: "Checking account, media, and TikTok options.",
+                detail: "Checking account, media, and platform options.",
                 systemImage: "checklist"
             ),
             ManualPublishProgressStep(
@@ -51,6 +51,15 @@ struct ManualPublishProgress: Identifiable, Hashable {
             )
         )
 
+        steps.append(
+            ManualPublishProgressStep(
+                id: ManualPublishProgressStepID.renderVideo,
+                title: "Render video",
+                detail: "Preparing a vertical MP4 for video platforms.",
+                systemImage: "film"
+            )
+        )
+
         steps.append(contentsOf: sortedSlides.map { slide in
             ManualPublishProgressStep(
                 id: ManualPublishProgressStepID.uploadSlide(slide.id),
@@ -63,8 +72,8 @@ struct ManualPublishProgress: Identifiable, Hashable {
         steps.append(contentsOf: [
             ManualPublishProgressStep(
                 id: ManualPublishProgressStepID.publishTikTok,
-                title: "Publish to TikTok",
-                detail: "Sending the prepared image sequence.",
+                title: "Publish",
+                detail: "Sending prepared media to the selected platforms.",
                 systemImage: "paperplane"
             ),
             ManualPublishProgressStep(
@@ -105,6 +114,7 @@ enum ManualPublishProgressStepID {
     static let validate = "validate"
     static let createJob = "create-job"
     static let renderImages = "render-images"
+    static let renderVideo = "render-video"
     static let publishTikTok = "publish-tiktok"
     static let recordResult = "record-result"
 

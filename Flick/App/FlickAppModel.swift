@@ -80,6 +80,7 @@ final class FlickAppModel {
     @ObservationIgnored private let credentialVault = CredentialVault()
     @ObservationIgnored private let loginKitAccountStore = LoginKitAccountStore()
     @ObservationIgnored private let tiktokLoginKitClient: TikTokLoginKitClient
+    @ObservationIgnored private let youtubeOAuthClient: YouTubeOAuthClient
     @ObservationIgnored private let localMediaLibrary = LocalMediaLibrary(directoryName: "ProductMedia")
     @ObservationIgnored private let generatedImageLibrary = LocalMediaLibrary(directoryName: "GeneratedImages")
     @ObservationIgnored private let publishedPostNotificationPublisher: any PublishedPostNotificationPublishing
@@ -101,6 +102,7 @@ final class FlickAppModel {
         configuration: AppConfiguration,
         publishedPostNotificationPublisher: (any PublishedPostNotificationPublishing)? = nil,
         tiktokLoginKitClient: TikTokLoginKitClient? = nil,
+        youtubeOAuthClient: YouTubeOAuthClient? = nil,
         openAIClientFactory: @escaping @MainActor ([String: String]) -> OpenAIClient = { OpenAIClient(credentials: $0) },
         mediaStorageFactory: @escaping @MainActor ([String: String]) -> any MediaStorageProviding = { R2StorageService(credentials: $0) },
         templateAnalysisStorageFactory: @escaping @MainActor ([String: String]) -> any TemplateAnalysisStorageProviding = { R2StorageService(credentials: $0) }
@@ -109,6 +111,7 @@ final class FlickAppModel {
         self.configuration = configuration
         self.publishedPostNotificationPublisher = publishedPostNotificationPublisher ?? CloudKitPublishedPostNotificationPublisher.live
         self.tiktokLoginKitClient = tiktokLoginKitClient ?? TikTokLoginKitClient()
+        self.youtubeOAuthClient = youtubeOAuthClient ?? YouTubeOAuthClient()
         self.openAIClientFactory = openAIClientFactory
         self.mediaStorageFactory = mediaStorageFactory
         self.templateAnalysisStorageFactory = templateAnalysisStorageFactory
@@ -130,6 +133,10 @@ final class FlickAppModel {
 
     var canManageAccounts: Bool {
         AccountManagementPolicy.canAuthorizeAccountsOnThisDevice
+    }
+
+    func canConnectAccount(platform: SocialPlatform) -> Bool {
+        AccountManagementPolicy.canAuthorize(platform)
     }
 
     var accountManagementUnavailableTitle: String {
@@ -305,6 +312,10 @@ final class FlickAppModel {
                 let account = try await tiktokLoginKitClient.authorize(configuration: configuration.tiktok)
                 try await upsertConnectedAccount(account)
                 accountConnectionMessage = "Connected \(account.displayName)."
+            case .youtubeShorts:
+                let account = try await youtubeOAuthClient.authorize(configuration: configuration.youtube)
+                try await upsertConnectedAccount(account)
+                accountConnectionMessage = "Connected \(account.displayName)."
             case .instagram, .threads, .x:
                 throw PlatformAdapterError.futurePlatform(platform)
             }
@@ -347,6 +358,9 @@ final class FlickAppModel {
             if removedAccount.authorizationSource == .loginKit {
                 try? loginKitAccountStore.deleteAccount(id: accountID)
                 try? tiktokLoginKitClient.tokenStore.deleteTokenBundle(for: removedAccount)
+            }
+            if removedAccount.authorizationSource == .nativeOAuth {
+                try? youtubeOAuthClient.tokenStore.deleteTokenBundle(for: removedAccount)
             }
             lastErrorMessage = nil
         } catch {
@@ -444,7 +458,8 @@ final class FlickAppModel {
             slides: slides,
             caption: "Draft based on @\(template.profile)'s \(template.niche.lowercased()) slideshow format.",
             hashtags: templateHashtags(for: template),
-            targetPlatforms: [.tiktok],
+            targetPlatforms: [.tiktok, .youtubeShorts],
+            youtubeSettings: DraftYouTubeSettings(),
             status: .draft,
             createdAt: now,
             updatedAt: now
@@ -1295,6 +1310,243 @@ final class FlickAppModel {
         }
     }
 
+    @discardableResult
+    func publishManualSlideshow(
+        draftID: UUID,
+        tikTokSettings: TikTokManualPublishSettings?,
+        youtubeSettings: YouTubeManualPublishSettings?,
+        automationID: UUID? = nil,
+        automationProgressID: UUID? = nil
+    ) async -> Bool {
+        guard !isPublishingSlideshow else { return false }
+        isPublishingSlideshow = true
+        createWorkflowMessage = "Preparing publish media..."
+        lastErrorMessage = nil
+        var activeJobIDs: [UUID] = []
+
+        defer {
+            isPublishingSlideshow = false
+        }
+
+        do {
+            let now = Date()
+            guard let draft = overview.drafts.first(where: { $0.id == draftID }) else {
+                throw SlideshowCreationError.missingDraft
+            }
+            if manualPublishProgress == nil || manualPublishProgress?.isFinished == true {
+                beginManualPublishProgress(for: draft)
+            }
+
+            startPublishStep(ManualPublishProgressStepID.validate, detail: "Checking selected accounts and platform settings.")
+            let tikTokAccountIDs = tikTokSettings == nil ? [] : draft.accountSelections.accountIDs(for: .tiktok)
+            let youtubeAccountIDs = youtubeSettings == nil ? [] : draft.accountSelections.accountIDs(for: .youtubeShorts)
+            guard !tikTokAccountIDs.isEmpty || !youtubeAccountIDs.isEmpty else {
+                throw ManualPublishError.missingPlatformAccounts
+            }
+            completePublishStep(ManualPublishProgressStepID.validate, detail: "Ready for \(tikTokAccountIDs.count + youtubeAccountIDs.count) selected account(s).")
+
+            startPublishStep(ManualPublishProgressStepID.createJob, detail: "Recording publish attempts for selected accounts.")
+            var jobs: [PublishingJob] = []
+            if let tikTokSettings {
+                jobs.append(contentsOf: tikTokAccountIDs.map { accountID in
+                    PublishingJob(
+                        id: UUID(),
+                        platform: .tiktok,
+                        accountID: accountID,
+                        automationID: automationID,
+                        draftID: draftID,
+                        status: .rendering,
+                        publishMode: tikTokSettings.publishMode,
+                        attemptCount: 1,
+                        lastAttemptAt: now,
+                        lastError: nil,
+                        platformPublishID: nil,
+                        createdAt: now,
+                        updatedAt: now
+                    )
+                })
+            }
+            if let youtubeSettings {
+                jobs.append(contentsOf: youtubeAccountIDs.map { accountID in
+                    PublishingJob(
+                        id: UUID(),
+                        platform: .youtubeShorts,
+                        accountID: accountID,
+                        automationID: automationID,
+                        draftID: draftID,
+                        status: .rendering,
+                        publishMode: youtubeSettings.publishMode,
+                        attemptCount: 1,
+                        lastAttemptAt: now,
+                        lastError: nil,
+                        platformPublishID: nil,
+                        createdAt: now,
+                        updatedAt: now
+                    )
+                })
+            }
+            activeJobIDs = jobs.map(\.id)
+            overview.publishingJobs.insert(contentsOf: jobs, at: 0)
+            try await repository.saveOverview(overview)
+            completePublishStep(ManualPublishProgressStepID.createJob, detail: "Created \(jobs.count) publish job(s).")
+
+            var tikTokMedia: PreparedPlatformMedia?
+            if tikTokSettings != nil, !tikTokAccountIDs.isEmpty {
+                let renderedAssetIDs = try await renderImageSequenceForPublish(
+                    for: draftID,
+                    automationProgressID: automationProgressID
+                )
+                reconcileStoredMediaPublicURLs()
+                let renderedAssetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
+                let imageURLs = renderedAssetIDs.compactMap { renderedAssetsByID[$0]?.publicURL }
+                guard imageURLs.count == renderedAssetIDs.count, !imageURLs.isEmpty else {
+                    throw ManualPublishError.missingPublishableImageURLs
+                }
+                tikTokMedia = PreparedPlatformMedia(
+                    mode: tikTokSettings?.publishMode ?? .photoDirectPost,
+                    imageURLs: imageURLs,
+                    videoURL: nil,
+                    warnings: []
+                )
+            }
+
+            var youtubeMedia: PreparedPlatformMedia?
+            if youtubeSettings != nil, !youtubeAccountIDs.isEmpty {
+                let renderedVideo = try await renderYouTubeShortsVideoForPublish(
+                    for: draftID,
+                    automationProgressID: automationProgressID
+                )
+                youtubeMedia = PreparedPlatformMedia(
+                    mode: .videoDirectPost,
+                    imageURLs: [],
+                    videoURL: renderedVideo.fileURL,
+                    warnings: []
+                )
+            }
+
+            guard let refreshedDraft = overview.drafts.first(where: { $0.id == draftID }) else {
+                throw SlideshowCreationError.missingDraft
+            }
+
+            let publishedPostIDsBeforeRecording = currentPublishedPostIDs()
+            startPublishStep(ManualPublishProgressStepID.publishTikTok, detail: "Posting to selected platforms.")
+            await startAutomationPostProgressStep(
+                automationProgressID,
+                AutomationPostProgressStepID.publishTikTok,
+                detail: "Posting to \(jobs.count) selected account(s)."
+            )
+
+            var successfulJobCount = 0
+            var lastFailure: Error?
+            let accountsByID = Dictionary(uniqueKeysWithValues: overview.accounts.map { ($0.id, $0) })
+            let tikTokAdapter = TikTokAdapter(configuration: configuration.tiktok)
+            let youtubeAdapter = YouTubeShortsAdapter(configuration: configuration.youtube)
+
+            for job in jobs {
+                updatePublishingJob(job.id, status: .publishing)
+                do {
+                    guard let account = accountsByID[job.accountID] else {
+                        throw ManualPublishError.missingPlatformAccounts
+                    }
+                    guard canPublish(account, on: job.platform) else {
+                        switch job.platform {
+                        case .tiktok:
+                            throw ManualPublishError.missingTikTokAccount
+                        case .youtubeShorts:
+                            throw YouTubeOAuthError.missingStoredToken(accountID: account.id, platformUserID: account.platformUserID)
+                        case .instagram, .threads, .x:
+                            throw PlatformAdapterError.futurePlatform(job.platform)
+                        }
+                    }
+
+                    switch job.platform {
+                    case .tiktok:
+                        guard let tikTokSettings, let tikTokMedia else {
+                            throw ManualPublishError.missingTikTokAccount
+                        }
+                        try await waitForTikTokPublishRequestWindow(accountID: account.id)
+                        reserveTikTokPublishRequestWindow(accountID: account.id)
+                        let result = try await tikTokAdapter.publish(job, account: account, media: tikTokMedia, settings: tikTokSettings)
+                        if tikTokSettings.postAsDraft {
+                            completeDraftUploadJob(job.id, result: result)
+                            await publishDraftUploadNotificationIfNeeded(jobID: job.id, result: result)
+                        } else {
+                            completePublishingJob(job.id, result: result, draft: refreshedDraft)
+                        }
+                    case .youtubeShorts:
+                        guard let youtubeSettings, let youtubeMedia else {
+                            throw ManualPublishError.missingYouTubeAccount
+                        }
+                        let result = try await youtubeAdapter.publish(job, account: account, media: youtubeMedia, settings: youtubeSettings)
+                        completePublishingJob(job.id, result: result, draft: refreshedDraft)
+                    case .instagram, .threads, .x:
+                        throw PlatformAdapterError.futurePlatform(job.platform)
+                    }
+                    successfulJobCount += 1
+                    try await repository.saveOverview(overview)
+                } catch {
+                    lastFailure = error
+                    if job.platform == .tiktok {
+                        if isTikTokRateLimit(error) {
+                            deferTikTokPublishRequests(
+                                forAccountID: job.accountID,
+                                until: Date().addingTimeInterval(tikTokStatusRateLimitCooldown)
+                            )
+                        }
+                        markTikTokAccountTokenUnavailableIfNeeded(error, accountID: job.accountID)
+                    }
+                    failPublishingJob(job.id, error: error)
+                    try? await repository.saveOverview(overview)
+                }
+            }
+
+            guard successfulJobCount > 0 else {
+                throw lastFailure ?? ManualPublishError.missingPlatformAccounts
+            }
+
+            completePublishStep(ManualPublishProgressStepID.publishTikTok, detail: "Published \(successfulJobCount) of \(jobs.count) account job(s).")
+            await completeAutomationPostProgressStep(
+                automationProgressID,
+                AutomationPostProgressStepID.publishTikTok,
+                detail: "Published \(successfulJobCount) of \(jobs.count) selected account job(s)."
+            )
+
+            startPublishStep(ManualPublishProgressStepID.recordResult, detail: "Saving publish results.")
+            await startAutomationPostProgressStep(
+                automationProgressID,
+                AutomationPostProgressStepID.recordResult,
+                detail: "Saving publish results for every device."
+            )
+            overview.refreshDerivedState()
+            try await repository.saveOverview(overview)
+            await publishNotificationsForNewPosts(since: publishedPostIDsBeforeRecording)
+            completePublishStep(ManualPublishProgressStepID.recordResult, detail: "Publish results saved.")
+            await completeAutomationPostProgressStep(
+                automationProgressID,
+                AutomationPostProgressStepID.recordResult,
+                detail: "Publish results saved."
+            )
+            finishManualPublishProgress()
+            createWorkflowMessage = successfulJobCount == jobs.count
+                ? "Published to selected platforms."
+                : "Published to \(successfulJobCount) of \(jobs.count) selected account(s)."
+            lastErrorMessage = successfulJobCount == jobs.count ? nil : lastFailure?.localizedDescription
+            return true
+        } catch {
+            for jobID in activeJobIDs {
+                if overview.publishingJobs.first(where: { $0.id == jobID })?.status.isTerminal == false {
+                    failPublishingJob(jobID, error: error)
+                }
+            }
+            try? await repository.saveOverview(overview)
+            createWorkflowMessage = nil
+            lastErrorMessage = error.localizedDescription
+            failCurrentPublishStep(error)
+            finishManualPublishProgress(errorMessage: error.localizedDescription)
+            return false
+        }
+    }
+
     func duplicateSlide(_ slideID: UUID, in draftID: UUID) {
         guard
             let draftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }),
@@ -1578,18 +1830,51 @@ final class FlickAppModel {
         return overview.accounts.first { $0.id == accountID && $0.platform == platform }
     }
 
+    func selectedAccounts(for platform: SocialPlatform, in selections: [PlatformAccountSelection]) -> [ConnectedAccount] {
+        let accountIDs = selections.accountIDs(for: platform)
+        guard !accountIDs.isEmpty else { return [] }
+        return accountIDs.compactMap { accountID in
+            overview.accounts.first { $0.id == accountID && $0.platform == platform }
+        }
+    }
+
+    func selectedAccountCount(for platform: SocialPlatform, in selections: [PlatformAccountSelection]) -> Int {
+        selections.accountIDs(for: platform).count
+    }
+
     func canPublish(_ account: ConnectedAccount, on platform: SocialPlatform) -> Bool {
         switch platform {
         case .tiktok:
-            account.canPublishToTikTok
+            return account.canPublishToTikTok
+        case .youtubeShorts:
+            guard
+                account.platform == .youtubeShorts,
+                account.authorizationSource == .nativeOAuth,
+                account.status == .connected,
+                account.isPublishingEnabled
+            else {
+                return false
+            }
+            guard let bundle = try? youtubeOAuthClient.tokenStore.tokenBundle(for: account) else {
+                return false
+            }
+            let now = Date()
+            return bundle.refreshTokenExpiresAt > now
+                && bundle.scopes.contains(YouTubeConfiguration.uploadScope)
         case .instagram, .threads, .x:
-            account.platform == platform && account.isPublishingEnabled
+            return account.platform == platform && account.isPublishingEnabled
         }
     }
 
     func publishingAccount(for platform: SocialPlatform, in selections: [PlatformAccountSelection]) -> ConnectedAccount? {
         guard let account = selectedAccount(for: platform, in: selections) else { return nil }
         return canPublish(account, on: platform) ? account : nil
+    }
+
+    func publishingAccounts(for platform: SocialPlatform, in selections: [PlatformAccountSelection]) -> [ConnectedAccount] {
+        selectedAccounts(for: platform, in: selections)
+            .filter { canPublish($0, on: platform) }
+            .sortedForAccountsView
     }
 
     func publishingTikTokAccount(for draft: SlideshowDraft) -> ConnectedAccount? {
@@ -1607,6 +1892,14 @@ final class FlickAppModel {
                 serviceName: "TikTok Content Posting",
                 isConfigured: statuses.containsPresent("TikTok client ID") && statuses.containsPresent("TikTok redirect URI"),
                 statusText: statuses.containsPresent("TikTok client secret") ? "OAuth credentials found locally" : "Client secret not present locally",
+                lastCheckedAt: Date()
+            ),
+            APIHealthStatus(
+                serviceName: "YouTube Data API",
+                isConfigured: configuration.youtube.clientIDPresent && configuration.youtube.reversedClientIDPresent,
+                statusText: configuration.youtube.clientIDPresent && configuration.youtube.reversedClientIDPresent
+                    ? "OAuth client configured locally"
+                    : "Google OAuth client ID or reversed client ID missing",
                 lastCheckedAt: Date()
             ),
             APIHealthStatus(
@@ -1677,12 +1970,18 @@ enum SlideshowCreationError: LocalizedError {
 
 enum ManualPublishError: LocalizedError {
     case missingTikTokAccount
+    case missingYouTubeAccount
+    case missingPlatformAccounts
     case missingPublishableImageURLs
 
     var errorDescription: String? {
         switch self {
         case .missingTikTokAccount:
             "Connect a TikTok account with publishing access before publishing."
+        case .missingYouTubeAccount:
+            "Authorize a YouTube channel on this device before publishing Shorts."
+        case .missingPlatformAccounts:
+            "Select at least one publishable account before publishing."
         case .missingPublishableImageURLs:
             "Rendered slide images need public URLs before TikTok can publish them."
         }
@@ -1699,7 +1998,7 @@ enum AutomationRunError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notReady:
-            return "Complete the automation templates, product images, cadence, and TikTok settings before it can publish."
+            return "Complete the automation templates, product images, cadence, platform settings, and selected accounts before it can publish."
         case .missingTemplate:
             return "One of the automation templates is no longer available."
         case let .missingProductImage(message):
@@ -1980,9 +2279,6 @@ private extension FlickAppModel {
             }
 
             reconcileLoginKitAccountTokenStatus()
-            guard publishingTikTokAccount(for: automation) != nil else {
-                throw ManualPublishError.missingTikTokAccount
-            }
 
             reloadCredentialConfiguration()
             await startAutomationPostProgressStep(
@@ -2043,7 +2339,10 @@ private extension FlickAppModel {
                 overview.templates.insert(result.creativeTemplate, at: 0)
             }
             var generatedDraft = result.draft
-            generatedDraft.accountSelections = automation.accountSelections.normalizedOnePerPlatform()
+            generatedDraft.targetPlatforms = automation.targetPlatforms
+            generatedDraft.accountSelections = automation.accountSelections.normalizedUniqueSelections()
+            generatedDraft.tikTokSettings = automation.tikTokSettings
+            generatedDraft.youtubeSettings = automation.youtubeSettings
             generatedDraft.updatedAt = Date()
             let generatedDraftID = generatedDraft.id
             overview.drafts.insert(generatedDraft, at: 0)
@@ -2074,14 +2373,27 @@ private extension FlickAppModel {
                 detail: "Generated \(generatedDraft.createReadyImageCount(assetsByID: assetsByID)) slide visuals."
             )
 
-            let tikTokSettings = automation.tikTokSettings.fillingTitle(from: generatedDraft.tikTokSettings)
-            guard let settings = tikTokSettings.automatedPublishSettings(description: generatedDraft.publishDescription) else {
+            let targets = automation.targetPlatforms.isEmpty ? [SocialPlatform.tiktok] : automation.targetPlatforms
+            let tikTokPublishSettings = targets.contains(.tiktok)
+                ? automation.tikTokSettings
+                    .fillingTitle(from: generatedDraft.tikTokSettings)
+                    .automatedPublishSettings(description: generatedDraft.publishDescription)
+                : nil
+            let youtubePublishSettings = targets.contains(.youtubeShorts)
+                ? automation.youtubeSettings.automatedPublishSettings(
+                    fallbackTitle: generatedDraft.title,
+                    fallbackDescription: generatedDraft.publishDescription,
+                    fallbackHashtags: generatedDraft.hashtags
+                )
+                : nil
+            guard tikTokPublishSettings != nil || youtubePublishSettings != nil else {
                 throw AutomationRunError.notReady
             }
 
             let didPublish = await publishManualSlideshow(
                 draftID: generatedDraft.id,
-                settings: settings,
+                tikTokSettings: tikTokPublishSettings,
+                youtubeSettings: youtubePublishSettings,
                 automationID: automation.id,
                 automationProgressID: progressID
             )
@@ -2276,8 +2588,15 @@ private extension FlickAppModel {
             slides: slides,
             caption: plan.caption,
             hashtags: plan.hashtags.map { sanitizedHashtag($0) }.filter { !$0.isEmpty },
-            targetPlatforms: [.tiktok, .instagram],
+            targetPlatforms: [.tiktok, .youtubeShorts],
             tikTokSettings: defaultTikTokSettings(from: plan),
+            youtubeSettings: DraftYouTubeSettings(
+                title: plan.title,
+                description: "",
+                tags: plan.hashtags.map { sanitizedHashtag($0) }.filter { !$0.isEmpty },
+                privacyStatus: .private,
+                containsSyntheticMedia: true
+            ),
             status: .draft,
             exportedImageAssetIDs: [],
             createdAt: now,
@@ -2579,6 +2898,71 @@ private extension FlickAppModel {
         try await repository.saveOverview(overview)
         logPublish("Rendered publish image sequence draftID=\(draftID.uuidString) renderedCount=\(renderedAssetIDs.count)")
         return renderedAssetIDs
+    }
+
+    func renderYouTubeShortsVideoForPublish(
+        for draftID: UUID,
+        automationProgressID: UUID? = nil
+    ) async throws -> RenderedVideo {
+        guard let draftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) else {
+            throw SlideshowCreationError.missingDraft
+        }
+
+        await startAutomationPostProgressStep(
+            automationProgressID,
+            AutomationPostProgressStepID.renderVideo,
+            detail: "Rendering a vertical MP4 for YouTube Shorts."
+        )
+        startPublishStep(ManualPublishProgressStepID.renderVideo, detail: "Rendering a vertical MP4 for YouTube Shorts.")
+        createWorkflowMessage = "Rendering YouTube Shorts video..."
+
+        let draft = overview.drafts[draftIndex]
+        let renderedFrames = try await TextOverlayRenderService(renderDirectory: configuration.renderDirectory)
+            .renderImages(
+                from: draft,
+                assets: overview.assets,
+                options: .youtubeShortsFrame
+            )
+        let renderedVideo = try await AVFoundationSlideshowRenderer(renderDirectory: configuration.renderDirectory)
+            .renderVideo(
+                from: renderedFrames,
+                options: .youtubeShorts,
+                outputFileName: "youtube-shorts-\(draftID.uuidString)-\(UUID().uuidString).mp4"
+            )
+
+        let assetID = UUID()
+        let asset = MediaAsset(
+            id: assetID,
+            mediaType: .video,
+            source: .rendered,
+            localFilePath: renderedVideo.fileURL.path,
+            storageBucket: nil,
+            storagePath: nil,
+            publicURL: nil,
+            signedURLExpiration: nil,
+            width: renderedVideo.width,
+            height: renderedVideo.height,
+            duration: renderedVideo.duration,
+            fileSize: fileSize(at: renderedVideo.fileURL),
+            checksum: nil,
+            trendTags: [],
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+        overview.assets.insert(asset, at: 0)
+        if let refreshedDraftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) {
+            overview.drafts[refreshedDraftIndex].updatedAt = Date()
+        }
+        try await repository.saveOverview(overview)
+
+        completePublishStep(ManualPublishProgressStepID.renderVideo, detail: "Rendered a \(Int(renderedVideo.duration.rounded())) second Shorts video.")
+        await completeAutomationPostProgressStep(
+            automationProgressID,
+            AutomationPostProgressStepID.renderVideo,
+            detail: "Rendered a \(Int(renderedVideo.duration.rounded())) second Shorts video."
+        )
+        logPublish("Rendered YouTube Shorts video draftID=\(draftID.uuidString) assetID=\(assetID.uuidString) duration=\(renderedVideo.duration)")
+        return renderedVideo
     }
 
     private func currentPublishedPostIDs() -> Set<UUID> {
@@ -2942,8 +3326,12 @@ private extension FlickAppModel {
     }
 
     func publishedPostExists(platformPostID: String, accountID: UUID) -> Bool {
+        publishedPostExists(platform: .tiktok, platformPostID: platformPostID, accountID: accountID)
+    }
+
+    func publishedPostExists(platform: SocialPlatform, platformPostID: String, accountID: UUID) -> Bool {
         overview.publishedPosts.contains { post in
-            post.platform == .tiktok
+            post.platform == platform
                 && post.accountID == accountID
                 && post.platformPostID == platformPostID
         }
@@ -3011,6 +3399,25 @@ private extension FlickAppModel {
             )
         }
 
+        if let error = error as? YouTubeOAuthError {
+            return PlatformFailure(
+                kind: .authExpired,
+                message: error.localizedDescription,
+                suggestedFix: suggestedFix(for: .authExpired, platform: .youtubeShorts),
+                rawResponse: error.diagnosticDescription
+            )
+        }
+
+        if let error = error as? YouTubePublishAPIError {
+            let kind = platformFailureKind(forYouTubeStatus: error.status)
+            return PlatformFailure(
+                kind: kind,
+                message: error.localizedDescription,
+                suggestedFix: suggestedFix(for: kind, platform: .youtubeShorts),
+                rawResponse: error.rawResponse
+            )
+        }
+
         return PlatformFailure(
             kind: .unknownServerError,
             message: error.localizedDescription,
@@ -3047,25 +3454,65 @@ private extension FlickAppModel {
     }
 
     func suggestedFix(for kind: PlatformErrorKind) -> String {
+        suggestedFix(for: kind, platform: .tiktok)
+    }
+
+    func suggestedFix(for kind: PlatformErrorKind, platform: SocialPlatform) -> String {
+        if platform == .youtubeShorts {
+            switch kind {
+            case .authExpired:
+                return "Authorize this YouTube channel on the Mac that runs scheduled publishing."
+            case .missingScope:
+                return "Reconnect YouTube and approve the upload scope."
+            case .rateLimit:
+                return "Wait for the YouTube API quota or rate limit window to reset."
+            case .mediaURLInaccessible:
+                return "Render the Shorts video again on the Mac runner."
+            case .invalidPrivacySetting:
+                return "Choose private, unlisted, or public visibility."
+            case .unauditedClient:
+                return "Use private visibility until the Google Cloud project completes the required API review."
+            case .platformProcessingFailed:
+                return "Check the YouTube channel and video processing status, then retry."
+            case .urlOwnershipUnverified, .unknownServerError:
+                return "Check the YouTube API response and retry after the service recovers."
+            }
+        }
+
         switch kind {
         case .authExpired:
-            "Reconnect the TikTok account and try again."
+            return "Reconnect the TikTok account and try again."
         case .missingScope:
-            "Reconnect TikTok with the required publishing scope."
+            return "Reconnect TikTok with the required publishing scope."
         case .rateLimit:
-            "Wait for the TikTok rate limit window to reset."
+            return "Wait for the TikTok rate limit window to reset."
         case .mediaURLInaccessible:
-            "Verify the rendered image URLs are publicly reachable."
+            return "Verify the rendered image URLs are publicly reachable."
         case .urlOwnershipUnverified:
-            "Verify the Cloudflare R2 custom domain or TikTok media URL prefix."
+            return "Verify the Cloudflare R2 custom domain or TikTok media URL prefix."
         case .invalidPrivacySetting:
-            "Refresh TikTok creator info and choose a supported visibility option."
+            return "Refresh TikTok creator info and choose a supported visibility option."
         case .unauditedClient:
-            "Use private visibility while the TikTok client is unaudited, or complete app audit."
+            return "Use private visibility while the TikTok client is unaudited, or complete app audit."
         case .platformProcessingFailed:
-            "Check the TikTok account and app status, then retry."
+            return "Check the TikTok account and app status, then retry."
         case .unknownServerError:
-            "Check the platform response and retry after the service recovers."
+            return "Check the platform response and retry after the service recovers."
+        }
+    }
+
+    func platformFailureKind(forYouTubeStatus status: String?) -> PlatformErrorKind {
+        switch status {
+        case "UNAUTHENTICATED", "PERMISSION_DENIED":
+            .authExpired
+        case "RESOURCE_EXHAUSTED":
+            .rateLimit
+        case "INVALID_ARGUMENT", "FAILED_PRECONDITION":
+            .invalidPrivacySetting
+        case "UNAVAILABLE", "DEADLINE_EXCEEDED", "ABORTED":
+            .unknownServerError
+        default:
+            .unknownServerError
         }
     }
 
