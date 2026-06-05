@@ -19,6 +19,7 @@ struct IOSAccountsView: View {
             PlatformAccountRowsSection(authorizedAccounts: authorizedAccounts) { platform in
                 selectedPlatform = platform
             }
+            platformHealthSection
             connectionStatus
         }
         .flickSettingsListStyle()
@@ -48,6 +49,31 @@ struct IOSAccountsView: View {
                         Label("Add Account", systemImage: "plus")
                     }
                     .disabled(appModel.connectingPlatform != nil)
+                }
+            }
+        }
+    }
+
+    private var platformHealthSection: some View {
+        Section("Platform health") {
+            if appModel.overview.dashboard.apiHealth.isEmpty {
+                DashboardMessageRow(
+                    title: "No platform checks",
+                    message: "Platform configuration checks will appear here when available.",
+                    systemImage: "antenna.radiowaves.left.and.right",
+                    iconColor: .secondary
+                )
+            } else {
+                ForEach(appModel.overview.dashboard.apiHealth) { status in
+                    DashboardStatusRow(
+                        title: status.serviceName,
+                        message: status.statusText,
+                        systemImage: "antenna.radiowaves.left.and.right",
+                        iconColor: status.isConfigured ? .green : .orange,
+                        badgeTitle: status.isConfigured ? "Ready" : "Needs setup",
+                        badgeTint: status.isConfigured ? .green : .orange,
+                        badgeSystemImage: status.isConfigured ? "checkmark.circle" : "exclamationmark.circle"
+                    )
                 }
             }
         }

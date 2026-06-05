@@ -71,43 +71,6 @@ struct DashboardStatusRow: View {
     }
 }
 
-struct PlatformDashboardStatusRow: View {
-    var title: String
-    var message: String
-    var messageLineLimit: Int? = nil
-    var platform: SocialPlatform
-    var badgeTitle: String
-    var badgeTint: Color
-    var badgeSystemImage: String?
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            PlatformIcon(platform: platform, size: 22, frameSize: 24)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .foregroundStyle(.primary)
-                Text(message)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(messageLineLimit)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .layoutPriority(1)
-
-            Spacer(minLength: 12)
-
-            DashboardStatusIcon(
-                title: badgeTitle,
-                tint: badgeTint,
-                systemImage: badgeSystemImage
-            )
-        }
-        .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
-    }
-}
-
 struct PublishingJobRow: View {
     var job: PublishingJob
 
@@ -116,12 +79,18 @@ struct PublishingJobRow: View {
             PlatformIcon(platform: job.platform, size: 22, frameSize: 24)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(job.awaitingCompletionTitle)
+                Text(job.dashboardTitle)
                     .font(.subheadline.weight(.semibold))
-                Text(job.awaitingCompletionMessage)
+                Text(job.dashboardMessage)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let suggestedFix = job.dashboardSuggestedFix {
+                    Text(suggestedFix)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let publishID = job.platformPublishID {
                     Text(publishID)
                         .font(.caption2.monospaced())
@@ -133,7 +102,11 @@ struct PublishingJobRow: View {
 
             Spacer(minLength: 12)
 
-            DashboardStatusIcon(title: job.awaitingCompletionBadgeTitle, tint: .orange, systemImage: "clock")
+            DashboardStatusIcon(
+                title: job.status.displayName,
+                tint: job.status.tint,
+                systemImage: job.status.dashboardSystemImage
+            )
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
@@ -195,19 +168,60 @@ private extension PublishedPost {
 }
 
 private extension PublishingJob {
-    var awaitingCompletionTitle: String {
-        platform == .tiktok ? "Waiting for TikTok" : "Waiting for \(platform.displayName)"
-    }
-
-    var awaitingCompletionMessage: String {
-        if platform == .tiktok {
-            return "Open the TikTok inbox notification to finish posting."
+    var dashboardTitle: String {
+        switch status {
+        case .awaitingUserCompletion:
+            platform == .tiktok ? "Waiting for TikTok" : "Waiting for \(platform.displayName)"
+        case .failed:
+            "\(platform.displayName) upload failed"
+        case .published:
+            "\(platform.displayName) upload published"
+        case .rendering:
+            "Rendering \(platform.displayName) upload"
+        case .publishing:
+            "Publishing to \(platform.displayName)"
         }
-        return "The platform needs a final account-side action before this post can complete."
     }
 
-    var awaitingCompletionBadgeTitle: String {
-        platform == .tiktok ? "Draft sent" : "Needs action"
+    var dashboardMessage: String {
+        switch status {
+        case .awaitingUserCompletion:
+            if platform == .tiktok {
+                return "Open the TikTok inbox notification to finish posting."
+            }
+            return "The platform needs a final account-side action before this post can complete."
+        case .failed:
+            return lastError?.message ?? "The platform failed this upload before it could be published."
+        case .published:
+            return "Flick recorded this upload as published."
+        case .rendering:
+            return "Flick is preparing the media for upload."
+        case .publishing:
+            return "Flick is uploading this post to the platform."
+        }
+    }
+
+    var dashboardSuggestedFix: String? {
+        guard status == .failed else { return nil }
+        let trimmedFix = lastError?.suggestedFix.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmedFix.isEmpty ? nil : trimmedFix
+    }
+}
+
+private extension PublishingJobStatus {
+    var dashboardSystemImage: String {
+        switch self {
+        case .rendering:
+            "photo.on.rectangle"
+        case .publishing:
+            "paperplane"
+        case .awaitingUserCompletion:
+            "bell.badge"
+        case .published:
+            "checkmark.circle"
+        case .failed:
+            "xmark.octagon"
+        }
     }
 }
 

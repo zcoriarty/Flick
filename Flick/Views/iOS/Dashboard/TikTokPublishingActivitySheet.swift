@@ -1,118 +1,244 @@
 //
-//  PublishingActivitySheet.swift
+//  PublishingActivityView.swift
 //  Flick
 //
 
 #if !os(macOS)
 import SwiftUI
 
-struct PublishingActivitySummaryRow: View {
-    var awaitingJobCount: Int
-    var publishedPostCount: Int
-    var latestActivityDate: Date?
+struct IOSPublishingActivityView: View {
+    @Environment(FlickAppModel.self) private var appModel
+
+    private var awaitingJobs: [PublishingJob] {
+        appModel.overview.publishingJobs
+            .filter { $0.status == .awaitingUserCompletion }
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    private var publishedPosts: [PublishedPost] {
+        appModel.overview.publishedPosts
+            .sorted { $0.publishedAt > $1.publishedAt }
+    }
+
+    private var failedJobs: [PublishingJob] {
+        appModel.overview.publishingJobs
+            .filter { $0.status == .failed }
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "paperplane")
-                .foregroundStyle(FlickStyle.appTint)
-                .frame(width: 24)
+        List {
+            previewSection(for: .draftUploads)
+            previewSection(for: .publishedPosts)
+            previewSection(for: .failedUploads)
+        }
+        .flickSettingsListStyle()
+        .refreshable {
+            await appModel.refresh()
+        }
+        .flickToolbarTitle("Publishing")
+    }
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Publishing activity")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-
-                Text(summaryText)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if let latestActivityDate {
-                    Text("Latest \(AutomationDashboardFormatting.relativeDate(latestActivityDate))")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+    private func previewSection(for category: PublishingActivityCategory) -> some View {
+        Section(category.title) {
+            if count(for: category) == 0 {
+                DashboardMessageRow(
+                    title: category.emptyTitle,
+                    message: category.emptyMessage,
+                    systemImage: category.systemImage,
+                    iconColor: .secondary
+                )
+            } else {
+                previewRows(for: category)
+                NavigationLink {
+                    IOSPublishingActivityListView(category: category)
+                } label: {
+                    FlickSettingsRowLabel(
+                        title: "View all",
+                        systemImage: "list.bullet",
+                        iconColor: category.tint,
+                        value: category.viewAllValue(count: count(for: category))
+                    )
                 }
             }
-            .layoutPriority(1)
-
-            Spacer(minLength: 12)
-
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
-        }
-        .padding(.vertical, 4)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-    }
-
-    private var summaryText: String {
-        switch (awaitingJobCount, publishedPostCount) {
-        case (0, 0):
-            "No publish activity"
-        case (0, _):
-            publishedPostSummary
-        case (_, 0):
-            awaitingJobSummary
-        default:
-            "\(awaitingJobSummary), \(publishedPostSummary)"
         }
     }
 
-    private var awaitingJobSummary: String {
-        awaitingJobCount == 1 ? "1 draft waiting" : "\(awaitingJobCount.formatted()) drafts waiting"
+    @ViewBuilder
+    private func previewRows(for category: PublishingActivityCategory) -> some View {
+        switch category {
+        case .draftUploads:
+            ForEach(Array(awaitingJobs.prefix(3))) { job in
+                PublishingJobRow(job: job)
+            }
+        case .publishedPosts:
+            ForEach(Array(publishedPosts.prefix(3))) { post in
+                PublishedPostRow(post: post)
+            }
+        case .failedUploads:
+            ForEach(Array(failedJobs.prefix(3))) { job in
+                PublishingJobRow(job: job)
+            }
+        }
     }
 
-    private var publishedPostSummary: String {
-        publishedPostCount == 1 ? "1 published post" : "\(publishedPostCount.formatted()) published posts"
+    private func count(for category: PublishingActivityCategory) -> Int {
+        switch category {
+        case .draftUploads:
+            awaitingJobs.count
+        case .publishedPosts:
+            publishedPosts.count
+        case .failedUploads:
+            failedJobs.count
+        }
     }
 }
 
-struct PublishingActivitySheet: View {
-    @Environment(\.dismiss) private var dismiss
+private struct IOSPublishingActivityListView: View {
+    @Environment(FlickAppModel.self) private var appModel
 
-    var awaitingJobs: [PublishingJob]
-    var publishedPosts: [PublishedPost]
+    var category: PublishingActivityCategory
+
+    private var awaitingJobs: [PublishingJob] {
+        appModel.overview.publishingJobs
+            .filter { $0.status == .awaitingUserCompletion }
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    private var publishedPosts: [PublishedPost] {
+        appModel.overview.publishedPosts
+            .sorted { $0.publishedAt > $1.publishedAt }
+    }
+
+    private var failedJobs: [PublishingJob] {
+        appModel.overview.publishingJobs
+            .filter { $0.status == .failed }
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
 
     var body: some View {
-        NavigationStack {
-            List {
-                if !awaitingJobs.isEmpty {
-                    Section(awaitingJobsSectionTitle) {
-                        ForEach(awaitingJobs) { job in
-                            PublishingJobRow(job: job)
-                        }
-                    }
-                }
-
-                if !publishedPosts.isEmpty {
-                    Section(publishedPostsSectionTitle) {
-                        ForEach(publishedPosts) { post in
-                            PublishedPostRow(post: post)
-                        }
-                    }
-                }
-            }
-            .flickSettingsListStyle()
-            .flickToolbarTitle("Publishing")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        dismiss()
-                    }
+        List {
+            Section(category.title) {
+                if count == 0 {
+                    DashboardMessageRow(
+                        title: category.emptyTitle,
+                        message: category.emptyMessage,
+                        systemImage: category.systemImage,
+                        iconColor: .secondary
+                    )
+                } else {
+                    allRows
                 }
             }
         }
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
+        .flickSettingsListStyle()
+        .refreshable {
+            await appModel.refresh()
+        }
+        .flickToolbarTitle(category.title)
     }
 
-    private var awaitingJobsSectionTitle: String {
-        awaitingJobs.count == 1 ? "Draft upload" : "Draft uploads"
+    @ViewBuilder
+    private var allRows: some View {
+        switch category {
+        case .draftUploads:
+            ForEach(awaitingJobs) { job in
+                PublishingJobRow(job: job)
+            }
+        case .publishedPosts:
+            ForEach(publishedPosts) { post in
+                PublishedPostRow(post: post)
+            }
+        case .failedUploads:
+            ForEach(failedJobs) { job in
+                PublishingJobRow(job: job)
+            }
+        }
     }
 
-    private var publishedPostsSectionTitle: String {
-        publishedPosts.count == 1 ? "Published post" : "Published posts"
+    private var count: Int {
+        switch category {
+        case .draftUploads:
+            awaitingJobs.count
+        case .publishedPosts:
+            publishedPosts.count
+        case .failedUploads:
+            failedJobs.count
+        }
+    }
+}
+
+private enum PublishingActivityCategory: CaseIterable, Identifiable, Hashable {
+    case draftUploads
+    case publishedPosts
+    case failedUploads
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .draftUploads:
+            "Draft uploads"
+        case .publishedPosts:
+            "Published posts"
+        case .failedUploads:
+            "Failed uploads"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .draftUploads:
+            "bell.badge"
+        case .publishedPosts:
+            "checkmark.seal"
+        case .failedUploads:
+            "exclamationmark.triangle"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .draftUploads:
+            .orange
+        case .publishedPosts:
+            .green
+        case .failedUploads:
+            .red
+        }
+    }
+
+    var emptyTitle: String {
+        switch self {
+        case .draftUploads:
+            "No draft uploads"
+        case .publishedPosts:
+            "No published posts"
+        case .failedUploads:
+            "No failed uploads"
+        }
+    }
+
+    var emptyMessage: String {
+        switch self {
+        case .draftUploads:
+            "Uploads waiting for account-side completion will appear here."
+        case .publishedPosts:
+            "Published posts will appear here after Flick records successful publishes."
+        case .failedUploads:
+            "Failed publish jobs will appear here with their platform error details."
+        }
+    }
+
+    func viewAllValue(count: Int) -> String {
+        switch self {
+        case .draftUploads:
+            count == 1 ? "1 upload" : "\(count.formatted()) uploads"
+        case .publishedPosts:
+            count == 1 ? "1 post" : "\(count.formatted()) posts"
+        case .failedUploads:
+            count == 1 ? "1 upload" : "\(count.formatted()) uploads"
+        }
     }
 }
 #endif

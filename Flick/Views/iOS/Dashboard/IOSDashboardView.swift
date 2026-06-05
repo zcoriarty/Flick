@@ -9,7 +9,6 @@ import SwiftUI
 struct IOSDashboardView: View {
     @Environment(FlickAppModel.self) private var appModel
     @State private var exampleTemplates: [ExampleSlideshowTemplate] = []
-    @State private var isPublishingActivityPresented = false
 
     private var automationSnapshot: AutomationDashboardSnapshot {
         AutomationDashboardSnapshot.make(
@@ -24,30 +23,18 @@ struct IOSDashboardView: View {
             .sorted { $0.updatedAt > $1.updatedAt }
     }
 
-    private var publishedPosts: [PublishedPost] {
-        appModel.overview.publishedPosts
-            .sorted { $0.publishedAt > $1.publishedAt }
-    }
-
-    private var publishedPostCount: Int {
-        publishedPosts.count
-    }
-
-    private var latestPublishingActivityDate: Date? {
-        (awaitingPublishingJobs.map(\.updatedAt) + publishedPosts.map(\.publishedAt)).max()
+    private var authorizedAccountCount: Int {
+        appModel.overview.accounts
+            .filter { $0.authorizationSource == .loginKit || $0.authorizationSource == .nativeOAuth }
+            .count
     }
 
     var body: some View {
         List {
-            overviewSection
+            overviewSections
             if !automationSnapshot.activeProgresses.isEmpty {
                 inProgressSection
             }
-            automationsSection
-            publishingSection
-            syncStatusSection
-            apiHealthSection
-            accountHealthSection
         }
         .flickSettingsListStyle()
         .refreshable {
@@ -56,80 +43,42 @@ struct IOSDashboardView: View {
         .task {
             await loadExampleTemplates()
         }
-        .sheet(isPresented: $isPublishingActivityPresented) {
-            PublishingActivitySheet(
-                awaitingJobs: awaitingPublishingJobs,
-                publishedPosts: publishedPosts
-            )
-        }
         .flickToolbarTitle("Dashboard")
     }
 
-    private var overviewSection: some View {
+    @ViewBuilder
+    private var overviewSections: some View {
         Section("Overview") {
-            FlickSettingsValueRow(
-                title: "Draft uploads",
-                systemImage: "bell.badge",
-                iconColor: .orange,
-                value: awaitingPublishingJobs.count.formatted()
-            )
-            FlickSettingsValueRow(
-                title: "Published posts",
-                systemImage: "checkmark.seal",
-                iconColor: .green,
-                value: publishedPostCount.formatted()
-            )
-            FlickSettingsValueRow(
-                title: "Active automations",
-                systemImage: "calendar.badge.clock",
-                iconColor: .teal,
-                value: appModel.overview.dashboard.activeAutomationCount.formatted()
-            )
+            DashboardPostsNavigationRow(
+                draftCount: awaitingPublishingJobs.count
+            ) {
+                IOSPublishingActivityView()
+            }
+
             if let nextAutomationPostAt = appModel.overview.dashboard.nextAutomationPostAt {
-                FlickSettingsValueRow(
+                FlickSettingsNavigationRow(
                     title: "Next automated post",
                     systemImage: "clock",
                     iconColor: .orange,
                     value: AutomationDashboardFormatting.relativeDate(nextAutomationPostAt)
-                )
+                ) {
+                    IOSAutomationDashboardListView(exampleTemplates: exampleTemplates)
+                }
             }
-            FlickSettingsValueRow(
-                title: "Failed publishes",
-                systemImage: "exclamationmark.triangle",
-                iconColor: .red,
-                value: appModel.overview.dashboard.failedJobCount.formatted()
-            )
-            FlickSettingsValueRow(
-                title: "Connected accounts",
+
+            FlickSettingsNavigationRow(
+                title: "Accounts",
                 systemImage: "person.2",
                 iconColor: .green,
-                value: appModel.overview.accounts.filter(\.isPublishingEnabled).count.formatted()
-            )
+                value: accountCountValue
+            ) {
+                IOSAccountsView()
+            }
         }
     }
 
-    private var automationsSection: some View {
-        Section("Automations") {
-            if automationSnapshot.items.isEmpty {
-                DashboardMessageRow(
-                    title: "No automations yet",
-                    message: "Create automations from the Create tab to monitor their schedule, accounts, and published posts here.",
-                    systemImage: "calendar.badge.plus",
-                    iconColor: .secondary
-                )
-            } else {
-                ForEach(automationSnapshot.items) { item in
-                    NavigationLink {
-                        IOSAutomationDetailView(
-                            automationID: item.id,
-                            exampleTemplates: exampleTemplates
-                        )
-                    } label: {
-                        IOSAutomationDashboardRow(item: item)
-                    }
-                }
-            }
-        }
+    private var accountCountValue: String {
+        authorizedAccountCount == 1 ? "1 account" : "\(authorizedAccountCount.formatted()) accounts"
     }
 
     private var inProgressSection: some View {
@@ -138,96 +87,6 @@ struct IOSDashboardView: View {
                 AutomationProgressSummaryRow(progress: progress)
             }
         }
-    }
-
-    private var publishingSection: some View {
-        Section("Publishing") {
-            if awaitingPublishingJobs.isEmpty && publishedPosts.isEmpty {
-                DashboardMessageRow(
-                    title: "No publish activity yet",
-                    message: "Draft uploads and direct posts will appear here after publishing from Create.",
-                    systemImage: "paperplane",
-                    iconColor: .secondary
-                )
-            } else {
-                Button {
-                    isPublishingActivityPresented = true
-                } label: {
-                    PublishingActivitySummaryRow(
-                        awaitingJobCount: awaitingPublishingJobs.count,
-                        publishedPostCount: publishedPosts.count,
-                        latestActivityDate: latestPublishingActivityDate
-                    )
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("Shows all publishing activity.")
-            }
-        }
-    }
-
-    private var syncStatusSection: some View {
-        Section("Sync") {
-            DashboardStatusRow(
-                title: "iCloud account",
-                message: appModel.overview.dashboard.syncHealth.iCloudAvailable ? "CloudKit access is available for this iCloud account." : "Sign into iCloud and enable iCloud Drive to sync app data.",
-                systemImage: "icloud",
-                iconColor: appModel.overview.dashboard.syncHealth.iCloudAvailable ? .blue : .orange,
-                badgeTitle: appModel.overview.dashboard.syncHealth.iCloudAvailable ? "Available" : "Unavailable",
-                badgeTint: appModel.overview.dashboard.syncHealth.iCloudAvailable ? .blue : .orange,
-                badgeSystemImage: "circle.fill"
-            )
-        }
-    }
-
-    private var apiHealthSection: some View {
-        Section("Platform health") {
-            ForEach(appModel.overview.dashboard.apiHealth) { status in
-                DashboardStatusRow(
-                    title: status.serviceName,
-                    message: status.statusText,
-                    systemImage: "antenna.radiowaves.left.and.right",
-                    iconColor: status.isConfigured ? .green : .orange,
-                    badgeTitle: status.isConfigured ? "Ready" : "Needs setup",
-                    badgeTint: status.isConfigured ? .green : .orange,
-                    badgeSystemImage: status.isConfigured ? "checkmark.circle" : "exclamationmark.circle"
-                )
-            }
-        }
-    }
-
-    private var accountHealthSection: some View {
-        Section("Accounts") {
-            if appModel.overview.dashboard.connectedAccounts.isEmpty {
-                Button(action: openAccounts) {
-                    DashboardStatusRow(
-                        title: "No authorized accounts",
-                        message: "Connect a platform account before scheduling posts.",
-                        systemImage: "person.crop.circle.badge.plus",
-                        iconColor: .secondary,
-                        badgeTitle: "Open Settings",
-                        badgeTint: FlickStyle.appTint,
-                        badgeSystemImage: "person.2"
-                    )
-                }
-                .buttonStyle(.plain)
-            } else {
-                ForEach(appModel.overview.dashboard.connectedAccounts) { account in
-                    PlatformDashboardStatusRow(
-                        title: account.displayName,
-                        message: account.scopes.isEmpty ? "No scopes connected yet" : account.scopes.joined(separator: ", "),
-                        messageLineLimit: 2,
-                        platform: account.platform,
-                        badgeTitle: account.status.displayName,
-                        badgeTint: account.status.tint,
-                        badgeSystemImage: "circle.fill"
-                    )
-                }
-            }
-        }
-    }
-
-    private func openAccounts() {
-        appModel.selectedSection = .settings
     }
 
     private func loadExampleTemplates() async {
@@ -247,6 +106,114 @@ struct IOSDashboardView: View {
         } catch {
             exampleTemplates = []
         }
+    }
+}
+
+private struct DashboardPostsNavigationRow<Destination: View>: View {
+    var draftCount: Int
+    let destination: Destination
+
+    init(
+        draftCount: Int,
+        @ViewBuilder destination: () -> Destination
+    ) {
+        self.draftCount = draftCount
+        self.destination = destination()
+    }
+
+    var body: some View {
+        NavigationLink {
+            destination
+        } label: {
+            FlickSettingsRow(
+                title: "Posts",
+                systemImage: "photo.stack",
+                iconColor: FlickStyle.appTint
+            ) {
+                HStack(spacing: 10) {
+                    DashboardPostCount(systemImage: "bell.badge", tint: .orange, count: draftCount)
+                }
+            }
+        }
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var accessibilityLabel: String {
+        "\(draftCount.formatted()) draft posts"
+    }
+}
+
+private struct DashboardPostCount: View {
+    var systemImage: String
+    var tint: Color
+    var count: Int
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: systemImage)
+                .foregroundStyle(tint)
+            Text(count.formatted())
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+        .font(.subheadline.weight(.semibold))
+        .accessibilityHidden(true)
+    }
+}
+
+private struct IOSAutomationDashboardListView: View {
+    @Environment(FlickAppModel.self) private var appModel
+
+    var exampleTemplates: [ExampleSlideshowTemplate]
+
+    private var snapshot: AutomationDashboardSnapshot {
+        AutomationDashboardSnapshot.make(
+            overview: appModel.overview,
+            exampleTemplates: exampleTemplates
+        )
+    }
+
+    private var activeItems: [AutomationDashboardItem] {
+        snapshot.items.filter { $0.automation.status == .active }
+    }
+
+    var body: some View {
+        List {
+            if !snapshot.activeProgresses.isEmpty {
+                Section("In Progress") {
+                    ForEach(snapshot.activeProgresses) { progress in
+                        AutomationProgressSummaryRow(progress: progress)
+                    }
+                }
+            }
+
+            Section("Active automations") {
+                if activeItems.isEmpty {
+                    DashboardMessageRow(
+                        title: "No active automations",
+                        message: "Create or resume automations from the Create tab to schedule recurring posts.",
+                        systemImage: "calendar.badge.plus",
+                        iconColor: .secondary
+                    )
+                } else {
+                    ForEach(activeItems) { item in
+                        NavigationLink {
+                            IOSAutomationDetailView(
+                                automationID: item.id,
+                                exampleTemplates: exampleTemplates
+                            )
+                        } label: {
+                            IOSAutomationDashboardRow(item: item)
+                        }
+                    }
+                }
+            }
+        }
+        .flickSettingsListStyle()
+        .refreshable {
+            await appModel.refresh()
+        }
+        .flickToolbarTitle("Active Automations")
     }
 }
 

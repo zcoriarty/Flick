@@ -11,10 +11,8 @@ struct IOSSettingsView: View {
 
     var body: some View {
         List {
-            #if !os(macOS) && !targetEnvironment(macCatalyst)
-            accountsSection
-            #endif
             credentialsSection
+            syncSection
             storageSection
             diagnosticsSection
         }
@@ -22,21 +20,23 @@ struct IOSSettingsView: View {
         .flickToolbarTitle("Settings")
     }
 
-    #if !os(macOS) && !targetEnvironment(macCatalyst)
-    private var accountsSection: some View {
-        Section("Accounts") {
-            AccountsNavigationRow(connectedCount: connectedAccountCount)
-        }
-    }
-
-    private var connectedAccountCount: Int {
-        appModel.overview.accounts.filter { $0.status == .connected }.count
-    }
-    #endif
-
     private var credentialsSection: some View {
         Section {
             CredentialsNavigationRow(storedCount: appModel.configuration.secureStoredCredentialKeys.count)
+        }
+    }
+
+    private var syncSection: some View {
+        Section("Sync") {
+            DashboardStatusRow(
+                title: "iCloud account",
+                message: appModel.overview.dashboard.syncHealth.iCloudAvailable ? "CloudKit access is available for this iCloud account." : "Sign into iCloud and enable iCloud Drive to sync app data.",
+                systemImage: "icloud",
+                iconColor: appModel.overview.dashboard.syncHealth.iCloudAvailable ? .blue : .orange,
+                badgeTitle: appModel.overview.dashboard.syncHealth.iCloudAvailable ? "Available" : "Unavailable",
+                badgeTint: appModel.overview.dashboard.syncHealth.iCloudAvailable ? .blue : .orange,
+                badgeSystemImage: "circle.fill"
+            )
         }
     }
 
@@ -123,12 +123,6 @@ struct IOSSettingsView: View {
     private var diagnosticsSection: some View {
         Section("Diagnostics") {
             FlickSettingsValueRow(
-                title: "iCloud account",
-                systemImage: "icloud",
-                iconColor: appModel.overview.dashboard.syncHealth.iCloudAvailable ? .blue : .orange,
-                value: appModel.overview.dashboard.syncHealth.iCloudAvailable ? "Available" : "Unavailable"
-            )
-            FlickSettingsValueRow(
                 title: "Render directory",
                 systemImage: "folder",
                 iconColor: .orange,
@@ -138,34 +132,6 @@ struct IOSSettingsView: View {
         }
     }
 }
-
-#if !os(macOS) && !targetEnvironment(macCatalyst)
-private struct AccountsNavigationRow: View {
-    var connectedCount: Int
-
-    var body: some View {
-        NavigationLink {
-            IOSAccountsView()
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "person.2")
-                    .foregroundStyle(.green)
-                    .frame(width: 24)
-
-                Text("Accounts")
-                    .foregroundStyle(.primary)
-
-                Spacer(minLength: 12)
-
-                StatusBadge(title: "\(connectedCount) connected", tint: .green, systemImage: "person.crop.circle.fill")
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-    }
-}
-#endif
 
 private struct CredentialsNavigationRow: View {
     var storedCount: Int
