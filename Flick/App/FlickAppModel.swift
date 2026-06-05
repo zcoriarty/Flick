@@ -1855,7 +1855,7 @@ final class FlickAppModel {
             }
             let now = Date()
             return bundle.refreshTokenExpiresAt > now
-                && bundle.scopes.contains { $0 == "video.publish" || $0 == "video.upload" }
+                && account.scopes.contains { $0 == "video.publish" || $0 == "video.upload" }
         case .youtubeShorts:
             guard
                 account.platform == .youtubeShorts,

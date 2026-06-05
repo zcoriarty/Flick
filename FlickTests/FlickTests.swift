@@ -269,6 +269,48 @@ final class FlickTests: XCTestCase {
         XCTAssertNil(model.publishingTikTokAccount(for: draft))
     }
 
+    func testPublishingTikTokAccountUsesGrantedScopesWhenTokenBundleScopesAreMissing() throws {
+        let now = Date()
+        var account = makeConnectedAccount(now: now)
+        account.scopes = ["user.info.basic", "video.upload"]
+        account.isPublishingEnabled = true
+        var draft = makeSlideshowDraft(now: now)
+        draft.accountSelections = [
+            PlatformAccountSelection(platform: .tiktok, accountID: account.id)
+        ]
+        var state = FlickEmptyState.make()
+        state.accounts = [account]
+        state.drafts = [draft]
+        let secretStore = MemorySecretStore()
+        let tokenStore = LoginKitTokenStore(store: secretStore)
+        try tokenStore.save(
+            LoginKitTokenBundle(
+                platform: .tiktok,
+                platformUserID: account.platformUserID,
+                accessToken: "access-token",
+                refreshToken: "refresh-token",
+                tokenType: "Bearer",
+                scopes: [],
+                accessTokenExpiresAt: now.addingTimeInterval(3_600),
+                refreshTokenExpiresAt: now.addingTimeInterval(86_400),
+                updatedAt: now
+            ),
+            for: account
+        )
+        let client = TikTokLoginKitClient(
+            accountStore: LoginKitAccountStore(store: secretStore),
+            tokenStore: tokenStore
+        )
+        let model = FlickAppModel(
+            repository: InMemoryFlickRepository(state: state),
+            configuration: makeTestAppConfiguration(),
+            tiktokLoginKitClient: client
+        )
+        model.overview = state
+
+        XCTAssertEqual(model.publishingTikTokAccount(for: draft)?.id, account.id)
+    }
+
     func testPlatformAccountSelectionsNormalizeUniquePlatformAccountPairs() {
         let firstTikTokID = UUID(uuidString: "00000000-0000-0000-0000-000000000101")!
         let secondTikTokID = UUID(uuidString: "00000000-0000-0000-0000-000000000102")!
