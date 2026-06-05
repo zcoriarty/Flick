@@ -29,7 +29,7 @@ extension SocialPlatform {
 
     var tint: Color {
         switch self {
-        case .tiktok: .pink
+        case .tiktok: Color(hex: "#25f4ee")
         case .youtubeShorts: .red
         case .instagram: .purple
         case .threads: .indigo

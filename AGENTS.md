@@ -20,3 +20,27 @@ Flick is an iOS app. Treat this repository as an iOS 26+ codebase and prefer cur
 - Delete dead code when a change makes it obsolete. Do not leave unused types, helpers, views, assets, or code paths behind when they are no longer needed.
 - Add focused tests when changing logic, persistence, scheduling, services, or other behavior where regressions are likely. UI-only changes should be verified in the simulator when practical.
 - When running the app in the simulator, find and use the simulator that is already running. Do not create duplicate simulator instances or new simulator devices unless the user explicitly asks for one.
+
+## Simulator Workflow
+
+- Use the Build iOS Apps plugin skills for simulator work:
+  - Use `build-ios-apps:ios-debugger-agent` when launching the app, inspecting simulator UI, capturing screenshots, or collecting logs.
+  - Use `build-ios-apps:ios-simulator-browser` when mirroring the simulator in the Codex in-app browser with `serve-sim`, or when showing SwiftUI previews through the simulator browser workflow.
+- Before building or running, discover the already booted simulator and use its explicit UDID. If no simulator is booted, ask the user to boot one unless they explicitly asked Codex to boot a simulator.
+- Prefer XcodeBuildMCP for simulator build/run, UI inspection, screenshots, and logs. Set session defaults to the repo project or workspace, the active app scheme, and the selected booted simulator before calling the build/run tool.
+- After a successful simulator build/run, verify the app launched with a UI description or screenshot before interacting with it or reporting success.
+- When mirroring the simulator in the in-app browser, start `serve-sim` in a long-running terminal scoped to the selected simulator UDID, and keep that terminal alive while the mirror is in use:
+
+  ```bash
+  SIM="<simulator-udid>"
+  cleanup_serve_sim() {
+    npx --yes serve-sim@latest --kill "$SIM" >/dev/null 2>&1 || true
+  }
+  trap cleanup_serve_sim EXIT INT TERM HUP
+  cleanup_serve_sim
+  npx --yes serve-sim@latest "$SIM"
+  ```
+
+- Open the exact local URL printed by `serve-sim` in the Codex in-app browser. A loaded page alone is not enough; verify that a real simulator frame is rendering before reporting success.
+- If the mirror terminal disappeared or did not exit cleanly, run `npx --yes serve-sim@latest --kill "$SIM"` for that simulator UDID before starting a new mirror. Never run an unscoped `serve-sim --kill`.
+- For SwiftUI previews that live in an importable Swift package, use the simulator-browser skill's bundled `swiftui-preview-browser.mjs` launcher and point it at the package manifest and target. Do not edit the user's project, workspace, package manifest, schemes, or build settings just to force preview support.

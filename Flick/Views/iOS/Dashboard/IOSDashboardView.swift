@@ -8,7 +8,9 @@ import SwiftUI
 
 struct IOSDashboardView: View {
     @Environment(FlickAppModel.self) private var appModel
+    @Environment(\.scenePhase) private var scenePhase
     @State private var exampleTemplates: [ExampleSlideshowTemplate] = []
+    private let chartHeaderHorizontalOffset: CGFloat = 16
 
     private var automationSnapshot: AutomationDashboardSnapshot {
         AutomationDashboardSnapshot.make(
@@ -29,21 +31,54 @@ struct IOSDashboardView: View {
             .count
     }
 
+    private var macRunnerStatus: MacRunnerStatus {
+        scenePhase == .background ? .stopped : .running
+    }
+
     var body: some View {
         List {
+            Section {
+            } header: {
+                publishedPostsChart
+                    .textCase(nil)
+                    .foregroundStyle(.primary)
+                    .font(.body)
+                    .padding(.horizontal, -chartHeaderHorizontalOffset)
+                    .padding(.bottom, 6)
+            }
+            .listSectionSeparator(.hidden)
+
             overviewSections
+
             if !automationSnapshot.activeProgresses.isEmpty {
                 inProgressSection
             }
         }
         .flickSettingsListStyle()
+        .contentMargins(.top, 0, for: .scrollContent)
         .refreshable {
             await appModel.refresh()
         }
         .task {
             await loadExampleTemplates()
         }
-        .flickToolbarTitle("Dashboard")
+        .toolbarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                MacRunnerStatusLabel(status: macRunnerStatus)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .sharedBackgroundVisibility(.hidden)
+        }
+    }
+
+    private var publishedPostsChart: some View {
+        PublishedPostsDashboardChart(
+            posts: appModel.overview.publishedPosts,
+            publishingJobs: appModel.overview.publishingJobs,
+            accounts: appModel.overview.accounts,
+            horizontalPadding: 0
+        )
     }
 
     @ViewBuilder
@@ -105,6 +140,77 @@ struct IOSDashboardView: View {
             exampleTemplates = page.collection.templates
         } catch {
             exampleTemplates = []
+        }
+    }
+}
+
+private enum MacRunnerStatus {
+    case running
+    case paused
+    case stopped
+
+    var title: String {
+        switch self {
+        case .running: "Mac running"
+        case .paused: "Mac paused"
+        case .stopped: "Mac stopped"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .running: .green
+        case .paused: .yellow
+        case .stopped: .red
+        }
+    }
+}
+
+private struct MacRunnerStatusLabel: View {
+    var status: MacRunnerStatus
+
+    var body: some View {
+        HStack(spacing: 7) {
+            RadarStatusDot(tint: status.tint)
+
+            Text(status.title)
+                .font(.system(.headline, weight: .semibold))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: true, vertical: false)
+                .transaction { transaction in
+                    transaction.animation = nil
+                }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(status.title)
+    }
+}
+
+private struct RadarStatusDot: View {
+    var tint: Color
+    @State private var isBlinking = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(tint.opacity(0.36))
+                .frame(width: isBlinking ? 19 : 14, height: isBlinking ? 19 : 14)
+                .opacity(isBlinking ? 0.5 : 0.96)
+                .blur(radius: 2.5)
+                .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true), value: isBlinking)
+
+            Circle()
+                .fill(tint)
+                .frame(width: 8, height: 8)
+                .shadow(color: tint.opacity(0.45), radius: 4)
+                .transaction { transaction in
+                    transaction.animation = nil
+                }
+        }
+        .frame(width: 20, height: 20)
+        .accessibilityHidden(true)
+        .onAppear {
+            isBlinking = true
         }
     }
 }
