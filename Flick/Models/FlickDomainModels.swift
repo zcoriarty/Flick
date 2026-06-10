@@ -725,6 +725,22 @@ struct APIHealthStatus: Identifiable, Codable, Hashable {
     var lastCheckedAt: Date?
 }
 
+struct MacRunnerHeartbeat: Codable, Hashable {
+    static let staleAfter: TimeInterval = 3 * 60
+
+    var lastSeenAt: Date?
+
+    init(lastSeenAt: Date? = nil) {
+        self.lastSeenAt = lastSeenAt
+    }
+
+    func isFresh(asOf now: Date = Date(), staleAfter: TimeInterval = Self.staleAfter) -> Bool {
+        guard let lastSeenAt else { return false }
+        return now.timeIntervalSince(lastSeenAt) <= staleAfter
+            && lastSeenAt <= now.addingTimeInterval(staleAfter)
+    }
+}
+
 struct DashboardSnapshot: Codable, Hashable {
     var failedJobCount: Int
     var activeAutomationCount: Int
@@ -743,6 +759,7 @@ struct FlickOverviewState: Codable, Hashable {
     var templates: [CreativeTemplate]
     var automations: [ContentAutomation]
     var automationPostProgresses: [AutomationPostProgress]
+    var macRunnerHeartbeat: MacRunnerHeartbeat
     var publishingJobs: [PublishingJob]
     var publishedPosts: [PublishedPost]
     var dashboard: DashboardSnapshot

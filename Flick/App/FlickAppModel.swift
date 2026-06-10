@@ -979,6 +979,24 @@ final class FlickAppModel {
         }
     }
 
+    func runMacRunnerHeartbeatLoop(interval: Duration = .seconds(60)) async {
+        while !Task.isCancelled {
+            await recordMacRunnerHeartbeat()
+            try? await Task.sleep(for: interval)
+        }
+    }
+
+    func recordMacRunnerHeartbeat(now: Date = Date()) async {
+        let heartbeat = MacRunnerHeartbeat(lastSeenAt: now)
+        overview.macRunnerHeartbeat = heartbeat
+
+        do {
+            try await repository.saveMacRunnerHeartbeat(heartbeat)
+        } catch {
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
     func runTikTokPublishStatusRefreshLoop(interval: Duration = .seconds(60)) async {
         while !Task.isCancelled {
             try? await Task.sleep(for: interval)

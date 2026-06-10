@@ -30,6 +30,7 @@ final class CoreDataFlickRepository: FlickRepository {
         state.drafts = try fetchDrafts(slidesByDraftID: try fetchSlidesByDraftID())
         state.automations = try fetchAutomations()
         state.automationPostProgresses = try fetchAutomationPostProgresses()
+        state.macRunnerHeartbeat = try fetchMacRunnerHeartbeat()
         state.publishingJobs = try fetchPublishingJobs()
         state.publishedPosts = try fetchPublishedPosts()
         state.refreshDerivedState()
@@ -50,6 +51,11 @@ final class CoreDataFlickRepository: FlickRepository {
         try syncAutomationPostProgresses(state.automationPostProgresses)
         try syncPublishingJobs(state.publishingJobs)
         try syncPublishedPosts(state.publishedPosts)
+        try saveIfNeeded()
+    }
+
+    func saveMacRunnerHeartbeat(_ heartbeat: MacRunnerHeartbeat) async throws {
+        try syncMacRunnerHeartbeat(heartbeat)
         try saveIfNeeded()
     }
 
@@ -264,6 +270,22 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(progresses, asJSONForKey: WorkflowStateKey.valueJSON)
     }
 
+    private func syncMacRunnerHeartbeat(_ heartbeat: MacRunnerHeartbeat) throws {
+        let objects = try fetchWorkflowStateObjects(key: WorkflowStateValueKey.macRunnerHeartbeat)
+
+        if heartbeat.lastSeenAt == nil {
+            objects.forEach { context.delete($0) }
+            return
+        }
+
+        let object = objects.first ?? insertWorkflowStateObject()
+        objects.dropFirst().forEach { context.delete($0) }
+        object.setValue(object.value(forKey: WorkflowStateKey.id) as? UUID ?? UUID(), forKey: WorkflowStateKey.id)
+        object.setValue(WorkflowStateValueKey.macRunnerHeartbeat, forKey: WorkflowStateKey.key)
+        object.setValue(Date(), forKey: WorkflowStateKey.updatedAt)
+        object.setValue(heartbeat, asJSONForKey: WorkflowStateKey.valueJSON)
+    }
+
     private func syncPublishedPosts(_ posts: [PublishedPost]) throws {
         let existingPosts = try context.fetch(publishedPostFetchRequest())
         var existingByID = Dictionary(uniqueKeysWithValues: existingPosts.compactMap { object -> (UUID, NSManagedObject)? in
@@ -368,6 +390,14 @@ final class CoreDataFlickRepository: FlickRepository {
         }
 
         return object.decodedJSON([AutomationPostProgress].self, forKey: WorkflowStateKey.valueJSON) ?? []
+    }
+
+    private func fetchMacRunnerHeartbeat() throws -> MacRunnerHeartbeat {
+        guard let object = try fetchWorkflowStateObjects(key: WorkflowStateValueKey.macRunnerHeartbeat).first else {
+            return MacRunnerHeartbeat()
+        }
+
+        return object.decodedJSON(MacRunnerHeartbeat.self, forKey: WorkflowStateKey.valueJSON) ?? MacRunnerHeartbeat()
     }
 
     private func fetchPublishingJobs() throws -> [PublishingJob] {
@@ -862,6 +892,7 @@ private enum WorkflowStateKey {
 
 private enum WorkflowStateValueKey {
     static let automationPostProgresses = "automation-post-progresses"
+    static let macRunnerHeartbeat = "mac-runner-heartbeat"
 }
 
 private extension MediaAsset {

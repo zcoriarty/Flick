@@ -8,8 +8,8 @@ import SwiftUI
 
 struct IOSDashboardView: View {
     @Environment(FlickAppModel.self) private var appModel
-    @Environment(\.scenePhase) private var scenePhase
     @State private var exampleTemplates: [ExampleSlideshowTemplate] = []
+    @State private var statusRefreshDate = Date()
     private let chartHeaderHorizontalOffset: CGFloat = 16
 
     private var automationSnapshot: AutomationDashboardSnapshot {
@@ -32,7 +32,10 @@ struct IOSDashboardView: View {
     }
 
     private var macRunnerStatus: MacRunnerStatus {
-        scenePhase == .background ? .stopped : .running
+        MacRunnerStatus(
+            heartbeat: appModel.overview.macRunnerHeartbeat,
+            now: statusRefreshDate
+        )
     }
 
     var body: some View {
@@ -62,6 +65,9 @@ struct IOSDashboardView: View {
         .task {
             await loadExampleTemplates()
         }
+        .task {
+            await runMacRunnerStatusClock()
+        }
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -69,6 +75,18 @@ struct IOSDashboardView: View {
                     .fixedSize(horizontal: true, vertical: false)
             }
             .sharedBackgroundVisibility(.hidden)
+
+            #if os(iOS) && !targetEnvironment(macCatalyst)
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink {
+                    SettingsView()
+                } label: {
+                    Image(systemName: FlickSection.settings.systemImage)
+                        .foregroundStyle(Color.primary)
+                }
+                .accessibilityLabel(FlickSection.settings.title)
+            }
+            #endif
         }
     }
 
@@ -142,25 +160,34 @@ struct IOSDashboardView: View {
             exampleTemplates = []
         }
     }
+
+    @MainActor
+    private func runMacRunnerStatusClock(interval: Duration = .seconds(30)) async {
+        while !Task.isCancelled {
+            statusRefreshDate = Date()
+            try? await Task.sleep(for: interval)
+        }
+    }
 }
 
 private enum MacRunnerStatus {
     case running
-    case paused
     case stopped
+
+    init(heartbeat: MacRunnerHeartbeat, now: Date = Date()) {
+        self = heartbeat.isFresh(asOf: now) ? .running : .stopped
+    }
 
     var title: String {
         switch self {
         case .running: "Mac running"
-        case .paused: "Mac paused"
-        case .stopped: "Mac stopped"
+        case .stopped: "Mac offline"
         }
     }
 
     var tint: Color {
         switch self {
         case .running: .green
-        case .paused: .yellow
         case .stopped: .red
         }
     }

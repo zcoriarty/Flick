@@ -205,6 +205,34 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(loaded.dashboard.connectedAccounts, [account])
     }
 
+    func testCoreDataPreservesMacRunnerHeartbeatDuringOverviewSaves() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let persistenceController = PersistenceController(inMemory: true)
+        let repository = CoreDataFlickRepository(
+            context: persistenceController.container.viewContext,
+            cloudAvailability: { false }
+        )
+        var state = FlickEmptyState.make()
+        state.products = [makeProduct(name: "Flick Pro", now: now)]
+
+        try await repository.saveMacRunnerHeartbeat(MacRunnerHeartbeat(lastSeenAt: now))
+        try await repository.saveOverview(state)
+
+        let loaded = try await repository.loadOverview()
+        XCTAssertEqual(loaded.macRunnerHeartbeat.lastSeenAt, now)
+    }
+
+    func testMacRunnerHeartbeatFreshnessExpires() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+        XCTAssertTrue(MacRunnerHeartbeat(lastSeenAt: now.addingTimeInterval(-60)).isFresh(asOf: now))
+        XCTAssertFalse(
+            MacRunnerHeartbeat(lastSeenAt: now.addingTimeInterval(-MacRunnerHeartbeat.staleAfter - 1))
+                .isFresh(asOf: now)
+        )
+        XCTAssertFalse(MacRunnerHeartbeat().isFresh(asOf: now))
+    }
+
     func testPublishingTikTokAccountUsesSelectedAccountID() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let firstAccount = makeConnectedAccount(
@@ -525,6 +553,17 @@ final class FlickTests: XCTestCase {
         XCTAssertTrue(model.overview.accounts.isEmpty)
         XCTAssertTrue(model.overview.dashboard.connectedAccounts.isEmpty)
         XCTAssertTrue(repository.state.accounts.isEmpty)
+    }
+
+    func testRecordingMacRunnerHeartbeatUsesDedicatedRepositoryWrite() async {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let repository = InMemoryFlickRepository(state: FlickEmptyState.make())
+        let model = FlickAppModel(repository: repository, configuration: .current)
+
+        await model.recordMacRunnerHeartbeat(now: now)
+
+        XCTAssertEqual(model.overview.macRunnerHeartbeat.lastSeenAt, now)
+        XCTAssertEqual(repository.state.macRunnerHeartbeat.lastSeenAt, now)
     }
 
     func testCreationModelCreateUpdateAndDeleteUseRepository() async throws {
@@ -4067,6 +4106,10 @@ private final class InMemoryFlickRepository: FlickRepository {
 
     func saveOverview(_ state: FlickOverviewState) async throws {
         self.state = state
+    }
+
+    func saveMacRunnerHeartbeat(_ heartbeat: MacRunnerHeartbeat) async throws {
+        state.macRunnerHeartbeat = heartbeat
     }
 
     func upsertConnectedAccount(_ account: ConnectedAccount) async throws {

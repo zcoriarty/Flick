@@ -17,6 +17,9 @@ struct PublishedPostsDashboardChart: View {
     @State private var selectedAccountID: UUID?
     @State private var selectedBucketIndex: Int?
     @State private var hasInteractedWithChart = false
+    @State private var selectionResetToken = 0
+
+    private static let selectionResetDelay: Duration = .seconds(6)
 
     private static let accountPalette: [Color] = [
         .blue,
@@ -116,7 +119,7 @@ struct PublishedPostsDashboardChart: View {
     }
 
     private var effectiveSelectedBucket: PublishedPostsChartBucket? {
-        guard let index = selectedBucketIndex ?? snapshot.defaultSelectedBucketIndex else { return nil }
+        guard let index = selectedBucketIndex else { return nil }
         return snapshot.buckets.first { $0.id == index }
     }
 
@@ -140,7 +143,9 @@ struct PublishedPostsDashboardChart: View {
                     snapshot: snapshot,
                     postType: selectedPostType,
                     selectedBucketIndex: $selectedBucketIndex,
-                    hasInteractedWithChart: $hasInteractedWithChart
+                    hasInteractedWithChart: $hasInteractedWithChart,
+                    onSelectionChanged: scheduleSelectionReset,
+                    onDragEnded: clearSelection
                 )
                 .frame(height: 324)
                 .transition(
@@ -171,6 +176,18 @@ struct PublishedPostsDashboardChart: View {
         }
         .onChange(of: selectedAccountID) { _, _ in
             resetSelection()
+        }
+        .task(id: selectionResetToken) {
+            guard selectedBucketIndex != nil else { return }
+
+            do {
+                try await Task.sleep(for: Self.selectionResetDelay)
+            } catch {
+                return
+            }
+
+            guard !Task.isCancelled, selectedBucketIndex != nil else { return }
+            clearSelection()
         }
         .animation(.spring(response: 0.34, dampingFraction: 0.86), value: snapshot.animationID)
         .accessibilityElement(children: .contain)
@@ -307,6 +324,20 @@ struct PublishedPostsDashboardChart: View {
     private func resetSelection() {
         selectedBucketIndex = nil
         hasInteractedWithChart = false
+        selectionResetToken += 1
+    }
+
+    private func scheduleSelectionReset() {
+        selectionResetToken += 1
+    }
+
+    private func clearSelection() {
+        guard selectedBucketIndex != nil || hasInteractedWithChart else { return }
+
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+            selectedBucketIndex = nil
+            hasInteractedWithChart = false
+        }
     }
 }
 
@@ -316,9 +347,11 @@ private struct PublishedPostsChartCanvas: View {
 
     @Binding var selectedBucketIndex: Int?
     @Binding var hasInteractedWithChart: Bool
+    var onSelectionChanged: () -> Void
+    var onDragEnded: () -> Void
 
     private var effectiveSelectedBucketIndex: Int? {
-        selectedBucketIndex ?? snapshot.defaultSelectedBucketIndex
+        selectedBucketIndex
     }
 
     private var effectiveSelectedBucket: PublishedPostsChartBucket? {
@@ -516,6 +549,10 @@ private struct PublishedPostsChartCanvas: View {
                         guard abs(value.translation.width) >= abs(value.translation.height) else { return }
                         selectBucket(atX: value.location.x, in: layout)
                     }
+                    .onEnded { value in
+                        guard abs(value.translation.width) >= abs(value.translation.height) else { return }
+                        onDragEnded()
+                    }
             )
     }
 
@@ -526,6 +563,7 @@ private struct PublishedPostsChartCanvas: View {
             selectedBucketIndex = index
             hasInteractedWithChart = true
         }
+        onSelectionChanged()
     }
 
     private func shouldShowXAxisLabel(for bucket: PublishedPostsChartBucket) -> Bool {
@@ -615,7 +653,7 @@ private struct PublishedPostsChartCanvas: View {
 
     private var accessibilityValue: String {
         guard let effectiveSelectedBucket else {
-            return postType.emptyTitle
+            return "\(snapshot.dateRangeLabel), \(postType.countText(snapshot.totalCount))"
         }
 
         return "\(effectiveSelectedBucket.accessibilityDateLabel), \(postType.countText(effectiveSelectedBucket.totalCount))"
@@ -777,10 +815,6 @@ private struct PublishedPostsChartSnapshot {
 
     var hasPosts: Bool {
         totalCount > 0
-    }
-
-    var defaultSelectedBucketIndex: Int? {
-        buckets.last(where: { $0.totalCount > 0 })?.id ?? buckets.last?.id
     }
 
     var lineValues: [Int] {

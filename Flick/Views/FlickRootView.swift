@@ -57,13 +57,13 @@ struct FlickRootView: View {
                     AccountsView()
                 }
             }
-            #endif
 
             Tab(FlickSection.settings.title, systemImage: FlickSection.settings.systemImage, value: FlickSection.settings) {
                 NavigationStack {
                     SettingsView()
                 }
             }
+            #endif
         }
         #if os(macOS) || targetEnvironment(macCatalyst)
         .tabViewStyle(.sidebarAdaptable)
@@ -86,6 +86,9 @@ struct FlickRootView: View {
             await appModel.runTikTokPublishStatusRefreshLoop()
         }
         #if os(macOS) || targetEnvironment(macCatalyst)
+        .task {
+            await appModel.runMacRunnerHeartbeatLoop()
+        }
         .task {
             await appModel.runAutomationWorkerLoop()
         }

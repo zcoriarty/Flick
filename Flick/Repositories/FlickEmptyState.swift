@@ -29,6 +29,7 @@ enum FlickEmptyState {
             templates: [],
             automations: [],
             automationPostProgresses: [],
+            macRunnerHeartbeat: MacRunnerHeartbeat(),
             publishingJobs: [],
             publishedPosts: [],
             dashboard: dashboard
