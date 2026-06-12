@@ -12,6 +12,7 @@ struct TemplatePreviewSheet: View {
     var template: ExampleSlideshowTemplate
 
     @State private var selectedSlideID: ExampleSlideshowSlide.ID
+    @State private var fullSizeSlide: ExampleSlideshowSlide?
 
     init(template: ExampleSlideshowTemplate) {
         self.template = template
@@ -48,6 +49,9 @@ struct TemplatePreviewSheet: View {
         .templatePreviewSheetSizing()
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .sheet(item: $fullSizeSlide) { slide in
+            ExampleSlideFullSizePreviewSheet(slide: slide)
+        }
     }
 
     private var header: some View {
@@ -100,7 +104,7 @@ struct TemplatePreviewSheet: View {
                     }
                     .shadow(color: .black.opacity(0.18), radius: 18, x: 0, y: 10)
                     .onTapGesture {
-                        showNextSlide()
+                        fullSizeSlide = selectedSlide
                     }
 
                 HStack {
@@ -127,6 +131,7 @@ struct TemplatePreviewSheet: View {
             .frame(maxWidth: .infinity)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Slide \(selectedSlide.index) of \(previewSlides.count)")
+            .accessibilityHint("Opens full-size preview")
             .accessibilityAddTraits(.isButton)
         } else {
             FlickEmptyStateCard(

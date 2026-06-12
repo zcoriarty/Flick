@@ -81,7 +81,12 @@ final class FlickTests: XCTestCase {
         )
         let creationModel = makeCreationModel(now: now)
         let slide = makeSlide(imageAssetID: asset.id, generationStatus: .complete, now: now)
-        let draft = makeSlideshowDraft(slides: [slide], creationModel: creationModel.generationReference, now: now)
+        let draft = makeSlideshowDraft(
+            slides: [slide],
+            creationModel: creationModel.generationReference,
+            imageVibe: .warmFilm,
+            now: now
+        )
         var state = FlickEmptyState.make()
         state.creationModels = [creationModel]
         state.assets = [asset]
@@ -97,6 +102,7 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(loadedSlide.generationStatus, .complete)
         XCTAssertEqual(loadedDraft.creationModel?.id, creationModel.id)
         XCTAssertEqual(loadedDraft.creationModel?.name, creationModel.name)
+        XCTAssertEqual(loadedDraft.imageVibe, .warmFilm)
         XCTAssertEqual(loadedAsset.id, asset.id)
         XCTAssertEqual(loadedAsset.source, .generated)
         XCTAssertEqual(loadedAsset.publicURL, asset.publicURL)
@@ -1090,6 +1096,7 @@ final class FlickTests: XCTestCase {
             productID: product.id,
             productImageAssetIDs: [productImageID],
             creationModel: creationModel.generationReference,
+            imageVibe: .flashCandid,
             schedule: AutomationSchedule(
                 weekdays: [.monday, .wednesday, .friday],
                 fixedTimes: [
@@ -1134,6 +1141,7 @@ final class FlickTests: XCTestCase {
 
         XCTAssertEqual(loadedAutomation, automation)
         XCTAssertEqual(loadedAutomation.creationModel?.name, creationModel.name)
+        XCTAssertEqual(loadedAutomation.imageVibe, .flashCandid)
         XCTAssertTrue(loadedAutomation.creationModel?.aiMetadataJSONString().contains("\"skin_details\"") == true)
         XCTAssertEqual(loaded.dashboard.activeAutomationCount, 1)
         XCTAssertEqual(loaded.dashboard.nextAutomationPostAt, nextScheduledAt)
@@ -1161,6 +1169,37 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(decodedAutomation.targetPlatforms, automation.targetPlatforms)
     }
 
+    func testContentAutomationDecodesLegacyPayloadWithoutImageVibe() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let automation = ContentAutomation(
+            name: "Weekday launches",
+            templateIDs: ["template-a"],
+            productID: UUID(),
+            productImageAssetIDs: [UUID()],
+            imageVibe: .warmFilm,
+            schedule: AutomationSchedule(),
+            tikTokSettings: DraftTikTokSettings(title: "Try Flick", privacyLevel: .publicToEveryone),
+            createdAt: now,
+            updatedAt: now
+        )
+        let legacyData = try removingTopLevelJSONKey("imageVibe", from: JSONEncoder().encode(automation))
+
+        let decodedAutomation = try JSONDecoder().decode(ContentAutomation.self, from: legacyData)
+
+        XCTAssertEqual(decodedAutomation.imageVibe, .defaultValue)
+        XCTAssertEqual(decodedAutomation.name, automation.name)
+    }
+
+    func testSlideshowDraftDecodesLegacyPayloadWithoutImageVibe() throws {
+        let draft = makeSlideshowDraft(imageVibe: .flashCandid)
+        let legacyData = try removingTopLevelJSONKey("imageVibe", from: JSONEncoder().encode(draft))
+
+        let decodedDraft = try JSONDecoder().decode(SlideshowDraft.self, from: legacyData)
+
+        XCTAssertEqual(decodedDraft.imageVibe, .defaultValue)
+        XCTAssertEqual(decodedDraft.title, draft.title)
+    }
+
     func testCoreDataRoundTripsAutomationPostProgresses() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let persistenceController = PersistenceController(inMemory: true)
@@ -1174,6 +1213,7 @@ final class FlickTests: XCTestCase {
             title: "Launch Carousel",
             productName: "Flick Pro",
             creationModelName: "Cottage Host",
+            targetPlatforms: [.tiktok, .youtubeShorts],
             scheduledAt: now,
             now: now
         )
@@ -1193,6 +1233,24 @@ final class FlickTests: XCTestCase {
 
         XCTAssertEqual(loadedProgress, progress)
         XCTAssertEqual(loadedProgress.currentStep?.id, AutomationPostProgressStepID.planSlideshow)
+    }
+
+    func testAutomationPostProgressDecodesLegacyPayloadWithoutTargetPlatforms() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let progress = AutomationPostProgress.make(
+            automationID: UUID(),
+            title: "Launch Carousel",
+            productName: "Flick Pro",
+            targetPlatforms: [.tiktok, .youtubeShorts],
+            scheduledAt: now,
+            now: now
+        )
+        let legacyData = try removingTopLevelJSONKey("targetPlatforms", from: JSONEncoder().encode(progress))
+
+        let decodedProgress = try JSONDecoder().decode(AutomationPostProgress.self, from: legacyData)
+
+        XCTAssertEqual(decodedProgress.targetPlatforms, [.tiktok])
+        XCTAssertEqual(decodedProgress.title, progress.title)
     }
 
     func testAutomationDashboardSnapshotGroupsActiveProgresses() {
@@ -3264,6 +3322,10 @@ final class FlickTests: XCTestCase {
         XCTAssertTrue(prompt.contains("ignore that stale format instruction"))
         XCTAssertTrue(prompt.contains("stale output size"))
         XCTAssertTrue(prompt.contains("Use template/source people only"))
+        XCTAssertTrue(prompt.contains("human-taken camera photo"))
+        XCTAssertTrue(prompt.contains("Avoid AI gloss"))
+        XCTAssertTrue(prompt.contains("waxy or porcelain skin"))
+        XCTAssertTrue(prompt.contains("ignore that stale style instruction"))
     }
 
     func testGeneratedImagePromptIncludesSelectedCreationModelJSON() {
@@ -3278,6 +3340,19 @@ final class FlickTests: XCTestCase {
         XCTAssertTrue(prompt.contains("\"skin_details\""))
         XCTAssertTrue(prompt.contains("Do not copy a template person's face"))
         XCTAssertTrue(prompt.contains("Cottagecore"))
+    }
+
+    func testGeneratedImagePromptIncludesSelectedImageVibe() {
+        let prompt = SlideshowImagePromptFormatter.applyVerticalOutputContract(
+            to: "Create a candid launch-party slide image.",
+            settings: .draft,
+            imageVibe: .phoneSnapshot
+        )
+
+        XCTAssertTrue(prompt.contains("casual smartphone photo"))
+        XCTAssertTrue(prompt.contains("ordinary phone-camera perspective"))
+        XCTAssertTrue(prompt.contains("human-taken camera photo"))
+        XCTAssertTrue(prompt.contains("not AI-generated artwork"))
     }
 
     func testPlannerAppendsSelectedProductImageWhenTemplateHasNoProductSlot() async throws {
@@ -3326,6 +3401,9 @@ final class FlickTests: XCTestCase {
             XCTAssertTrue(promptText.contains("Selected creation model"))
             XCTAssertTrue(promptText.contains("\"skin_details\""))
             XCTAssertTrue(promptText.contains("Do not copy the template person's face"))
+            XCTAssertTrue(promptText.contains("Image vibe: Documentary"))
+            XCTAssertTrue(promptText.contains("observational documentary photography"))
+            XCTAssertTrue(promptText.contains("real camera photograph made by a human"))
             XCTAssertTrue(promptText.contains("Detected template product-image slide numbers: none"))
             XCTAssertTrue(promptText.contains("Append the selected product image as one final actual slide image at the end of the carousel."))
             XCTAssertTrue(promptText.contains("Keep exactly 2 non-product generated/template slides, plus this final product-image slide."))
@@ -3353,7 +3431,8 @@ final class FlickTests: XCTestCase {
             template: makeExampleSlideshowTemplate(slideCount: 2),
             styleGuide: .empty,
             creationModel: creationModel.generationReference,
-            productImage: productImage
+            productImage: productImage,
+            imageVibe: .documentary
         )
 
         XCTAssertEqual(plan.slides.count, 3)
@@ -3647,6 +3726,7 @@ private func makeSlideshowDraft(
     id: UUID = UUID(),
     slides: [Slide]? = nil,
     creationModel: SlideshowCreationModelReference? = nil,
+    imageVibe: SlideshowImageVibe = .defaultValue,
     now: Date = Date()
 ) -> SlideshowDraft {
     SlideshowDraft(
@@ -3654,6 +3734,7 @@ private func makeSlideshowDraft(
         title: "Launch Carousel",
         templateID: nil,
         creationModel: creationModel,
+        imageVibe: imageVibe,
         brief: "Launch brief",
         topic: "Product launch",
         audience: "Creators",

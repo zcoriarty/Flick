@@ -14,7 +14,8 @@ struct SlideshowPlannerService {
         template: ExampleSlideshowTemplate,
         styleGuide: TemplateStyleGuide,
         creationModel: SlideshowCreationModelReference? = nil,
-        productImage: SlideshowProductImage? = nil
+        productImage: SlideshowProductImage? = nil,
+        imageVibe: SlideshowImageVibe = .defaultValue
     ) async throws -> PlannedSlideshow {
         let templateProductImageSlideNumbers = styleGuide.productImageSlideNumbers(limitedTo: template.slideCount)
         let expectedSlideCount = expectedSlideCount(
@@ -40,6 +41,8 @@ struct SlideshowPlannerService {
                 Template style guide:
                 \(styleGuide.promptSummary)
 
+                \(imageVibe.planningInstructions)
+
                 \(creationModelInstructions(for: creationModel))
 
                 \(productImageInstructions(
@@ -50,6 +53,7 @@ struct SlideshowPlannerService {
 
                 Create a complete slideshow plan with exactly \(expectedSlideCount) planned slides.
                 Create a concise one-line TikTok post title for the post settings title field.
+                Every generated image prompt must look like a real camera photograph made by a human, using the selected image vibe above.
                 Flick will render all text separately, so generated image prompts must forbid readable text, captions, logos, watermarks, fake UI text, and gibberish.
                 Set each slide's textPosition to center and keep the centered text area low-detail.
                 Keep product-image placeholder handling exactly as specified above.
@@ -85,8 +89,10 @@ struct SlideshowPlannerService {
         slide: Slide,
         styleGuide: TemplateStyleGuide,
         previousVisualSummary: String,
-        instruction: String
+        instruction: String,
+        imageVibe: SlideshowImageVibe? = nil
     ) async throws -> SlidePromptRewrite {
+        let resolvedImageVibe = imageVibe ?? draft.imageVibe
         let input: [[String: Any]] = [
             [
                 "role": "user",
@@ -105,6 +111,8 @@ struct SlideshowPlannerService {
                         Global visual motif: \(draft.globalVisualMotif)
                         Template style:
                         \(styleGuide.promptSummary)
+
+                        \(resolvedImageVibe.planningInstructions)
 
                         \(creationModelInstructions(for: draft.creationModel))
 
@@ -171,6 +179,7 @@ struct SlideshowPlannerService {
         You are Flick's slideshow planner and prompt writer.
         Normalize the brief, reuse the selected template structurally, and create one cohesive TikTok/Instagram-style image carousel plan.
         Use the existing Flick template as style and pacing reference only.
+        All generated slide visuals must look like real photographs captured by a human with a physical camera, not AI-generated artwork or glossy renders.
         Template people are reference material for pose, camera framing, environment, and background only; never copy their face, hair, skin tone, body, age, gender expression, clothing, or accessories.
         When a selected creation model is supplied, any visible person in generated slide prompts must match that model JSON and stay visually consistent across slides.
         Do not create image variants or candidate grids.
@@ -186,6 +195,7 @@ struct SlideshowPlannerService {
         """
         Rewrite a single slide image prompt for gpt-image-2.
         Preserve the selected Flick template style guide, slideshow continuity, current text overlay position, and user edit instruction.
+        Preserve the selected image vibe and make the prompt read as human-taken camera photography, not glossy AI art.
         Preserve the draft's selected creation model whenever one is supplied, and treat template people as pose/environment references only.
         The output prompt must request one vertical portrait social slideshow image and must forbid readable text, captions, logos, watermarks, fake UI text, and gibberish.
         Do not propose variants.
@@ -406,13 +416,19 @@ enum SlideshowPromptBuilder {
         for slide: Slide,
         draft: SlideshowDraft,
         styleGuide: TemplateStyleGuide,
-        previousVisualSummary: String
+        previousVisualSummary: String,
+        imageVibe: SlideshowImageVibe? = nil
     ) -> String {
-        """
+        let resolvedImageVibe = imageVibe ?? draft.imageVibe
+        return """
         Create a vertical portrait social slideshow image for slide \(slide.index + 1), optimized for TikTok and Instagram Reels.
 
         Template style:
         \(styleGuide.promptSummary)
+
+        Image vibe:
+        \(resolvedImageVibe.generationContract)
+        \(SlideshowImageVibe.antiAIGlossContract)
 
         \(modelIdentityContract(for: draft.creationModel))
 
@@ -422,7 +438,7 @@ enum SlideshowPromptBuilder {
         Composition:
         - Keep the \(slide.textPosition.rawValue) overlay region clean and low-detail for Flick-rendered text.
         - Use the recurring motif: \(draft.globalVisualMotif).
-        - Match the template lighting, palette, spacing, and polish.
+        - Match the template lighting, palette, and spacing while preserving believable camera realism.
 
         Strict rules:
         - No readable text.

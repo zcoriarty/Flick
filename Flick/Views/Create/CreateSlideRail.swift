@@ -10,24 +10,30 @@ struct CreateSlideRail: View {
     var assetsByID: [UUID: MediaAsset]
     var openAction: (UUID) -> Void
 
+    @State private var fullSizePreview: CreateSlidePreviewSelection?
+
     var body: some View {
         Section("Slides") {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     ForEach(slides.sorted { $0.index < $1.index }) { slide in
-                        Button {
-                            openAction(slide.id)
-                        } label: {
-                            SlideRailItem(
-                                slide: slide,
-                                asset: slide.imageAssetID.flatMap { assetsByID[$0] }
-                            )
-                        }
-                        .buttonStyle(.plain)
+                        let asset = slide.imageAssetID.flatMap { assetsByID[$0] }
+
+                        SlideRailItem(
+                            slide: slide,
+                            asset: asset,
+                            openAction: openAction,
+                            previewAction: {
+                                fullSizePreview = CreateSlidePreviewSelection(slide: slide, asset: asset)
+                            }
+                        )
                     }
                 }
                 .padding(.vertical, 4)
             }
+        }
+        .sheet(item: $fullSizePreview) { preview in
+            CreateSlideFullSizePreviewSheet(slide: preview.slide, asset: preview.asset)
         }
     }
 }
@@ -35,30 +41,44 @@ struct CreateSlideRail: View {
 private struct SlideRailItem: View {
     var slide: Slide
     var asset: MediaAsset?
+    var openAction: (UUID) -> Void
+    var previewAction: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            GeneratedSlideImageView(asset: asset)
-                .frame(width: 74, height: 132)
-                .clipShape(.rect(cornerRadius: 8))
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Slide \(slide.index + 1)")
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(slide.generationStatus.tint)
-                        .frame(width: 7, height: 7)
-                    Text(slide.generationStatus.displayName)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+            Button(action: previewAction) {
+                GeneratedSlideImageView(asset: asset)
+                    .frame(width: 74, height: 132)
+                    .clipShape(.rect(cornerRadius: 8))
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Preview slide \(slide.index + 1)")
+            .accessibilityHint("Opens full-size preview")
+
+            Button {
+                openAction(slide.id)
+            } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Slide \(slide.index + 1)")
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(slide.generationStatus.tint)
+                            .frame(width: 7, height: 7)
+                        Text(slide.generationStatus.displayName)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens slide editor")
         }
         .frame(width: 90, alignment: .leading)
         .padding(.vertical, 8)
-        .accessibilityElement(children: .combine)
     }
 }
 

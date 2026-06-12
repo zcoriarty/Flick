@@ -33,6 +33,7 @@
         <attribute name="creationModelJSON" optional="YES" attributeType="String"/>
         <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="imageVibe" optional="YES" attributeType="String"/>
         <attribute name="lastErrorMessage" optional="YES" attributeType="String"/>
         <attribute name="lastRunAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="name" optional="YES" attributeType="String"/>
@@ -152,6 +153,7 @@
         <attribute name="goal" optional="YES" attributeType="String"/>
         <attribute name="hashtagsJSON" optional="YES" attributeType="String"/>
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="imageVibe" optional="YES" attributeType="String"/>
         <attribute name="narrativeArcJSON" optional="YES" attributeType="String"/>
         <attribute name="planSummary" optional="YES" attributeType="String"/>
         <attribute name="selectedSongsJSON" optional="YES" attributeType="String"/>

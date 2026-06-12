@@ -13,6 +13,7 @@ struct AutomationPostProgress: Identifiable, Codable, Hashable {
     var templateTitle: String?
     var productName: String?
     var creationModelName: String?
+    var targetPlatforms: [SocialPlatform]
     var scheduledAt: Date
     var startedAt: Date
     var updatedAt: Date
@@ -56,6 +57,7 @@ struct AutomationPostProgress: Identifiable, Codable, Hashable {
         title: String,
         productName: String?,
         creationModelName: String? = nil,
+        targetPlatforms: [SocialPlatform] = [.tiktok],
         scheduledAt: Date,
         now: Date = Date()
     ) -> AutomationPostProgress {
@@ -65,6 +67,7 @@ struct AutomationPostProgress: Identifiable, Codable, Hashable {
             title: title,
             productName: productName,
             creationModelName: creationModelName,
+            targetPlatforms: normalizedTargetPlatforms(targetPlatforms),
             scheduledAt: scheduledAt,
             startedAt: now,
             updatedAt: now,
@@ -119,6 +122,73 @@ struct AutomationPostProgress: Identifiable, Codable, Hashable {
                 )
             ]
         )
+    }
+
+    var normalizedTargetPlatforms: [SocialPlatform] {
+        Self.normalizedTargetPlatforms(targetPlatforms)
+    }
+
+    private static func normalizedTargetPlatforms(_ platforms: [SocialPlatform]) -> [SocialPlatform] {
+        var seen = Set<SocialPlatform>()
+        let uniquePlatforms = platforms.filter { seen.insert($0).inserted }
+        return uniquePlatforms.isEmpty ? [.tiktok] : uniquePlatforms
+    }
+}
+
+extension AutomationPostProgress {
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case automationID
+        case draftID
+        case title
+        case templateTitle
+        case productName
+        case creationModelName
+        case targetPlatforms
+        case scheduledAt
+        case startedAt
+        case updatedAt
+        case finishedAt
+        case errorMessage
+        case steps
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        automationID = try container.decode(UUID.self, forKey: .automationID)
+        draftID = try container.decodeIfPresent(UUID.self, forKey: .draftID)
+        title = try container.decode(String.self, forKey: .title)
+        templateTitle = try container.decodeIfPresent(String.self, forKey: .templateTitle)
+        productName = try container.decodeIfPresent(String.self, forKey: .productName)
+        creationModelName = try container.decodeIfPresent(String.self, forKey: .creationModelName)
+        targetPlatforms = Self.normalizedTargetPlatforms(
+            try container.decodeIfPresent([SocialPlatform].self, forKey: .targetPlatforms) ?? [.tiktok]
+        )
+        scheduledAt = try container.decode(Date.self, forKey: .scheduledAt)
+        startedAt = try container.decode(Date.self, forKey: .startedAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        finishedAt = try container.decodeIfPresent(Date.self, forKey: .finishedAt)
+        errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
+        steps = try container.decode([AutomationPostProgressStep].self, forKey: .steps)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(automationID, forKey: .automationID)
+        try container.encodeIfPresent(draftID, forKey: .draftID)
+        try container.encode(title, forKey: .title)
+        try container.encodeIfPresent(templateTitle, forKey: .templateTitle)
+        try container.encodeIfPresent(productName, forKey: .productName)
+        try container.encodeIfPresent(creationModelName, forKey: .creationModelName)
+        try container.encode(normalizedTargetPlatforms, forKey: .targetPlatforms)
+        try container.encode(scheduledAt, forKey: .scheduledAt)
+        try container.encode(startedAt, forKey: .startedAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(finishedAt, forKey: .finishedAt)
+        try container.encodeIfPresent(errorMessage, forKey: .errorMessage)
+        try container.encode(steps, forKey: .steps)
     }
 }
 

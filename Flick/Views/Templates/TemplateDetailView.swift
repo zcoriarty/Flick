@@ -9,6 +9,8 @@ struct TemplateDetailView: View {
     @Environment(FlickAppModel.self) private var appModel
     var template: ExampleSlideshowTemplate
 
+    @State private var fullSizeSlide: ExampleSlideshowSlide?
+
     var body: some View {
         VStack(alignment: .leading, spacing: FlickStyle.sectionSpacing) {
             header
@@ -24,6 +26,9 @@ struct TemplateDetailView: View {
                 }
                 .buttonStyle(.glassProminent)
             }
+        }
+        .sheet(item: $fullSizeSlide) { slide in
+            ExampleSlideFullSizePreviewSheet(slide: slide)
         }
     }
 
@@ -68,7 +73,9 @@ struct TemplateDetailView: View {
             SectionTitle(title: "Slides", subtitle: nil, systemImage: "photo.stack")
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 118, maximum: 180), spacing: 12, alignment: .top)], spacing: 18) {
                 ForEach(template.slides) { slide in
-                    TemplateSlideTile(slide: slide)
+                    TemplateSlideTile(slide: slide) {
+                        fullSizeSlide = slide
+                    }
                 }
             }
         }
@@ -91,18 +98,96 @@ struct TemplateDetailView: View {
 
 private struct TemplateSlideTile: View {
     var slide: ExampleSlideshowSlide
+    var action: () -> Void
 
     var body: some View {
-        VerticalMediaFrame(fileURL: slide.localURL, remoteURL: slide.remoteURL, cornerRadius: 8)
-            .overlay(alignment: .bottomLeading) {
-                Text("Slide \(slide.index)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 5)
-                    .background(.black.opacity(0.48), in: .capsule)
-                    .padding(7)
+        Button(action: action) {
+            VerticalMediaFrame(fileURL: slide.localURL, remoteURL: slide.remoteURL, cornerRadius: 8)
+                .overlay(alignment: .bottomLeading) {
+                    Text("Slide \(slide.index)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 5)
+                        .background(.black.opacity(0.48), in: .capsule)
+                        .padding(7)
+                }
+                .contentShape(.rect(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Preview slide \(slide.index)")
+        .accessibilityHint("Opens full-size preview")
+    }
+}
+
+struct ExampleSlideFullSizePreviewSheet: View {
+    var slide: ExampleSlideshowSlide
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black
+                .ignoresSafeArea()
+
+            GeometryReader { proxy in
+                let size = previewSize(in: proxy.size)
+
+                VerticalMediaFrame(
+                    fileURL: slide.localURL,
+                    remoteURL: slide.remoteURL,
+                    cornerRadius: 18,
+                    maxPixelSize: 1_920
+                )
+                .frame(width: size.width, height: size.height)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, horizontalPadding / 2)
+                .padding(.vertical, verticalPadding / 2)
             }
+
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(.black.opacity(0.48), in: .circle)
+                    .overlay {
+                        Circle()
+                            .stroke(.white.opacity(0.18), lineWidth: 1)
+                    }
+            }
+            .buttonStyle(.plain)
+            .padding(16)
+            .accessibilityLabel("Close full-size slide")
+        }
+        .preferredColorScheme(.dark)
+        .presentationDetents([.large])
+        .presentationDragIndicator(.hidden)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Full-size slide \(slide.index)")
+        #if os(macOS) || targetEnvironment(macCatalyst)
+        .frame(
+            minWidth: 460,
+            idealWidth: 560,
+            maxWidth: 760,
+            minHeight: 620,
+            idealHeight: 760,
+            maxHeight: 920
+        )
+        #endif
+    }
+
+    private var horizontalPadding: CGFloat { 32 }
+    private var verticalPadding: CGFloat { 88 }
+
+    private func previewSize(in size: CGSize) -> CGSize {
+        let availableWidth = max(1, size.width - horizontalPadding)
+        let availableHeight = max(1, size.height - verticalPadding)
+        let widthFromHeight = availableHeight * VerticalMediaFrame.targetAspectRatio
+        let width = min(availableWidth, widthFromHeight)
+        return CGSize(width: width, height: width / VerticalMediaFrame.targetAspectRatio)
     }
 }
 

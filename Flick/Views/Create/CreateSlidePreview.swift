@@ -8,20 +8,109 @@ import SwiftUI
 struct CreateSlidePreviewCanvas: View {
     var slide: Slide
     var asset: MediaAsset?
+    var cornerRadius: CGFloat = 10
+    var imageContentMode: ContentMode = .fill
+    var aspectRatio: CGFloat = CGFloat(SlideshowImageGenerationSettings.finalExport.aspectRatio)
 
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                GeneratedSlideImageView(asset: asset)
+                GeneratedSlideImageView(asset: asset, contentMode: imageContentMode)
                     .frame(width: proxy.size.width, height: proxy.size.height)
 
                 SlideOverlayPreview(slide: slide)
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .id(slide.overlayPreviewID)
             }
-            .clipShape(.rect(cornerRadius: 10))
+            .clipShape(.rect(cornerRadius: cornerRadius))
         }
-        .aspectRatio(CGFloat(SlideshowImageGenerationSettings.finalExport.aspectRatio), contentMode: .fit)
+        .aspectRatio(aspectRatio, contentMode: .fit)
+    }
+}
+
+struct CreateSlidePreviewSelection: Identifiable {
+    var slide: Slide
+    var asset: MediaAsset?
+
+    var id: UUID { slide.id }
+}
+
+struct CreateSlideFullSizePreviewSheet: View {
+    var slide: Slide
+    var asset: MediaAsset?
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black
+                .ignoresSafeArea()
+
+            GeometryReader { proxy in
+                let size = previewSize(in: proxy.size)
+
+                CreateSlidePreviewCanvas(
+                    slide: slide,
+                    asset: asset,
+                    cornerRadius: 18,
+                    imageContentMode: .fit,
+                    aspectRatio: previewAspectRatio
+                )
+                .frame(width: size.width, height: size.height)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, horizontalPadding / 2)
+                .padding(.vertical, verticalPadding / 2)
+            }
+
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(.black.opacity(0.48), in: .circle)
+                    .overlay {
+                        Circle()
+                            .stroke(.white.opacity(0.18), lineWidth: 1)
+                    }
+            }
+            .buttonStyle(.plain)
+            .padding(16)
+            .accessibilityLabel("Close full-size slide")
+        }
+        .preferredColorScheme(.dark)
+        .presentationDetents([.large])
+        .presentationDragIndicator(.hidden)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Full-size slide \(slide.index + 1)")
+        #if os(macOS) || targetEnvironment(macCatalyst)
+        .frame(
+            minWidth: 460,
+            idealWidth: 560,
+            maxWidth: 760,
+            minHeight: 620,
+            idealHeight: 760,
+            maxHeight: 920
+        )
+        #endif
+    }
+
+    private var horizontalPadding: CGFloat { 32 }
+    private var verticalPadding: CGFloat { 88 }
+
+    private var previewAspectRatio: CGFloat {
+        if let asset, asset.width > 0, asset.height > 0 {
+            return CGFloat(asset.width) / CGFloat(asset.height)
+        }
+        return CGFloat(SlideshowImageGenerationSettings.finalExport.aspectRatio)
+    }
+
+    private func previewSize(in size: CGSize) -> CGSize {
+        let availableWidth = max(1, size.width - horizontalPadding)
+        let availableHeight = max(1, size.height - verticalPadding)
+        let width = min(availableWidth, availableHeight * previewAspectRatio)
+        return CGSize(width: width, height: width / previewAspectRatio)
     }
 }
 

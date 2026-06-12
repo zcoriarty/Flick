@@ -639,6 +639,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
     var productID: UUID?
     var productImageAssetIDs: [UUID]
     var creationModel: SlideshowCreationModelReference?
+    var imageVibe: SlideshowImageVibe
     var schedule: AutomationSchedule
     var tikTokSettings: DraftTikTokSettings
     var youtubeSettings: DraftYouTubeSettings
@@ -660,6 +661,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
         productID: UUID?,
         productImageAssetIDs: [UUID],
         creationModel: SlideshowCreationModelReference? = nil,
+        imageVibe: SlideshowImageVibe = .defaultValue,
         schedule: AutomationSchedule,
         tikTokSettings: DraftTikTokSettings,
         youtubeSettings: DraftYouTubeSettings = DraftYouTubeSettings(),
@@ -680,6 +682,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
         self.productID = productID
         self.productImageAssetIDs = productImageAssetIDs.uniqued()
         self.creationModel = creationModel
+        self.imageVibe = imageVibe
         self.schedule = schedule
         self.tikTokSettings = tikTokSettings
         self.youtubeSettings = youtubeSettings
@@ -702,6 +705,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
         case productID
         case productImageAssetIDs
         case creationModel
+        case imageVibe
         case schedule
         case tikTokSettings
         case youtubeSettings
@@ -725,6 +729,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
         productID = try container.decodeIfPresent(UUID.self, forKey: .productID)
         productImageAssetIDs = try container.decode([UUID].self, forKey: .productImageAssetIDs).uniqued()
         creationModel = try container.decodeIfPresent(SlideshowCreationModelReference.self, forKey: .creationModel)
+        imageVibe = try container.decodeIfPresent(SlideshowImageVibe.self, forKey: .imageVibe) ?? .defaultValue
         schedule = try container.decode(AutomationSchedule.self, forKey: .schedule)
         tikTokSettings = try container.decode(DraftTikTokSettings.self, forKey: .tikTokSettings)
         youtubeSettings = try container.decodeIfPresent(DraftYouTubeSettings.self, forKey: .youtubeSettings) ?? DraftYouTubeSettings()

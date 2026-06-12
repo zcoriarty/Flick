@@ -1009,7 +1009,8 @@ final class FlickAppModel {
         brief: String,
         from template: ExampleSlideshowTemplate,
         creationModel: SlideshowCreationModelReference? = nil,
-        productImage: SlideshowProductImage? = nil
+        productImage: SlideshowProductImage? = nil,
+        imageVibe: SlideshowImageVibe = .defaultValue
     ) async {
         guard !isPlanningSlideshow else { return }
 
@@ -1030,7 +1031,8 @@ final class FlickAppModel {
                 brief: planningBrief,
                 template: template,
                 creationModel: creationModel,
-                productImage: productImage
+                productImage: productImage,
+                imageVibe: imageVibe
             )
             if result.shouldInsertCreativeTemplate {
                 overview.templates.insert(result.creativeTemplate, at: 0)
@@ -1071,7 +1073,8 @@ final class FlickAppModel {
                 slide: slide,
                 styleGuide: styleGuide,
                 previousVisualSummary: previousSummary,
-                instruction: normalizedInstruction
+                instruction: normalizedInstruction,
+                imageVibe: draft.imageVibe
             )
 
             let now = Date()
@@ -2063,6 +2066,7 @@ private extension FlickAppModel {
                 overview.products.first { $0.id == productID }?.name
             },
             creationModelName: automation.creationModel?.name,
+            targetPlatforms: automation.targetPlatforms,
             scheduledAt: scheduledAt
         )
         overview.automationPostProgresses.insert(progress, at: 0)
@@ -2199,7 +2203,8 @@ private extension FlickAppModel {
         brief: String,
         template: ExampleSlideshowTemplate,
         creationModel: SlideshowCreationModelReference?,
-        productImage: SlideshowProductImage?
+        productImage: SlideshowProductImage?,
+        imageVibe: SlideshowImageVibe = .defaultValue
     ) async throws -> AISlideshowCreationResult {
         let openAIClient = makeOpenAIClient()
         let analyzedTemplate = try await analyzedCreativeTemplate(from: template, openAIClient: openAIClient)
@@ -2210,7 +2215,8 @@ private extension FlickAppModel {
             template: template,
             styleGuide: styleGuide,
             creationModel: creationModel,
-            productImage: productImage
+            productImage: productImage,
+            imageVibe: imageVibe
         )
 
         let expectedSlideCount = expectedPlanSlideCount(
@@ -2235,6 +2241,7 @@ private extension FlickAppModel {
             templateID: analyzedTemplate.creativeTemplate.id,
             creationModel: creationModel,
             productImage: productImage,
+            imageVibe: imageVibe,
             now: now
         )
 
@@ -2350,7 +2357,8 @@ private extension FlickAppModel {
                     brief: planningBrief,
                     template: template,
                     creationModel: automation.creationModel,
-                    productImage: productImage
+                    productImage: productImage,
+                    imageVibe: automation.imageVibe
                 )
             } catch {
                 isPlanningSlideshow = false
@@ -2707,6 +2715,7 @@ private extension FlickAppModel {
         templateID: UUID,
         creationModel: SlideshowCreationModelReference?,
         productImage: SlideshowProductImage?,
+        imageVibe: SlideshowImageVibe,
         now: Date
     ) -> SlideshowDraft {
         let slides = plan.slides
@@ -2736,6 +2745,7 @@ private extension FlickAppModel {
             title: plan.title,
             templateID: templateID,
             creationModel: creationModel,
+            imageVibe: imageVibe,
             brief: brief,
             topic: plan.topic,
             audience: plan.audience,
@@ -2866,7 +2876,8 @@ private extension FlickAppModel {
                     slide: slide,
                     styleGuide: styleGuide,
                     previousVisualSummary: previousSummary,
-                    instruction: instruction
+                    instruction: instruction,
+                    imageVibe: draft.imageVibe
                 )
                 slide.prompt = rewrite.imagePrompt
                 slide.selectedVisualSummary = rewrite.selectedVisualSummary
@@ -2881,14 +2892,16 @@ private extension FlickAppModel {
                     for: slide,
                     draft: draft,
                     styleGuide: styleGuide,
-                    previousVisualSummary: previousSummary
+                    previousVisualSummary: previousSummary,
+                    imageVibe: draft.imageVibe
                 )
             }
 
             let generatedImage = try await ImageGenerationService(client: openAIClient).generateSlideImage(
                 prompt: slide.prompt,
                 settings: settings,
-                creationModel: draft.creationModel
+                creationModel: draft.creationModel,
+                imageVibe: draft.imageVibe
             )
             let generatedContentType = UTType(mimeType: generatedImage.contentType) ?? .jpeg
             let storedMedia = try generatedImageLibrary.store(data: generatedImage.data, contentType: generatedContentType)

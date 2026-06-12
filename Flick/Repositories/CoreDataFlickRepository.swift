@@ -604,6 +604,7 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(draft.templateID, forKey: DraftKey.templateID)
         object.setValue(draft.creationModel?.id, forKey: DraftKey.creationModelID)
         object.setValue(draft.creationModel, asJSONForKey: DraftKey.creationModelJSON)
+        object.setValue(draft.imageVibe.rawValue, forKey: DraftKey.imageVibe)
         object.setValue(draft.brief, forKey: DraftKey.brief)
         object.setValue(draft.topic, forKey: DraftKey.topic)
         object.setValue(draft.audience, forKey: DraftKey.audience)
@@ -652,6 +653,7 @@ final class CoreDataFlickRepository: FlickRepository {
         object.setValue(automation.productImageAssetIDs.map(\.uuidString), asJSONForKey: AutomationKey.productImageAssetIDsJSON)
         object.setValue(automation.creationModel?.id, forKey: AutomationKey.creationModelID)
         object.setValue(automation.creationModel, asJSONForKey: AutomationKey.creationModelJSON)
+        object.setValue(automation.imageVibe.rawValue, forKey: AutomationKey.imageVibe)
         object.setValue(automation.schedule, asJSONForKey: AutomationKey.scheduleJSON)
         object.setValue(automation.tikTokSettings, asJSONForKey: AutomationKey.tikTokSettingsJSON)
         object.setValue(automation.youtubeSettings, asJSONForKey: AutomationKey.youtubeSettingsJSON)
@@ -795,6 +797,7 @@ private enum DraftKey {
     static let goal = "goal"
     static let hashtagsJSON = "hashtagsJSON"
     static let id = "id"
+    static let imageVibe = "imageVibe"
     static let narrativeArcJSON = "narrativeArcJSON"
     static let planSummary = "planSummary"
     static let selectedSongsJSON = "selectedSongsJSON"
@@ -835,6 +838,7 @@ private enum AutomationKey {
     static let creationModelJSON = "creationModelJSON"
     static let createdAt = "createdAt"
     static let id = "id"
+    static let imageVibe = "imageVibe"
     static let lastErrorMessage = "lastErrorMessage"
     static let lastRunAt = "lastRunAt"
     static let name = "name"
@@ -1062,6 +1066,8 @@ private extension SlideshowDraft {
             title: title,
             templateID: managedObject.value(forKey: DraftKey.templateID) as? UUID,
             creationModel: managedObject.decodedJSON(SlideshowCreationModelReference.self, forKey: DraftKey.creationModelJSON),
+            imageVibe: SlideshowImageVibe(rawValue: managedObject.value(forKey: DraftKey.imageVibe) as? String ?? "")
+                ?? .defaultValue,
             brief: managedObject.value(forKey: DraftKey.brief) as? String ?? "",
             topic: managedObject.value(forKey: DraftKey.topic) as? String ?? "",
             audience: managedObject.value(forKey: DraftKey.audience) as? String ?? "",
@@ -1146,6 +1152,8 @@ private extension ContentAutomation {
             productID: managedObject.value(forKey: AutomationKey.productID) as? UUID,
             productImageAssetIDs: productImageAssetIDStrings.compactMap(UUID.init(uuidString:)),
             creationModel: managedObject.decodedJSON(SlideshowCreationModelReference.self, forKey: AutomationKey.creationModelJSON),
+            imageVibe: SlideshowImageVibe(rawValue: managedObject.value(forKey: AutomationKey.imageVibe) as? String ?? "")
+                ?? .defaultValue,
             schedule: schedule,
             tikTokSettings: tikTokSettings,
             youtubeSettings: youtubeSettings,

@@ -119,6 +119,123 @@ struct SlideshowProductImage: Hashable {
     var asset: MediaAsset
 }
 
+enum SlideshowImageVibe: String, CaseIterable, Codable, Identifiable, Hashable {
+    nonisolated static let defaultValue: SlideshowImageVibe = .realisticCamera
+
+    case realisticCamera
+    case phoneSnapshot
+    case documentary
+    case editorialNatural
+    case warmFilm
+    case flashCandid
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .realisticCamera: "Real Camera"
+        case .phoneSnapshot: "Phone Snapshot"
+        case .documentary: "Documentary"
+        case .editorialNatural: "Natural Editorial"
+        case .warmFilm: "Warm Film"
+        case .flashCandid: "Flash Candid"
+        }
+    }
+
+    var menuDetail: String {
+        switch self {
+        case .realisticCamera:
+            "Natural human-camera realism"
+        case .phoneSnapshot:
+            "Casual smartphone photo"
+        case .documentary:
+            "Observed real-life scene"
+        case .editorialNatural:
+            "Believable lifestyle shoot"
+        case .warmFilm:
+            "Soft analog photo texture"
+        case .flashCandid:
+            "Direct-flash candid energy"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .realisticCamera: "camera"
+        case .phoneSnapshot: "iphone"
+        case .documentary: "camera.viewfinder"
+        case .editorialNatural: "person.crop.rectangle"
+        case .warmFilm: "camera.filters"
+        case .flashCandid: "bolt.fill"
+        }
+    }
+
+    var planningInstructions: String {
+        """
+        Image vibe: \(displayName)
+        \(generationContract)
+        Every generated image prompt must include a concrete camera, lens, lighting, or capture cue that supports this vibe.
+        Do not ask for glossy, hyperreal, cinematic, 3D-rendered, airbrushed, plastic, or stock-photo-composite visuals.
+        """
+    }
+
+    var generationContract: String {
+        switch self {
+        case .realisticCamera:
+            """
+            Make the image look like a real photograph captured by a person with a physical camera.
+            Use natural available light, realistic dynamic range, believable shadows, ordinary lens behavior, subtle sensor noise, real skin texture, and slightly imperfect framing.
+            """
+        case .phoneSnapshot:
+            """
+            Make the image look like a casual smartphone photo taken by a real person.
+            Use ordinary phone-camera perspective, available light, mild motion blur or hand-held imperfection where natural, realistic focus, and everyday color response.
+            """
+        case .documentary:
+            """
+            Make the image look like observational documentary photography.
+            Use ambient light, realistic moments, honest texture, imperfect posture or placement, restrained color, and the feeling of a captured real scene instead of a staged render.
+            """
+        case .editorialNatural:
+            """
+            Make the image look like a believable lifestyle editorial photo.
+            Use controlled but natural light, real locations, authentic skin and material texture, modest retouching, and camera-real composition without ad-render gloss.
+            """
+        case .warmFilm:
+            """
+            Make the image look like a real 35mm or disposable-camera film photograph.
+            Use soft grain, gentle halation, warm color response, imperfect exposure, real-world texture, and natural lens softness without synthetic vintage filters.
+            """
+        case .flashCandid:
+            """
+            Make the image look like a real direct-flash candid photo.
+            Use on-camera flash falloff, realistic hard shadows, slight red-eye or specular highlights only when plausible, ordinary background detail, and candid human-camera framing.
+            """
+        }
+    }
+
+    static var antiAIGlossContract: String {
+        """
+        Photographic realism:
+        - The result must read as a human-taken camera photo, not AI-generated artwork, CGI, illustration, a render, a mockup, or a stock-photo composite.
+        - Preserve real-world imperfections: natural pores, fine hair, fabric texture, small asymmetry, realistic hands, normal teeth and eyes, product scuffs, ambient clutter, true perspective, and plausible depth of field.
+        - Avoid AI gloss: waxy or porcelain skin, plastic faces, over-smoothed surfaces, perfect symmetry, hyper-sharp HDR, neon rim lighting, surreal bokeh, excessive teal-orange grading, glossy 3D product-render shine, airbrushed makeup, and immaculate unreal environments.
+        - Prefer restrained contrast, believable color, realistic shadows, physical camera exposure limits, and small hand-held imperfections over polished synthetic perfection.
+        """
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        self = SlideshowImageVibe(rawValue: rawValue) ?? .defaultValue
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
 struct GeneratedSlideImage: Hashable {
     var data: Data
     var contentType: String

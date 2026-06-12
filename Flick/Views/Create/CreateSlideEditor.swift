@@ -23,6 +23,7 @@ struct CreateSlideEditor: View {
     @State private var selectedTab: CreateSlideEditorTab = .text
     @State private var promptRewriteInstruction = ""
     @State private var regenerationInstruction = ""
+    @State private var fullSizePreview: CreateSlidePreviewSelection?
 
     var body: some View {
         NavigationStack {
@@ -39,7 +40,13 @@ struct CreateSlideEditor: View {
                     CreateSlidePreviewPager(
                         slides: sortedSlides,
                         assetsByID: assetsByID,
-                        selectedSlideID: $selectedSlideID
+                        selectedSlideID: $selectedSlideID,
+                        previewAction: { slide in
+                            fullSizePreview = CreateSlidePreviewSelection(
+                                slide: slide,
+                                asset: slide.imageAssetID.flatMap { assetsByID[$0] }
+                            )
+                        }
                     )
                     .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                     .listRowBackground(Color.clear)
@@ -100,6 +107,9 @@ struct CreateSlideEditor: View {
         }
         .onChange(of: slideIDs) { _, _ in
             focusInitialSlideIfNeeded()
+        }
+        .sheet(item: $fullSizePreview) { preview in
+            CreateSlideFullSizePreviewSheet(slide: preview.slide, asset: preview.asset)
         }
     }
 
@@ -171,6 +181,7 @@ private struct CreateSlidePreviewPager: View {
     var slides: [Slide]
     var assetsByID: [UUID: MediaAsset]
     @Binding var selectedSlideID: UUID?
+    var previewAction: (Slide) -> Void
 
     var body: some View {
         pager
@@ -186,7 +197,13 @@ private struct CreateSlidePreviewPager: View {
                         slide: slide,
                         asset: slide.imageAssetID.flatMap { assetsByID[$0] }
                     )
+                    .contentShape(.rect)
+                    .onTapGesture {
+                        previewAction(slide)
+                    }
                     .accessibilityLabel("Slide \(slide.index + 1)")
+                    .accessibilityHint("Opens full-size preview")
+                    .accessibilityAddTraits(.isButton)
 
                     CreateSlidePageIndicator(
                         slides: slides,

@@ -343,6 +343,7 @@ private struct IOSAutomationPostRow: View {
 private struct IOSAutomationPostDetailView: View {
     @Environment(FlickAppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
+    @State private var fullSizePreview: CreateSlidePreviewSelection?
 
     var automationID: UUID
     var previewID: UUID
@@ -368,6 +369,9 @@ private struct IOSAutomationPostDetailView: View {
                 }
                 .flickSettingsListStyle()
                 .flickToolbarTitle(preview.displayTitle)
+                .sheet(item: $fullSizePreview) { preview in
+                    CreateSlideFullSizePreviewSheet(slide: preview.slide, asset: preview.asset)
+                }
             } else {
                 ContentUnavailableView(
                     "Post unavailable",
@@ -507,9 +511,14 @@ private struct IOSAutomationPostDetailView: View {
                 )
             } else {
                 ForEach(slides(for: preview)) { slide in
+                    let asset = slide.imageAssetID.flatMap { previewAssetByID($0) }
+
                     IOSAutomationPostSlideRow(
                         slide: slide,
-                        asset: slide.imageAssetID.flatMap { previewAssetByID($0) }
+                        asset: asset,
+                        previewAction: {
+                            fullSizePreview = CreateSlidePreviewSelection(slide: slide, asset: asset)
+                        }
                     )
                 }
             }
@@ -537,16 +546,22 @@ private struct IOSAutomationPostDetailView: View {
 private struct IOSAutomationPostSlideRow: View {
     var slide: Slide
     var asset: MediaAsset?
+    var previewAction: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            VerticalMediaFrame(
-                fileURL: asset?.localFileURL,
-                remoteURL: asset?.publicURL,
-                cornerRadius: 8,
-                maxPixelSize: 360
-            )
-            .frame(width: 52)
+            Button(action: previewAction) {
+                VerticalMediaFrame(
+                    fileURL: asset?.localFileURL,
+                    remoteURL: asset?.publicURL,
+                    cornerRadius: 8,
+                    maxPixelSize: 360
+                )
+                .frame(width: 52)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Preview slide \(slide.index + 1)")
+            .accessibilityHint("Opens full-size preview")
 
             VStack(alignment: .leading, spacing: 5) {
                 Text("Slide \(slide.index + 1)")
@@ -559,7 +574,6 @@ private struct IOSAutomationPostSlideRow: View {
             .layoutPriority(1)
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
     }
 }
 #endif

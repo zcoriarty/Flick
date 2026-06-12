@@ -28,6 +28,8 @@ struct IOSCreateView: View {
     @State private var selectedAutomationTemplateIDs: Set<String> = []
     @State private var selectedAutomationTemplateNicheIDs: Set<String> = []
     @State private var selectedCreationModel: SlideshowCreationModelReference?
+    @State private var selectedImageVibe: SlideshowImageVibe = .defaultValue
+    @State private var automationImageVibe: SlideshowImageVibe = .defaultValue
     @State private var selectedProductID: UUID?
     @State private var selectedProductImageAssetID: UUID?
     @State private var selectedAutomationProductImageAssetIDs: Set<UUID> = []
@@ -132,10 +134,12 @@ struct IOSCreateView: View {
                 await loadTemplates()
             }
             syncCreationModelSelectionFromActiveDraft(in: appModel)
+            syncImageVibeSelectionFromActiveDraft(in: appModel)
             updateSelectedSlide(using: appModel)
         }
         .onChange(of: appModel.activeCreateDraftID) { _, _ in
             syncCreationModelSelectionFromActiveDraft(in: appModel)
+            syncImageVibeSelectionFromActiveDraft(in: appModel)
             updateSelectedSlide(using: appModel)
         }
         .onChange(of: appModel.overview.drafts) { _, _ in
@@ -166,6 +170,7 @@ struct IOSCreateView: View {
         .onChange(of: isAutomated) { _, newValue in
             if !newValue {
                 syncCreationModelSelectionFromActiveDraft(in: appModel)
+                syncImageVibeSelectionFromActiveDraft(in: appModel)
             }
         }
         .sheet(item: $presentedSheet) { sheet in
@@ -193,6 +198,7 @@ struct IOSCreateView: View {
                     selectAction: { draftID in
                         appModel.selectCreateDraft(id: draftID)
                         syncCreationModelSelectionFromActiveDraft(in: appModel)
+                        syncImageVibeSelectionFromActiveDraft(in: appModel)
                         updateSelectedSlide(using: appModel)
                     },
                     deleteAction: { draftID in
@@ -437,6 +443,8 @@ struct IOSCreateView: View {
             selectedProductImageAssetIDs: $selectedAutomationProductImageAssetIDs
         )
 
+        CreateImageVibeSection(imageVibe: $automationImageVibe)
+
         CreateTikTokSettingsSection(
             accountSummary: tiktokAccountSummary,
             isAccountReady: isTikTokAccountReady,
@@ -494,6 +502,10 @@ struct IOSCreateView: View {
             productImageAssets: selectableProductImageAssets(in: appModel),
             selectedProductID: $selectedProductID,
             selectedProductImageAssetID: $selectedProductImageAssetID
+        )
+
+        CreateImageVibeSection(
+            imageVibe: manualImageVibeBinding(in: appModel, draftID: currentDraftID)
         )
 
         AnalyzeTemplateSection(
@@ -677,6 +689,31 @@ struct IOSCreateView: View {
         appModel.overview.drafts.first { $0.id == draftID }?.accountSelections ?? []
     }
 
+    private func manualImageVibeBinding(in appModel: FlickAppModel, draftID: UUID?) -> Binding<SlideshowImageVibe> {
+        Binding(
+            get: {
+                guard
+                    let draftID,
+                    let draft = appModel.overview.drafts.first(where: { $0.id == draftID })
+                else {
+                    return selectedImageVibe
+                }
+                return draft.imageVibe
+            },
+            set: { newValue in
+                selectedImageVibe = newValue
+                guard let draftID else { return }
+                updateDraft(in: appModel, draftID: draftID) { draft in
+                    draft.imageVibe = newValue
+                }
+            }
+        )
+    }
+
+    private func selectedManualImageVibe(in appModel: FlickAppModel) -> SlideshowImageVibe {
+        appModel.activeCreateDraft?.imageVibe ?? selectedImageVibe
+    }
+
     private func updateTikTokSettings(
         in appModel: FlickAppModel,
         draftID: UUID,
@@ -744,6 +781,7 @@ struct IOSCreateView: View {
         selectedProductID = nil
         selectedProductImageAssetID = nil
         selectedCreationModel = nil
+        selectedImageVibe = .defaultValue
         selectedSlideID = nil
     }
 
@@ -753,6 +791,7 @@ struct IOSCreateView: View {
         selectedAutomationTemplateIDs = []
         selectedAutomationTemplateNicheIDs = []
         selectedCreationModel = nil
+        automationImageVibe = .defaultValue
         selectedProductID = nil
         selectedAutomationProductImageAssetIDs = []
         automationSchedule = .default
@@ -772,6 +811,7 @@ struct IOSCreateView: View {
         selectedAutomationTemplateIDs = Set(automation.templateIDs)
         selectedAutomationTemplateNicheIDs = Set(automation.templateNicheIDs)
         selectedCreationModel = automation.creationModel
+        automationImageVibe = automation.imageVibe
         selectedProductID = automation.productID
         selectedAutomationProductImageAssetIDs = Set(automation.productImageAssetIDs)
         automationSchedule = automation.schedule
@@ -859,6 +899,7 @@ struct IOSCreateView: View {
             productID: selectedProductID,
             productImageAssetIDs: Array(selectedAutomationProductImageAssetIDs).sorted { $0.uuidString < $1.uuidString },
             creationModel: selectedCreationModel,
+            imageVibe: automationImageVibe,
             schedule: schedule,
             tikTokSettings: automationTikTokSettings,
             youtubeSettings: automationYouTubeSettings,
@@ -890,7 +931,8 @@ struct IOSCreateView: View {
                 brief: "",
                 from: selectedTemplate,
                 creationModel: selectedCreationModel,
-                productImage: productImage
+                productImage: productImage,
+                imageVibe: selectedManualImageVibe(in: appModel)
             )
             updateSelectedSlide(using: appModel)
         }
@@ -1080,6 +1122,11 @@ struct IOSCreateView: View {
     private func syncCreationModelSelectionFromActiveDraft(in appModel: FlickAppModel) {
         guard !isAutomated, let draft = appModel.activeCreateDraft else { return }
         selectedCreationModel = draft.creationModel
+    }
+
+    private func syncImageVibeSelectionFromActiveDraft(in appModel: FlickAppModel) {
+        guard !isAutomated, let draft = appModel.activeCreateDraft else { return }
+        selectedImageVibe = draft.imageVibe
     }
 
     private func refreshSelectedCreationModel(in appModel: FlickAppModel) {

@@ -189,6 +189,10 @@ struct MacAutomationInProgressCard: View {
                 AutomationProgressStepStrip(steps: progress.steps)
 
                 HStack(spacing: 10) {
+                    AutomationProgressPlatformSummary(
+                        platforms: progress.normalizedTargetPlatforms,
+                        font: .caption2
+                    )
                     if let productName = progress.productName, !productName.isEmpty {
                         Label(productName, systemImage: "shippingbox")
                     }

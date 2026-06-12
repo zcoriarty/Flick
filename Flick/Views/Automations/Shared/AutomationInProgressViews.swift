@@ -33,6 +33,8 @@ struct AutomationProgressSummaryRow: View {
                         .lineLimit(1)
                 }
 
+                AutomationProgressPlatformSummary(platforms: progress.normalizedTargetPlatforms)
+
                 ProgressView(value: progress.progressFraction)
                     .progressViewStyle(.linear)
 
@@ -52,6 +54,43 @@ struct AutomationProgressSummaryRow: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
+    }
+}
+
+struct AutomationProgressPlatformSummary: View {
+    var platforms: [SocialPlatform]
+    var font: Font = .caption
+
+    private var normalizedPlatforms: [SocialPlatform] {
+        var seen = Set<SocialPlatform>()
+        let uniquePlatforms = platforms.filter { seen.insert($0).inserted }
+        return uniquePlatforms.isEmpty ? [.tiktok] : uniquePlatforms
+    }
+
+    private var summary: String {
+        normalizedPlatforms
+            .map(\.displayName)
+            .joined(separator: ", ")
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                Text("Posting to")
+
+                ForEach(normalizedPlatforms) { platform in
+                    HStack(spacing: 4) {
+                        PlatformIcon(platform: platform, size: 12, frameSize: 14)
+                        Text(platform.displayName)
+                    }
+                }
+            }
+
+            Label("Posting to \(summary)", systemImage: "paperplane")
+        }
+        .font(font)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
     }
 }
 

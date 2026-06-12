@@ -537,6 +537,7 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
     var title: String
     var templateID: UUID?
     var creationModel: SlideshowCreationModelReference?
+    var imageVibe: SlideshowImageVibe
     var brief: String
     var topic: String
     var audience: String
@@ -563,6 +564,7 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
         title: String,
         templateID: UUID?,
         creationModel: SlideshowCreationModelReference? = nil,
+        imageVibe: SlideshowImageVibe = .defaultValue,
         brief: String = "",
         topic: String = "",
         audience: String = "",
@@ -588,6 +590,7 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
         self.title = title
         self.templateID = templateID
         self.creationModel = creationModel
+        self.imageVibe = imageVibe
         self.brief = brief
         self.topic = topic
         self.audience = audience
@@ -615,6 +618,7 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
         case title
         case templateID
         case creationModel
+        case imageVibe
         case brief
         case topic
         case audience
@@ -643,6 +647,7 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
         title = try container.decode(String.self, forKey: .title)
         templateID = try container.decodeIfPresent(UUID.self, forKey: .templateID)
         creationModel = try container.decodeIfPresent(SlideshowCreationModelReference.self, forKey: .creationModel)
+        imageVibe = try container.decodeIfPresent(SlideshowImageVibe.self, forKey: .imageVibe) ?? .defaultValue
         brief = try container.decodeIfPresent(String.self, forKey: .brief) ?? ""
         topic = try container.decodeIfPresent(String.self, forKey: .topic) ?? ""
         audience = try container.decodeIfPresent(String.self, forKey: .audience) ?? ""
