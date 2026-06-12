@@ -24,6 +24,13 @@ struct AutomationProgressSummaryRow: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
+
+                    if let imageProgressSummary = currentStep.imageProgressSummary {
+                        Text(imageProgressSummary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
 
                 if let creationModelName = progress.creationModelName, !creationModelName.isEmpty {
@@ -53,7 +60,21 @@ struct AutomationProgressSummaryRow: View {
             )
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var accessibilityLabel: String {
+        var parts = [progress.title]
+        if let currentStep = progress.currentStep {
+            parts.append(currentStep.title)
+            parts.append(currentStep.detail)
+            if let accessibilityImageProgressSummary = currentStep.accessibilityImageProgressSummary {
+                parts.append(accessibilityImageProgressSummary)
+            }
+        }
+        parts.append("Step \(progress.currentStepIndex) of \(max(progress.totalCount, 1))")
+        return parts.joined(separator: ", ")
     }
 }
 
@@ -173,5 +194,37 @@ struct AutomationProgressStepStrip: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityHidden(true)
+    }
+}
+
+struct AutomationImageProgressDetailRow: View {
+    var step: AutomationPostProgressStep
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "photo")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.blue)
+                .frame(width: 18, height: 18)
+
+            if let currentImageSummary = step.currentImageSummary {
+                Text(currentImageSummary)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+            }
+
+            Spacer(minLength: 8)
+
+            if let compactImageProgressSummary = step.compactImageProgressSummary {
+                Text(compactImageProgressSummary)
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .background(.blue.opacity(0.08), in: .rect(cornerRadius: 8))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(step.accessibilityImageProgressSummary ?? "Image generation progress")
     }
 }

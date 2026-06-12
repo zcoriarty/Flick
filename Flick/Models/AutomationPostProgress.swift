@@ -35,7 +35,10 @@ struct AutomationPostProgress: Identifiable, Codable, Hashable {
 
     var progressFraction: Double {
         guard totalCount > 0 else { return 0 }
-        return Double(completedCount) / Double(totalCount)
+        let completedStepProgress = steps.reduce(0.0) { partialResult, step in
+            partialResult + step.progressContribution
+        }
+        return completedStepProgress / Double(totalCount)
     }
 
     var currentStep: AutomationPostProgressStep? {
@@ -199,6 +202,77 @@ struct AutomationPostProgressStep: Identifiable, Codable, Hashable {
     var systemImage: String
     var state: AutomationPostProgressStepState = .pending
     var updatedAt: Date?
+    var completedImageCount: Int? = nil
+    var totalImageCount: Int? = nil
+    var currentImageIndex: Int? = nil
+    var attemptDetail: String? = nil
+}
+
+extension AutomationPostProgressStep {
+    var progressContribution: Double {
+        switch state {
+        case .completed:
+            return 1
+        case .current:
+            return imageProgressFraction
+        case .pending, .failed:
+            return 0
+        }
+    }
+
+    var hasImageProgress: Bool {
+        normalizedTotalImageCount > 0
+    }
+
+    var imageProgressFraction: Double {
+        guard normalizedTotalImageCount > 0 else { return 0 }
+        return Double(normalizedCompletedImageCount) / Double(normalizedTotalImageCount)
+    }
+
+    var imageProgressSummary: String? {
+        guard hasImageProgress else { return nil }
+        return "\(normalizedCompletedImageCount) of \(normalizedTotalImageCount) images created"
+    }
+
+    var compactImageProgressSummary: String? {
+        guard hasImageProgress else { return nil }
+        return "\(normalizedCompletedImageCount)/\(normalizedTotalImageCount) created"
+    }
+
+    var currentImageSummary: String? {
+        guard
+            let currentImageIndex,
+            currentImageIndex > 0,
+            normalizedTotalImageCount > 0
+        else {
+            return nil
+        }
+
+        return "Image \(min(currentImageIndex, normalizedTotalImageCount)) of \(normalizedTotalImageCount)"
+    }
+
+    var accessibilityImageProgressSummary: String? {
+        guard hasImageProgress else { return nil }
+        var parts = [String]()
+        if let currentImageSummary {
+            parts.append(currentImageSummary.lowercased())
+        }
+        if let imageProgressSummary {
+            parts.append(imageProgressSummary)
+        }
+        if let attemptDetail, !attemptDetail.isEmpty {
+            parts.append(attemptDetail)
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    private var normalizedCompletedImageCount: Int {
+        min(max(completedImageCount ?? 0, 0), normalizedTotalImageCount)
+    }
+
+    private var normalizedTotalImageCount: Int {
+        max(totalImageCount ?? 0, 0)
+    }
 }
 
 enum AutomationPostProgressStepState: String, Codable, Hashable {

@@ -1253,6 +1253,83 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(decodedProgress.title, progress.title)
     }
 
+    func testAutomationPostProgressDecodesLegacyStepPayloadWithoutImageProgress() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let progress = AutomationPostProgress.make(
+            automationID: UUID(),
+            title: "Launch Carousel",
+            productName: "Flick Pro",
+            scheduledAt: now,
+            now: now
+        )
+        let data = try JSONEncoder().encode(progress)
+
+        let decodedProgress = try JSONDecoder().decode(AutomationPostProgress.self, from: data)
+        let generateStep = try XCTUnwrap(decodedProgress.steps.first { $0.id == AutomationPostProgressStepID.generateImages })
+
+        XCTAssertNil(generateStep.completedImageCount)
+        XCTAssertNil(generateStep.totalImageCount)
+        XCTAssertNil(generateStep.currentImageIndex)
+        XCTAssertNil(generateStep.attemptDetail)
+    }
+
+    func testAutomationPostProgressFractionIncludesCurrentImageProgress() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var progress = AutomationPostProgress.make(
+            automationID: UUID(),
+            title: "Launch Carousel",
+            productName: "Flick Pro",
+            scheduledAt: now,
+            now: now
+        )
+        progress.steps[0].state = .completed
+        progress.steps[1].state = .completed
+        progress.steps[2].state = .current
+        progress.steps[2].completedImageCount = 2
+        progress.steps[2].totalImageCount = 8
+        progress.steps[2].currentImageIndex = 3
+
+        XCTAssertEqual(progress.progressFraction, 2.25 / 8.0, accuracy: 0.0001)
+        XCTAssertEqual(progress.steps[2].imageProgressSummary, "2 of 8 images created")
+        XCTAssertEqual(progress.steps[2].compactImageProgressSummary, "2/8 created")
+        XCTAssertEqual(progress.steps[2].currentImageSummary, "Image 3 of 8")
+    }
+
+    func testCoreDataRoundTripsAutomationPostProgressImageProgress() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let persistenceController = PersistenceController(inMemory: true)
+        let repository = CoreDataFlickRepository(
+            context: persistenceController.container.viewContext,
+            cloudAvailability: { false }
+        )
+        var progress = AutomationPostProgress.make(
+            automationID: UUID(),
+            title: "Launch Carousel",
+            productName: "Flick Pro",
+            scheduledAt: now,
+            now: now
+        )
+        progress.steps[2].state = .current
+        progress.steps[2].detail = "Retrying image 3 of 8."
+        progress.steps[2].completedImageCount = 2
+        progress.steps[2].totalImageCount = 8
+        progress.steps[2].currentImageIndex = 3
+        progress.steps[2].attemptDetail = "Attempt 2 of 2 after the request timed out."
+        var state = FlickEmptyState.make()
+        state.automationPostProgresses = [progress]
+
+        try await repository.saveOverview(state)
+        let loaded = try await repository.loadOverview()
+        let loadedProgress = try XCTUnwrap(loaded.automationPostProgresses.first)
+        let loadedStep = try XCTUnwrap(loadedProgress.steps.first { $0.id == AutomationPostProgressStepID.generateImages })
+
+        XCTAssertEqual(loadedStep.completedImageCount, 2)
+        XCTAssertEqual(loadedStep.totalImageCount, 8)
+        XCTAssertEqual(loadedStep.currentImageIndex, 3)
+        XCTAssertEqual(loadedStep.attemptDetail, "Attempt 2 of 2 after the request timed out.")
+        XCTAssertEqual(loadedProgress.progressFraction, progress.progressFraction, accuracy: 0.0001)
+    }
+
     func testAutomationDashboardSnapshotGroupsActiveProgresses() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let product = makeProduct(now: now)
@@ -3660,8 +3737,10 @@ final class FlickTests: XCTestCase {
 
     func testOpenAIImageGenerationRequestsJpegOutput() async throws {
         let imageBytes = Data([0xFF, 0xD8, 0xFF])
+        defer { CapturingURLProtocol.requestHandler = nil }
         CapturingURLProtocol.requestHandler = { request in
             XCTAssertEqual(request.url?.path, "/v1/images/generations")
+            XCTAssertEqual(request.timeoutInterval, 10 * 60, accuracy: 0.1)
             let bodyData = Data(request.encodedBodyString.utf8)
             let body = try XCTUnwrap(JSONSerialization.jsonObject(with: bodyData) as? [String: Any])
             XCTAssertEqual(body["output_format"] as? String, "jpeg")
@@ -3695,6 +3774,88 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(image.data, imageBytes)
         XCTAssertEqual(image.contentType, "image/jpeg")
         XCTAssertEqual(image.fileExtension, "jpg")
+    }
+
+    func testOpenAIImageGenerationRetriesTimedOutRequestOnce() async throws {
+        let imageBytes = Data([0xFF, 0xD8, 0xFF])
+        var requestCount = 0
+        defer { CapturingURLProtocol.requestHandler = nil }
+        CapturingURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url?.path, "/v1/images/generations")
+            requestCount += 1
+            if requestCount == 1 {
+                throw URLError(.timedOut)
+            }
+
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                Data(
+                    """
+                    {
+                        "data": [
+                            {
+                                "b64_json": "\(imageBytes.base64EncodedString())"
+                            }
+                        ]
+                    }
+                    """.utf8
+                )
+            )
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CapturingURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = OpenAIClient(
+            credentials: ["OPENAI_API_KEY": "test-key"],
+            urlSession: session,
+            retryDelay: { _ in 0 }
+        )
+
+        let image = try await client.generateImage(prompt: "Create a product image.", settings: .draft)
+
+        XCTAssertEqual(requestCount, 2)
+        XCTAssertEqual(image.data, imageBytes)
+    }
+
+    func testOpenAIImageGenerationDoesNotRetryNonRetryableError() async throws {
+        var requestCount = 0
+        defer { CapturingURLProtocol.requestHandler = nil }
+        CapturingURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url?.path, "/v1/images/generations")
+            requestCount += 1
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 400, httpVersion: nil, headerFields: nil)!,
+                Data(
+                    """
+                    {
+                        "error": {
+                            "message": "Invalid image request."
+                        }
+                    }
+                    """.utf8
+                )
+            )
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CapturingURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = OpenAIClient(
+            credentials: ["OPENAI_API_KEY": "test-key"],
+            urlSession: session,
+            retryDelay: { _ in 0 }
+        )
+
+        do {
+            _ = try await client.generateImage(prompt: "Create a product image.", settings: .draft)
+            XCTFail("Expected image generation to fail.")
+        } catch OpenAIClientError.requestFailed(let statusCode, let message) {
+            XCTAssertEqual(statusCode, 400)
+            XCTAssertEqual(message, "Invalid image request.")
+        }
+
+        XCTAssertEqual(requestCount, 1)
     }
 }
 

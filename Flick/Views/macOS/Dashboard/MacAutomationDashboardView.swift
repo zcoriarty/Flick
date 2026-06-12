@@ -180,6 +180,10 @@ struct MacAutomationInProgressCard: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
+
+                        if currentStep.hasImageProgress {
+                            AutomationImageProgressDetailRow(step: currentStep)
+                        }
                     }
                 }
 

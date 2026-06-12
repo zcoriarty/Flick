@@ -1091,15 +1091,19 @@ final class FlickAppModel {
         }
     }
 
-    func generateMissingSlideImages(for draftID: UUID) async {
-        await generateSlideImages(for: draftID, replacingExisting: false)
+    func generateMissingSlideImages(for draftID: UUID, automationProgressID: UUID? = nil) async {
+        await generateSlideImages(for: draftID, replacingExisting: false, automationProgressID: automationProgressID)
     }
 
     func regenerateSlideImages(for draftID: UUID) async {
-        await generateSlideImages(for: draftID, replacingExisting: true)
+        await generateSlideImages(for: draftID, replacingExisting: true, automationProgressID: nil)
     }
 
-    private func generateSlideImages(for draftID: UUID, replacingExisting: Bool) async {
+    private func generateSlideImages(
+        for draftID: UUID,
+        replacingExisting: Bool,
+        automationProgressID: UUID?
+    ) async {
         guard !isGeneratingSlideshowImages else { return }
         isGeneratingSlideshowImages = true
         defer {
@@ -1124,8 +1128,54 @@ final class FlickAppModel {
                 }
                 .map(\.id)
 
-            for slideID in slideIDs {
-                try await generateImage(for: slideID, in: draftID, instruction: nil, settings: .draft)
+            let totalImageCount = slideIDs.count
+            for (offset, slideID) in slideIDs.enumerated() {
+                let imageNumber = offset + 1
+                createWorkflowMessage = totalImageCount == 1
+                    ? "Generating slide image..."
+                    : "Generating slide image \(imageNumber) of \(totalImageCount)..."
+                await startAutomationPostProgressStep(
+                    automationProgressID,
+                    AutomationPostProgressStepID.generateImages,
+                    detail: "Generating image \(imageNumber) of \(totalImageCount).",
+                    imageProgress: AutomationStepImageProgress(
+                        completedImageCount: offset,
+                        totalImageCount: totalImageCount,
+                        currentImageIndex: imageNumber
+                    )
+                )
+
+                try await generateImage(
+                    for: slideID,
+                    in: draftID,
+                    instruction: nil,
+                    settings: .draft,
+                    retryHandler: { [weak self] event in
+                        await self?.startAutomationPostProgressStep(
+                            automationProgressID,
+                            AutomationPostProgressStepID.generateImages,
+                            detail: "Retrying image \(imageNumber) of \(totalImageCount).",
+                            imageProgress: AutomationStepImageProgress(
+                                completedImageCount: offset,
+                                totalImageCount: totalImageCount,
+                                currentImageIndex: imageNumber,
+                                attemptDetail: "Attempt \(event.nextAttempt) of \(event.maxAttempts) after \(event.reason)."
+                            )
+                        )
+                    }
+                )
+
+                let completedImageCount = offset + 1
+                await startAutomationPostProgressStep(
+                    automationProgressID,
+                    AutomationPostProgressStepID.generateImages,
+                    detail: "\(completedImageCount) of \(totalImageCount) images created.",
+                    imageProgress: AutomationStepImageProgress(
+                        completedImageCount: completedImageCount,
+                        totalImageCount: totalImageCount,
+                        currentImageIndex: completedImageCount < totalImageCount ? completedImageCount + 1 : nil
+                    )
+                )
             }
 
             if replacingExisting {
@@ -2042,6 +2092,13 @@ enum AutomationRunError: LocalizedError {
     }
 }
 
+private struct AutomationStepImageProgress {
+    var completedImageCount: Int
+    var totalImageCount: Int
+    var currentImageIndex: Int?
+    var attemptDetail: String? = nil
+}
+
 private extension FlickAppModel {
     func pruneAutomationPostProgresses(now: Date = Date()) -> Bool {
         let originalCount = overview.automationPostProgresses.count
@@ -2077,17 +2134,31 @@ private extension FlickAppModel {
     func startAutomationPostProgressStep(
         _ progressID: UUID?,
         _ stepID: String,
-        detail: String
+        detail: String,
+        imageProgress: AutomationStepImageProgress? = nil
     ) async {
-        await updateAutomationPostProgressStep(progressID, stepID, state: .current, detail: detail)
+        await updateAutomationPostProgressStep(
+            progressID,
+            stepID,
+            state: .current,
+            detail: detail,
+            imageProgress: imageProgress
+        )
     }
 
     func completeAutomationPostProgressStep(
         _ progressID: UUID?,
         _ stepID: String,
-        detail: String
+        detail: String,
+        imageProgress: AutomationStepImageProgress? = nil
     ) async {
-        await updateAutomationPostProgressStep(progressID, stepID, state: .completed, detail: detail)
+        await updateAutomationPostProgressStep(
+            progressID,
+            stepID,
+            state: .completed,
+            detail: detail,
+            imageProgress: imageProgress
+        )
     }
 
     func updateAutomationPostProgress(
@@ -2128,7 +2199,8 @@ private extension FlickAppModel {
         _ progressID: UUID?,
         _ stepID: String,
         state: AutomationPostProgressStepState,
-        detail: String
+        detail: String,
+        imageProgress: AutomationStepImageProgress? = nil
     ) async {
         guard
             let progressID,
@@ -2148,6 +2220,12 @@ private extension FlickAppModel {
         overview.automationPostProgresses[progressIndex].steps[stepIndex].state = state
         overview.automationPostProgresses[progressIndex].steps[stepIndex].detail = detail
         overview.automationPostProgresses[progressIndex].steps[stepIndex].updatedAt = now
+        if let imageProgress {
+            overview.automationPostProgresses[progressIndex].steps[stepIndex].completedImageCount = imageProgress.completedImageCount
+            overview.automationPostProgresses[progressIndex].steps[stepIndex].totalImageCount = imageProgress.totalImageCount
+            overview.automationPostProgresses[progressIndex].steps[stepIndex].currentImageIndex = imageProgress.currentImageIndex
+            overview.automationPostProgresses[progressIndex].steps[stepIndex].attemptDetail = imageProgress.attemptDetail
+        }
         overview.automationPostProgresses[progressIndex].updatedAt = now
         await persistAutomationPostProgresses()
     }
@@ -2164,6 +2242,7 @@ private extension FlickAppModel {
             overview.automationPostProgresses[progressIndex].steps[stepIndex].state = .failed
             overview.automationPostProgresses[progressIndex].steps[stepIndex].detail = error.localizedDescription
             overview.automationPostProgresses[progressIndex].steps[stepIndex].updatedAt = now
+            overview.automationPostProgresses[progressIndex].steps[stepIndex].attemptDetail = nil
         }
         overview.automationPostProgresses[progressIndex].errorMessage = error.localizedDescription
         overview.automationPostProgresses[progressIndex].finishedAt = now
@@ -2392,9 +2471,9 @@ private extension FlickAppModel {
             await startAutomationPostProgressStep(
                 progressID,
                 AutomationPostProgressStepID.generateImages,
-                detail: "Generating \(result.draft.slides.count) slide visuals."
+                detail: "Preparing image generation for this post."
             )
-            await generateMissingSlideImages(for: generatedDraftID)
+            await generateMissingSlideImages(for: generatedDraftID, automationProgressID: progressID)
             guard let generatedDraft = overview.drafts.first(where: { $0.id == generatedDraftID }) else {
                 throw SlideshowCreationError.missingDraft
             }
@@ -2846,7 +2925,8 @@ private extension FlickAppModel {
         for slideID: UUID,
         in draftID: UUID,
         instruction: String?,
-        settings: SlideshowImageGenerationSettings
+        settings: SlideshowImageGenerationSettings,
+        retryHandler: ((OpenAIRetryEvent) async -> Void)? = nil
     ) async throws {
         guard
             let draftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }),
@@ -2863,7 +2943,10 @@ private extension FlickAppModel {
         try await repository.saveOverview(overview)
 
         do {
-            let openAIClient = makeOpenAIClient()
+            var openAIClient = makeOpenAIClient()
+            if let retryHandler {
+                openAIClient.retryHandler = retryHandler
+            }
             let slideshowPlanner = SlideshowPlannerService(client: openAIClient)
             var draft = overview.drafts[draftIndex]
             var slide = draft.slides[slideIndex]
