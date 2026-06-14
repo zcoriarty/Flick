@@ -6,6 +6,9 @@
 import SwiftUI
 
 struct CreateAutomationStartSuccessView: View {
+    var title = "Automation started"
+    var message = "Your cadence is active."
+
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "checkmark.circle.fill")
@@ -13,9 +16,9 @@ struct CreateAutomationStartSuccessView: View {
                 .foregroundStyle(.green)
 
             VStack(spacing: 6) {
-                Text("Automation started")
+                Text(title)
                     .font(.title2.weight(.semibold))
-                Text("Your cadence is active.")
+                Text(message)
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

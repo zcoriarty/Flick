@@ -41,6 +41,8 @@ struct IOSCreateView: View {
     @State private var editingAutomationID: UUID?
     @State private var isStartingAutomation = false
     @State private var showsAutomationStartSuccess = false
+    @State private var automationSuccessTitle = "Automation started"
+    @State private var automationSuccessMessage = "Your cadence is active."
     @State private var automationSuccessDismissTask: Task<Void, Never>?
     @State private var createFormResetID = UUID()
     @State private var presentedSheet: CreateSheet?
@@ -91,10 +93,7 @@ struct IOSCreateView: View {
                 currentDraftIndex: currentDraftIndex
             )
 
-            if showsAutomationStartSuccess {
-                CreateAutomationStartSuccessView()
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
-            }
+            automationSuccessOverlay
         }
         .animation(.snappy, value: showsAutomationStartSuccess)
         .toolbarTitleDisplayMode(.inline)
@@ -123,7 +122,7 @@ struct IOSCreateView: View {
                     if isPrimaryActionBusy(in: appModel) {
                         ProgressView()
                     } else {
-                        Text(isAutomated ? "Start" : "Publish")
+                        Text(isAutomated ? automationPrimaryActionTitle : "Publish")
                     }
                 }
                 .disabled(!canPublish(in: appModel) || isPrimaryActionBusy(in: appModel) || showsAutomationStartSuccess)
@@ -136,6 +135,10 @@ struct IOSCreateView: View {
             syncCreationModelSelectionFromActiveDraft(in: appModel)
             syncImageVibeSelectionFromActiveDraft(in: appModel)
             updateSelectedSlide(using: appModel)
+            loadRequestedAutomationIfNeeded(in: appModel)
+        }
+        .onChange(of: appModel.automationEditRequestID) { _, _ in
+            loadRequestedAutomationIfNeeded(in: appModel)
         }
         .onChange(of: appModel.activeCreateDraftID) { _, _ in
             syncCreationModelSelectionFromActiveDraft(in: appModel)
@@ -369,6 +372,21 @@ struct IOSCreateView: View {
     private var draftsButton: some View {
         Button("Drafts", systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90") {
             presentedSheet = .drafts
+        }
+    }
+
+    private var automationPrimaryActionTitle: String {
+        editingAutomationID == nil ? "Start" : "Save"
+    }
+
+    @ViewBuilder
+    private var automationSuccessOverlay: some View {
+        if showsAutomationStartSuccess {
+            CreateAutomationStartSuccessView(
+                title: automationSuccessTitle,
+                message: automationSuccessMessage
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.98)))
         }
     }
 
@@ -821,6 +839,14 @@ struct IOSCreateView: View {
         automationAccountSelections = automation.accountSelections
     }
 
+    private func loadRequestedAutomationIfNeeded(in appModel: FlickAppModel) {
+        guard let automationID = appModel.automationEditRequestID else { return }
+        guard let automation = appModel.overview.automations.first(where: { $0.id == automationID }) else { return }
+
+        loadAutomation(automation)
+        appModel.clearAutomationEditRequest(id: automationID)
+    }
+
     private func deleteAutomation(_ automation: ContentAutomation, using appModel: FlickAppModel) {
         Task {
             await appModel.deleteAutomation(id: automation.id)
@@ -859,18 +885,21 @@ struct IOSCreateView: View {
 
     private func publishAutomation(using appModel: FlickAppModel) {
         guard canPublishAutomation(in: appModel), !isStartingAutomation else { return }
+        let isEditing = editingAutomationID != nil
         let automation = automationDraft(using: appModel, now: Date())
         isStartingAutomation = true
         Task { @MainActor in
             let didStart = await appModel.upsertAutomation(automation)
             isStartingAutomation = false
             guard didStart else { return }
-            showAutomationStartSuccess()
+            showAutomationStartSuccess(isEditing: isEditing)
         }
     }
 
-    private func showAutomationStartSuccess() {
+    private func showAutomationStartSuccess(isEditing: Bool) {
         automationSuccessDismissTask?.cancel()
+        automationSuccessTitle = isEditing ? "Automation updated" : "Automation started"
+        automationSuccessMessage = isEditing ? "Your changes are saved." : "Your cadence is active."
         withAnimation(.snappy) {
             showsAutomationStartSuccess = true
         }
@@ -890,7 +919,9 @@ struct IOSCreateView: View {
         var schedule = automationSchedule
         schedule.reconcileFixedTimes()
 
-        let nextScheduledAt = schedule.nextOccurrence(after: now, automationID: automationID)
+        let existingAutomation = appModel.overview.automations.first { $0.id == automationID }
+        let status = existingAutomation?.status ?? .active
+        let nextScheduledAt = status == .active ? schedule.nextOccurrence(after: now, automationID: automationID) : nil
         return ContentAutomation(
             id: automationID,
             name: automationName.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -905,9 +936,12 @@ struct IOSCreateView: View {
             youtubeSettings: automationYouTubeSettings,
             targetPlatforms: automationTargetPlatforms(),
             accountSelections: automationAccountSelections,
-            status: .active,
+            status: status,
             nextScheduledAt: nextScheduledAt,
-            createdAt: appModel.overview.automations.first(where: { $0.id == automationID })?.createdAt ?? now,
+            lastRunAt: existingAutomation?.lastRunAt,
+            lastErrorMessage: existingAutomation?.lastErrorMessage,
+            consecutiveFailureCount: existingAutomation?.consecutiveFailureCount ?? 0,
+            createdAt: existingAutomation?.createdAt ?? now,
             updatedAt: now
         )
     }

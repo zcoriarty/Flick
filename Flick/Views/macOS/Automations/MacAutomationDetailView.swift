@@ -43,6 +43,9 @@ struct MacAutomationDetailView: View {
                         Button("Refresh", systemImage: "arrow.clockwise") {
                             Task { await appModel.refresh() }
                         }
+                        Button("Edit", systemImage: "slider.horizontal.3") {
+                            editAutomation()
+                        }
                         Button("Run", systemImage: "play.fill") {
                             runNow()
                         }
@@ -94,6 +97,10 @@ struct MacAutomationDetailView: View {
             await appModel.deleteAutomation(id: automationID)
             dismiss()
         }
+    }
+
+    private func editAutomation() {
+        appModel.requestAutomationEdit(id: automationID)
     }
 }
 

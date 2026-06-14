@@ -69,6 +69,7 @@ final class FlickAppModel {
     var r2SmokeTestResult: R2StorageSmokeTestResult?
     var r2SmokeTestErrorMessage: String?
     var activeCreateDraftID: UUID?
+    var automationEditRequestID: UUID?
     var createWorkflowMessage: String?
     var isPlanningSlideshow = false
     var isGeneratingSlideshowImages = false
@@ -241,6 +242,16 @@ final class FlickAppModel {
 
     func clearActiveCreateDraft() {
         activeCreateDraftID = nil
+    }
+
+    func requestAutomationEdit(id automationID: UUID) {
+        automationEditRequestID = automationID
+        selectedSection = .create
+    }
+
+    func clearAutomationEditRequest(id automationID: UUID) {
+        guard automationEditRequestID == automationID else { return }
+        automationEditRequestID = nil
     }
 
     func deleteCreateDraft(id draftID: UUID) async {
@@ -849,17 +860,20 @@ final class FlickAppModel {
         }
 
         let previousOverview = overview
+        let isEditingExistingAutomation: Bool
         if let existingIndex = overview.automations.firstIndex(where: { $0.id == automation.id }) {
+            isEditingExistingAutomation = true
             automation.createdAt = overview.automations[existingIndex].createdAt
             overview.automations[existingIndex] = automation
         } else {
+            isEditingExistingAutomation = false
             overview.automations.insert(automation, at: 0)
         }
         overview.refreshDerivedState()
 
         do {
             try await repository.saveOverview(overview)
-            createWorkflowMessage = "Automation started."
+            createWorkflowMessage = isEditingExistingAutomation ? "Automation updated." : "Automation started."
             lastErrorMessage = nil
             return true
         } catch {

@@ -61,6 +61,19 @@ struct IOSAutomationDetailView: View {
     private func manageSection(for item: AutomationDashboardItem) -> some View {
         Section("Manage") {
             Button {
+                editAutomation()
+            } label: {
+                FlickSettingsRowLabel(
+                    title: "Edit Automation",
+                    systemImage: "slider.horizontal.3",
+                    iconColor: .purple,
+                    value: "Change setup",
+                    valueLineLimit: 1
+                )
+            }
+            .buttonStyle(.plain)
+
+            Button {
                 runNow()
             } label: {
                 FlickSettingsRowLabel(
@@ -296,6 +309,10 @@ struct IOSAutomationDetailView: View {
             await appModel.deleteAutomation(id: automationID)
             dismiss()
         }
+    }
+
+    private func editAutomation() {
+        appModel.requestAutomationEdit(id: automationID)
     }
 }
 
