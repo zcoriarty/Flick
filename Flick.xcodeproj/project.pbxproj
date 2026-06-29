@@ -7,12 +7,20 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		94904989A6374810978A33BF /* FlickShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 432F85E9578D42398808ABFC /* FlickShareExtension.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		9B24C1102FD1FFE900A8E352 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 9B24C10F2FD1FFE900A8E352 /* GoogleSignInSwift */; };
 		9B7D10012FBF000100000001 /* TikTokOpenAuthSDK in Frameworks */ = {isa = PBXBuildFile; platformFilter = ios; productRef = 9B7D10042FBF000100000004 /* TikTokOpenAuthSDK */; };
 		9B7D10022FBF000100000002 /* TikTokOpenSDKCore in Frameworks */ = {isa = PBXBuildFile; platformFilter = ios; productRef = 9B7D10052FBF000100000005 /* TikTokOpenSDKCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		50E98F9D0895456CA381DD8C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9B038B812FB2289B007B4287 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9083253F3F634825AE92128F;
+			remoteInfo = FlickShareExtension;
+		};
 		9B038B9E2FB2289D007B4287 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 9B038B812FB2289B007B4287 /* Project object */;
@@ -30,12 +38,21 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		432F85E9578D42398808ABFC /* FlickShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FlickShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		9B038B892FB2289B007B4287 /* Flick.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Flick.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9B038B9D2FB2289D007B4287 /* FlickTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FlickTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		9B038BA72FB2289D007B4287 /* FlickUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FlickUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		987A36860D264FE596990406 /* Exceptions for "FlickShareExtension" folder in "FlickShareExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				FlickShareExtension.entitlements,
+				Info.plist,
+			);
+			target = 9083253F3F634825AE92128F /* FlickShareExtension */;
+		};
 		9B038BAF2FB2289D007B4287 /* Exceptions for "Flick" folder in "Flick" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -46,6 +63,14 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		5BE2D4AAA9F84A628A1BD858 /* FlickShareExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				987A36860D264FE596990406 /* Exceptions for "FlickShareExtension" folder in "FlickShareExtension" target */,
+			);
+			path = FlickShareExtension;
+			sourceTree = "<group>";
+		};
 		9B038B8B2FB2289B007B4287 /* Flick */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -66,6 +91,20 @@
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		66D1D138D0C1453EA3E5B7A4 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				94904989A6374810978A33BF /* FlickShareExtension.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFrameworksBuildPhase section */
 		9B038B862FB2289B007B4287 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
@@ -78,6 +117,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		9B038B9A2FB2289D007B4287 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		445CCECD1B98446B903D20D1 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -98,6 +144,7 @@
 			isa = PBXGroup;
 			children = (
 				9B038B8B2FB2289B007B4287 /* Flick */,
+				5BE2D4AAA9F84A628A1BD858 /* FlickShareExtension */,
 				9B038BA02FB2289D007B4287 /* FlickTests */,
 				9B038BAA2FB2289D007B4287 /* FlickUITests */,
 				9B038B8A2FB2289B007B4287 /* Products */,
@@ -108,6 +155,7 @@
 			isa = PBXGroup;
 			children = (
 				9B038B892FB2289B007B4287 /* Flick.app */,
+				432F85E9578D42398808ABFC /* FlickShareExtension.appex */,
 				9B038B9D2FB2289D007B4287 /* FlickTests.xctest */,
 				9B038BA72FB2289D007B4287 /* FlickUITests.xctest */,
 			);
@@ -124,10 +172,12 @@
 				9B038B852FB2289B007B4287 /* Sources */,
 				9B038B862FB2289B007B4287 /* Frameworks */,
 				9B038B872FB2289B007B4287 /* Resources */,
+				66D1D138D0C1453EA3E5B7A4 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				20F5FF7C862C4744B6655374 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				9B038B8B2FB2289B007B4287 /* Flick */,
@@ -141,6 +191,28 @@
 			productName = Flick;
 			productReference = 9B038B892FB2289B007B4287 /* Flick.app */;
 			productType = "com.apple.product-type.application";
+		};
+		9083253F3F634825AE92128F /* FlickShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6A4A2B4932E84EB8A1AE0AA7 /* Build configuration list for PBXNativeTarget "FlickShareExtension" */;
+			buildPhases = (
+				1FDF31E6458C48888DBF0923 /* Sources */,
+				445CCECD1B98446B903D20D1 /* Frameworks */,
+				9F196E565AA04F92BF2C61DD /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				5BE2D4AAA9F84A628A1BD858 /* FlickShareExtension */,
+			);
+			name = FlickShareExtension;
+			packageProductDependencies = (
+			);
+			productName = FlickShareExtension;
+			productReference = 432F85E9578D42398808ABFC /* FlickShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 		9B038B9C2FB2289D007B4287 /* FlickTests */ = {
 			isa = PBXNativeTarget;
@@ -198,6 +270,9 @@
 				LastSwiftUpdateCheck = 2640;
 				LastUpgradeCheck = 2640;
 				TargetAttributes = {
+					9083253F3F634825AE92128F = {
+						CreatedOnToolsVersion = 26.4.1;
+					};
 					9B038B882FB2289B007B4287 = {
 						CreatedOnToolsVersion = 26.4.1;
 					};
@@ -230,6 +305,7 @@
 			projectRoot = "";
 			targets = (
 				9B038B882FB2289B007B4287 /* Flick */,
+				9083253F3F634825AE92128F /* FlickShareExtension */,
 				9B038B9C2FB2289D007B4287 /* FlickTests */,
 				9B038BA62FB2289D007B4287 /* FlickUITests */,
 			);
@@ -245,6 +321,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		9B038B9B2FB2289D007B4287 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9F196E565AA04F92BF2C61DD /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -275,6 +358,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		1FDF31E6458C48888DBF0923 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		9B038BA32FB2289D007B4287 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -285,6 +375,12 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		20F5FF7C862C4744B6655374 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			platformFilter = ios;
+			target = 9083253F3F634825AE92128F /* FlickShareExtension */;
+			targetProxy = 50E98F9D0895456CA381DD8C /* PBXContainerItemProxy */;
+		};
 		9B038B9F2FB2289D007B4287 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 9B038B882FB2289B007B4287 /* Flick */;
@@ -395,6 +491,68 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
 				XROS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Release;
+		};
+		8070DE213F7C4F0B9D173B5F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = FlickShareExtension/FlickShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 7AK2PTVW43;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FlickShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.orion.Flick.ShareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		0B5754AA38064B319DB80CA7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = FlickShareExtension/FlickShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 7AK2PTVW43;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FlickShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.orion.Flick.ShareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -633,6 +791,15 @@
 			buildConfigurations = (
 				9B038BB12FB2289D007B4287 /* Debug */,
 				9B038BB22FB2289D007B4287 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		6A4A2B4932E84EB8A1AE0AA7 /* Build configuration list for PBXNativeTarget "FlickShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8070DE213F7C4F0B9D173B5F /* Debug */,
+				0B5754AA38064B319DB80CA7 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

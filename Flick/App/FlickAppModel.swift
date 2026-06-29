@@ -76,6 +76,8 @@ final class FlickAppModel {
     var isPublishingSlideshow = false
     var isProcessingAutomations = false
     var manualPublishProgress: ManualPublishProgress?
+    var pendingShareImport: ShareImportSession?
+    var shareImportErrorMessage: String?
 
     @ObservationIgnored private let repository: FlickRepository
     @ObservationIgnored private let credentialVault = CredentialVault()
@@ -84,6 +86,8 @@ final class FlickAppModel {
     @ObservationIgnored private let youtubeOAuthClient: YouTubeOAuthClient
     @ObservationIgnored private let localMediaLibrary = LocalMediaLibrary(directoryName: "ProductMedia")
     @ObservationIgnored private let generatedImageLibrary = LocalMediaLibrary(directoryName: "GeneratedImages")
+    @ObservationIgnored private let templateImportMediaLibrary = LocalMediaLibrary(directoryName: "TemplateImports")
+    @ObservationIgnored private let shareImportService = ShareImportService()
     @ObservationIgnored private let publishedPostNotificationPublisher: any PublishedPostNotificationPublishing
     @ObservationIgnored private let openAIClientFactory: @MainActor ([String: String]) -> OpenAIClient
     @ObservationIgnored private let mediaStorageFactory: @MainActor ([String: String]) -> any MediaStorageProviding
@@ -481,6 +485,221 @@ final class FlickAppModel {
         overview.drafts.insert(draft, at: 0)
         activeCreateDraftID = draft.id
         selectedSection = .create
+    }
+
+    func canHandleShareImportURL(_ url: URL) -> Bool {
+        ShareImportService.importID(from: url) != nil
+    }
+
+    func handleShareImportURL(_ url: URL) async {
+        guard let importID = ShareImportService.importID(from: url) else {
+            shareImportErrorMessage = ShareImportError.invalidURL.localizedDescription
+            return
+        }
+
+        await loadShareImport(id: importID)
+    }
+
+    func loadPendingShareImportIfNeeded() async {
+        guard pendingShareImport == nil else { return }
+
+        do {
+            if let session = try shareImportService.loadMostRecentImport() {
+                pendingShareImport = session
+                selectedSection = .create
+                shareImportErrorMessage = nil
+            }
+        } catch {
+            shareImportErrorMessage = error.localizedDescription
+        }
+    }
+
+    func discardPendingShareImport() {
+        guard let pendingShareImport else { return }
+
+        do {
+            try shareImportService.discardImport(id: pendingShareImport.id)
+            self.pendingShareImport = nil
+            shareImportErrorMessage = nil
+        } catch {
+            shareImportErrorMessage = error.localizedDescription
+        }
+    }
+
+    func createTemplateFromPendingShareImport(
+        title: String,
+        niche: String,
+        openMode: ShareImportOpenMode
+    ) async -> ShareTemplateImportResult? {
+        guard let pendingShareImport else { return nil }
+
+        do {
+            let result = try await createTemplate(
+                from: pendingShareImport,
+                title: title,
+                niche: niche,
+                openMode: openMode
+            )
+            try? shareImportService.discardImport(id: pendingShareImport.id)
+            self.pendingShareImport = nil
+            shareImportErrorMessage = nil
+            return result
+        } catch {
+            shareImportErrorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func localAutomationTemplates() -> [ExampleSlideshowTemplate] {
+        let assetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
+        let drafts = overview.drafts.sorted { $0.updatedAt > $1.updatedAt }
+
+        return overview.templates.compactMap { template in
+            guard
+                template.sourceTemplateID?.hasPrefix("share-import:") == true,
+                let draft = drafts.first(where: { draft in
+                    draft.templateID == template.id && draftHasImportedTemplateSlides(draft, assetsByID: assetsByID)
+                })
+            else {
+                return nil
+            }
+            return localAutomationTemplate(from: template, draft: draft, assetsByID: assetsByID)
+        }
+        .filter(\.hasDisplayablePreview)
+    }
+
+    private func loadShareImport(id importID: UUID) async {
+        do {
+            pendingShareImport = try shareImportService.loadImport(id: importID)
+            selectedSection = .create
+            shareImportErrorMessage = nil
+        } catch {
+            shareImportErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func createTemplate(
+        from session: ShareImportSession,
+        title: String,
+        niche: String,
+        openMode: ShareImportOpenMode
+    ) async throws -> ShareTemplateImportResult {
+        let now = Date()
+        let normalizedNiche = normalizedShareImportNiche(niche)
+        let normalizedTitle = normalizedShareImportTitle(title, niche: normalizedNiche)
+        let templateID = UUID()
+
+        let importedMedia = try session.images.enumerated().map { offset, image in
+            let storedMedia = try templateImportMediaLibrary.store(fileURL: image.fileURL, contentType: image.contentType)
+            let metadata = localMediaMetadata(for: storedMedia)
+            let assetID = UUID()
+            let asset = MediaAsset(
+                id: assetID,
+                mediaType: AssetMediaType(contentType: storedMedia.contentType),
+                source: .uploaded,
+                localFilePath: storedMedia.fileURL.path,
+                storageBucket: nil,
+                storagePath: nil,
+                publicURL: nil,
+                signedURLExpiration: nil,
+                width: metadata.width,
+                height: metadata.height,
+                duration: metadata.duration,
+                fileSize: storedMedia.fileSize,
+                checksum: nil,
+                trendTags: [],
+                createdAt: now,
+                updatedAt: now
+            )
+            let slide = Slide(
+                id: UUID(),
+                index: offset,
+                imageAssetID: assetID,
+                prompt: "Imported photo \(offset + 1) from the iOS share sheet.",
+                text: "",
+                textPosition: .center,
+                textStyle: SlideTextStyle(),
+                selectedVisualSummary: "Imported photo \(offset + 1).",
+                generationStatus: .complete,
+                generationErrorMessage: nil,
+                promptVersion: 1,
+                createdAt: now,
+                updatedAt: now
+            )
+            return (asset, slide)
+        }
+
+        let assets = importedMedia.map(\.0)
+        let slides = importedMedia.map(\.1)
+        guard !slides.isEmpty else {
+            throw ShareImportError.emptyImport
+        }
+
+        let styleGuide = shareImportedStyleGuide(title: normalizedTitle, niche: normalizedNiche)
+        let creativeTemplate = CreativeTemplate(
+            id: templateID,
+            name: normalizedTitle,
+            description: "\(normalizedNiche) template imported from Photos.",
+            platform: .tiktok,
+            slideCount: slides.count,
+            styleJSON: styleGuide.encodedJSONString(),
+            defaultTextRules: "Imported photos are ready-to-use slide visuals. Add or edit text overlays in Create.",
+            sourceTemplateID: "share-import:\(session.id.uuidString)",
+            sourceTemplateFingerprint: nil,
+            analysisSchemaVersion: nil,
+            tags: shareImportTags(niche: normalizedNiche, now: now),
+            createdAt: now,
+            updatedAt: now
+        )
+
+        let draft = SlideshowDraft(
+            id: UUID(),
+            title: normalizedTitle,
+            templateID: templateID,
+            imageVibe: .defaultValue,
+            brief: "",
+            topic: normalizedNiche,
+            audience: "",
+            goal: "",
+            tone: "",
+            narrativeArc: [],
+            globalVisualMotif: "",
+            planSummary: "Imported \(slides.count) photos from the share sheet as a reusable \(normalizedNiche) template.",
+            slides: slides,
+            caption: "",
+            hashtags: shareImportHashtags(niche: normalizedNiche),
+            targetPlatforms: [.tiktok, .youtubeShorts],
+            accountSelections: [],
+            tikTokSettings: DraftTikTokSettings(title: normalizedTitle, postAsDraft: true),
+            youtubeSettings: DraftYouTubeSettings(title: normalizedTitle),
+            status: .draft,
+            createdAt: now,
+            updatedAt: now
+        )
+
+        let previousOverview = overview
+        let previousActiveCreateDraftID = activeCreateDraftID
+        overview.assets.insert(contentsOf: assets, at: 0)
+        overview.templates.insert(creativeTemplate, at: 0)
+        overview.drafts.insert(draft, at: 0)
+        activeCreateDraftID = draft.id
+        selectedSection = .create
+
+        do {
+            try await repository.saveOverview(overview)
+            lastErrorMessage = nil
+        } catch {
+            overview = previousOverview
+            activeCreateDraftID = previousActiveCreateDraftID
+            throw error
+        }
+
+        return ShareTemplateImportResult(
+            templateID: templateID,
+            draftID: draft.id,
+            automationTemplateID: LocalAutomationTemplateIdentifier.id(for: templateID),
+            openMode: openMode
+        )
     }
 
     func deleteLocalAnalysis(for template: ExampleSlideshowTemplate) async {
@@ -2542,30 +2761,43 @@ private extension FlickAppModel {
         for automation: ContentAutomation,
         scheduledAt: Date
     ) async throws -> ExampleSlideshowTemplate {
-        let libraryIndex = try await ExampleSlideshowLibrary.loadIndex(configuration: configuration)
-        let selectedNicheIDs = Set(automation.templateNicheIDs)
-        let templates = try await ExampleSlideshowLibrary.loadTemplates(
-            matching: Set(automation.templateIDs),
-            index: libraryIndex,
-            configuration: configuration
-        )
-            .filter(\.hasDisplayablePreview)
-        let templatesByID = Dictionary(uniqueKeysWithValues: templates.map { ($0.id, $0) })
-        let selectedTemplates = automation.templateIDs
-            .compactMap { templatesByID[$0] }
-            .filter { template in
-                guard let nicheID = templateNicheID(for: template, in: libraryIndex) else { return true }
-                return !selectedNicheIDs.contains(nicheID)
-            }
-        let selectedNichePools = automation.templateNicheIDs.compactMap { nicheID -> AutomationTemplateNichePool? in
-            guard
-                let summary = libraryIndex.collections.first(where: { $0.id == nicheID }),
-                summary.slideshowCount > 0
-            else {
-                return nil
-            }
-            return AutomationTemplateNichePool(summary: summary, count: summary.slideshowCount)
+        let localTemplatesByID = Dictionary(uniqueKeysWithValues: localAutomationTemplates().map { ($0.id, $0) })
+        var selectedTemplates = automation.templateIDs.compactMap { localTemplatesByID[$0] }
+        var selectedNichePools: [AutomationTemplateNichePool] = []
+        var libraryIndex: ExampleSlideshowLibraryIndex?
+        let remoteTemplateIDs = automation.templateIDs.filter {
+            LocalAutomationTemplateIdentifier.templateID(from: $0) == nil
         }
+
+        if !remoteTemplateIDs.isEmpty || !automation.templateNicheIDs.isEmpty {
+            let loadedIndex = try await ExampleSlideshowLibrary.loadIndex(configuration: configuration)
+            libraryIndex = loadedIndex
+            let selectedNicheIDs = Set(automation.templateNicheIDs)
+            let templates = try await ExampleSlideshowLibrary.loadTemplates(
+                matching: Set(remoteTemplateIDs),
+                index: loadedIndex,
+                configuration: configuration
+            )
+                .filter(\.hasDisplayablePreview)
+            let templatesByID = Dictionary(uniqueKeysWithValues: templates.map { ($0.id, $0) })
+            selectedTemplates.append(contentsOf: remoteTemplateIDs
+                .compactMap { templatesByID[$0] }
+                .filter { template in
+                    guard let nicheID = templateNicheID(for: template, in: loadedIndex) else { return true }
+                    return !selectedNicheIDs.contains(nicheID)
+                }
+            )
+            selectedNichePools = automation.templateNicheIDs.compactMap { nicheID -> AutomationTemplateNichePool? in
+                guard
+                    let summary = loadedIndex.collections.first(where: { $0.id == nicheID }),
+                    summary.slideshowCount > 0
+                else {
+                    return nil
+                }
+                return AutomationTemplateNichePool(summary: summary, count: summary.slideshowCount)
+            }
+        }
+
         let selectedTemplateCount = selectedTemplates.count + selectedNichePools.reduce(0) { $0 + $1.count }
         guard selectedTemplateCount > 0 else {
             throw AutomationRunError.missingTemplate
@@ -2582,6 +2814,7 @@ private extension FlickAppModel {
         var nicheOffset = index - selectedTemplates.count
         for pool in selectedNichePools {
             if nicheOffset < pool.count {
+                guard let libraryIndex else { break }
                 return try await automationTemplate(
                     in: pool.summary,
                     offset: nicheOffset,
@@ -4025,6 +4258,150 @@ private extension FlickAppModel {
             return nil
         }
         return size.int64Value
+    }
+
+    private func normalizedShareImportNiche(_ niche: String) -> String {
+        let normalized = niche.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? "Imported" : normalized
+    }
+
+    private func normalizedShareImportTitle(_ title: String, niche: String) -> String {
+        let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? "\(niche) photo template" : normalized
+    }
+
+    private func shareImportTags(niche: String, now: Date) -> [TrendTag] {
+        [
+            TrendTag(
+                id: UUID(),
+                name: niche,
+                category: .niche,
+                colorHex: "#4F46E5",
+                createdAt: now
+            ),
+            TrendTag(
+                id: UUID(),
+                name: "Photos Import",
+                category: .template,
+                colorHex: "#16A34A",
+                createdAt: now
+            )
+        ]
+    }
+
+    private func shareImportedStyleGuide(title: String, niche: String) -> TemplateStyleGuide {
+        TemplateStyleGuide(
+            styleName: title,
+            visualTraits: [
+                "User-imported photo sequence",
+                "Use the original photos as direct slide references",
+                "Preserve the selected image order and portrait carousel pacing"
+            ],
+            colorPalette: [],
+            lighting: "Use the lighting and color cues from the imported photos.",
+            recurringMotifs: [],
+            reuseStructurally: [
+                "Reuse the imported photos as ready-made slide visuals.",
+                "Keep the \(niche) context unless the creator edits it."
+            ],
+            avoidCopyingDirectly: [
+                "Do not introduce readable text, watermarks, logos, or unrelated products when regenerating.",
+                "Do not replace user-imported photos unless explicitly requested."
+            ],
+            imageGenerationRules: [
+                "Imported photos are complete slide visuals.",
+                "Generated replacements should match the imported sequence's composition, lighting, and pacing.",
+                "Flick renders text overlays separately; generated images should not contain readable text."
+            ],
+            productImageSlideNumbers: []
+        )
+    }
+
+    private func shareImportHashtags(niche: String) -> [String] {
+        [
+            sanitizedHashtag(niche),
+            "template",
+            "slideshow"
+        ]
+        .filter { !$0.isEmpty }
+    }
+
+    private func draftHasImportedTemplateSlides(_ draft: SlideshowDraft, assetsByID: [UUID: MediaAsset]) -> Bool {
+        !draft.slides.isEmpty && draft.slides.allSatisfy { slide in
+            guard
+                let assetID = slide.imageAssetID,
+                let asset = assetsByID[assetID]
+            else {
+                return false
+            }
+
+            return asset.source == .uploaded
+                && asset.mediaType == .image
+                && asset.hasAvailableMediaLocation
+        }
+    }
+
+    private func localAutomationTemplate(
+        from template: CreativeTemplate,
+        draft: SlideshowDraft,
+        assetsByID: [UUID: MediaAsset]
+    ) -> ExampleSlideshowTemplate? {
+        let slides = draft.slides
+            .sorted { $0.index < $1.index }
+            .compactMap { slide -> ExampleSlideshowSlide? in
+                guard
+                    let assetID = slide.imageAssetID,
+                    let asset = assetsByID[assetID],
+                    let fileURL = asset.localFileURL
+                else {
+                    return nil
+                }
+
+                return ExampleSlideshowSlide(
+                    id: "\(template.id.uuidString)-slide-\(slide.index + 1)",
+                    index: slide.index + 1,
+                    filename: fileURL.lastPathComponent,
+                    relativePath: asset.localFilePath ?? fileURL.path,
+                    localURL: fileURL,
+                    sourceURL: nil,
+                    remoteURL: asset.publicURL
+                )
+            }
+
+        guard !slides.isEmpty else { return nil }
+
+        let niche = localTemplateNiche(for: template)
+        let nicheSlug = sanitizedHashtag(niche).isEmpty ? "imported" : sanitizedHashtag(niche)
+        return ExampleSlideshowTemplate(
+            id: LocalAutomationTemplateIdentifier.id(for: template.id),
+            niche: niche,
+            nicheSlug: nicheSlug,
+            sourceURL: nil,
+            postNumber: 0,
+            profile: "you",
+            profileDisplayName: "Imported from Photos",
+            folder: "local-\(template.id.uuidString)",
+            slideCount: slides.count,
+            metrics: ExampleSlideshowMetrics(views: nil, likes: nil, bookmarks: nil, shares: nil),
+            product: ExampleSlideshowProduct(
+                medium: "Imported photos",
+                name: template.name,
+                linkInBio: nil
+            ),
+            creator: ExampleSlideshowCreator(
+                followerCount: nil,
+                signature: "Imported from Photos",
+                avatarURL: nil,
+                region: nil
+            ),
+            slides: slides
+        )
+    }
+
+    private func localTemplateNiche(for template: CreativeTemplate) -> String {
+        template.tags.first { $0.category == .niche }?.name
+            ?? template.decodedStyleGuide?.styleName
+            ?? "Imported"
     }
 
     func templateHashtags(for template: ExampleSlideshowTemplate) -> [String] {

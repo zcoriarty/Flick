@@ -7,6 +7,7 @@ import SwiftUI
 
 struct CreateAutomationTemplateSection: View {
     var templateStore: TemplateLibraryStore
+    var localTemplates: [ExampleSlideshowTemplate] = []
     @Binding var selectedTemplateIDs: Set<String>
     @Binding var selectedTemplateNicheIDs: Set<String>
     var selectAction: () -> Void
@@ -23,7 +24,7 @@ struct CreateAutomationTemplateSection: View {
     }
 
     private var templatesByID: [String: ExampleSlideshowTemplate] {
-        Dictionary(uniqueKeysWithValues: templateStore.templates.map { ($0.id, $0) })
+        Dictionary(uniqueKeysWithValues: (localTemplates + templateStore.templates).map { ($0.id, $0) })
     }
 
     private var selectedTemplates: [ExampleSlideshowTemplate] {

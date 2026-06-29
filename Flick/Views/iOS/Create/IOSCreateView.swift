@@ -48,6 +48,9 @@ struct IOSCreateView: View {
     @State private var presentedSheet: CreateSheet?
     @State private var selectedSlideID: UUID?
     @State private var slideEditorDetent: PresentationDetent = .large
+    @State private var isCreatingShareImport = false
+    @State private var showsShareImportAlert = false
+    @State private var shareImportAlertMessage = ""
 
     private var tikTokAccountSelections: [PlatformAccountSelection] {
         if isAutomated {
@@ -86,47 +89,15 @@ struct IOSCreateView: View {
             appModel.overview.drafts.firstIndex { $0.id == draftID }
         }
 
-        ZStack {
-            createFormList(
-                in: appModel,
-                currentDraftID: currentDraftID,
-                currentDraftIndex: currentDraftIndex
-            )
-
-            automationSuccessOverlay
-        }
+        mainContent(
+            in: appModel,
+            currentDraftID: currentDraftID,
+            currentDraftIndex: currentDraftIndex
+        )
         .animation(.snappy, value: showsAutomationStartSuccess)
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                createToolbarTitle(in: appModel)
-            }
-            .sharedBackgroundVisibility(.hidden)
-            #if os(iOS)
-            ToolbarItem(placement: .topBarLeading) {
-                draftsButton
-            }
-            #else
-            ToolbarItem(placement: .navigation) {
-                draftsButton
-            }
-            #endif
-            ToolbarItem(placement: .confirmationAction) {
-                Button {
-                    if isAutomated {
-                        publishAutomation(using: appModel)
-                    } else {
-                        publishManualPost(using: appModel)
-                    }
-                } label: {
-                    if isPrimaryActionBusy(in: appModel) {
-                        ProgressView()
-                    } else {
-                        Text(isAutomated ? automationPrimaryActionTitle : "Publish")
-                    }
-                }
-                .disabled(!canPublish(in: appModel) || isPrimaryActionBusy(in: appModel) || showsAutomationStartSuccess)
-            }
+            createToolbar(in: appModel)
         }
         .task {
             if case .loading = templateStore.status {
@@ -176,6 +147,9 @@ struct IOSCreateView: View {
                 syncImageVibeSelectionFromActiveDraft(in: appModel)
             }
         }
+        .onChange(of: appModel.shareImportErrorMessage) { _, message in
+            presentShareImportError(message)
+        }
         .sheet(item: $presentedSheet) { sheet in
             switch sheet {
             case .templatePicker:
@@ -183,6 +157,7 @@ struct IOSCreateView: View {
                     AutomationTemplatePickerSheet(
                         templateStore: templateStore,
                         configuration: appModel.configuration,
+                        localTemplates: appModel.localAutomationTemplates(),
                         selectedTemplateIDs: $selectedAutomationTemplateIDs,
                         selectedTemplateNicheIDs: $selectedAutomationTemplateNicheIDs
                     )
@@ -334,9 +309,102 @@ struct IOSCreateView: View {
                 CreatePublishProgressSheet(progress: appModel.manualPublishProgress)
             }
         }
+        .sheet(item: $appModel.pendingShareImport) { session in
+            shareImportSheet(session, appModel: appModel)
+        }
+        .alert(
+            "Import failed",
+            isPresented: $showsShareImportAlert
+        ) {
+            Button("OK", role: .cancel) {
+                appModel.shareImportErrorMessage = nil
+            }
+        } message: {
+            Text(shareImportAlertMessage)
+        }
         .onDisappear {
             automationSuccessDismissTask?.cancel()
         }
+    }
+
+    private func mainContent(
+        in appModel: FlickAppModel,
+        currentDraftID: UUID?,
+        currentDraftIndex: Int?
+    ) -> some View {
+        ZStack {
+            createFormList(
+                in: appModel,
+                currentDraftID: currentDraftID,
+                currentDraftIndex: currentDraftIndex
+            )
+
+            automationSuccessOverlay
+        }
+    }
+
+    private func primaryToolbarButton(in appModel: FlickAppModel) -> some View {
+        Button {
+            if isAutomated {
+                publishAutomation(using: appModel)
+            } else {
+                publishManualPost(using: appModel)
+            }
+        } label: {
+            if isPrimaryActionBusy(in: appModel) {
+                ProgressView()
+            } else {
+                Text(isAutomated ? automationPrimaryActionTitle : "Publish")
+            }
+        }
+        .disabled(!canPublish(in: appModel) || isPrimaryActionBusy(in: appModel) || showsAutomationStartSuccess)
+    }
+
+    @ToolbarContentBuilder
+    private func createToolbar(in appModel: FlickAppModel) -> some ToolbarContent {
+        ToolbarItem(placement: .principal) {
+            createToolbarTitle(in: appModel)
+        }
+        .sharedBackgroundVisibility(.hidden)
+
+        #if os(iOS)
+        ToolbarItem(placement: .topBarLeading) {
+            draftsButton
+        }
+        #else
+        ToolbarItem(placement: .navigation) {
+            draftsButton
+        }
+        #endif
+
+        ToolbarItem(placement: .confirmationAction) {
+            primaryToolbarButton(in: appModel)
+        }
+    }
+
+    private func shareImportSheet(_ session: ShareImportSession, appModel: FlickAppModel) -> some View {
+        ShareTemplateImportSheet(
+            session: session,
+            nicheSummaries: templateStore.summaries,
+            isCreating: isCreatingShareImport,
+            createAction: { title, niche, openMode in
+                createShareImportedTemplate(
+                    title: title,
+                    niche: niche,
+                    openMode: openMode,
+                    using: appModel
+                )
+            },
+            discardAction: {
+                appModel.discardPendingShareImport()
+            }
+        )
+    }
+
+    private func presentShareImportError(_ message: String?) {
+        guard let message, !message.isEmpty else { return }
+        shareImportAlertMessage = message
+        showsShareImportAlert = true
     }
 
     private func createFormList(
@@ -441,6 +509,7 @@ struct IOSCreateView: View {
     private func automatedSetupSections(in appModel: FlickAppModel) -> some View {
         CreateAutomationTemplateSection(
             templateStore: templateStore,
+            localTemplates: appModel.localAutomationTemplates(),
             selectedTemplateIDs: $selectedAutomationTemplateIDs,
             selectedTemplateNicheIDs: $selectedAutomationTemplateNicheIDs,
             selectAction: { presentedSheet = .templatePicker },
@@ -857,8 +926,55 @@ struct IOSCreateView: View {
     }
 
     private func allTemplates() -> [ExampleSlideshowTemplate] {
-        templateStore.templates
+        (appModel.localAutomationTemplates() + templateStore.templates)
             .filter(\.hasDisplayablePreview)
+    }
+
+    private func createShareImportedTemplate(
+        title: String,
+        niche: String,
+        openMode: ShareImportOpenMode,
+        using appModel: FlickAppModel
+    ) {
+        guard !isCreatingShareImport else { return }
+        isCreatingShareImport = true
+
+        Task { @MainActor in
+            let result = await appModel.createTemplateFromPendingShareImport(
+                title: title,
+                niche: niche,
+                openMode: openMode
+            )
+            isCreatingShareImport = false
+            guard let result else { return }
+            applyShareImportResult(result, using: appModel)
+        }
+    }
+
+    private func applyShareImportResult(
+        _ result: ShareTemplateImportResult,
+        using appModel: FlickAppModel
+    ) {
+        appModel.selectCreateDraft(id: result.draftID)
+        selectedTemplate = nil
+        selectedProductID = nil
+        selectedProductImageAssetID = nil
+        selectedSlideID = nil
+        syncCreationModelSelectionFromActiveDraft(in: appModel)
+        syncImageVibeSelectionFromActiveDraft(in: appModel)
+        updateSelectedSlide(using: appModel)
+
+        switch result.openMode {
+        case .singlePost:
+            withAnimation(.snappy) {
+                isAutomated = false
+            }
+        case .automation:
+            withAnimation(.snappy) {
+                isAutomated = true
+            }
+            selectedAutomationTemplateIDs.insert(result.automationTemplateID)
+        }
     }
 
     private func automationDefaultName(in appModel: FlickAppModel) -> String {
@@ -986,7 +1102,13 @@ struct IOSCreateView: View {
 
     private func selectedAutomationSelectionsAreAvailable(in appModel: FlickAppModel) -> Bool {
         let nicheIDs = Set(templateStore.summaries.map(\.id))
+        let localTemplateIDs = Set(appModel.localAutomationTemplates().map(\.id))
+        let missingLocalTemplateIDs = selectedAutomationTemplateIDs.filter { templateID in
+            LocalAutomationTemplateIdentifier.templateID(from: templateID) != nil
+                && !localTemplateIDs.contains(templateID)
+        }
         guard !selectedAutomationTemplateIDs.isEmpty || !selectedAutomationTemplateNicheIDs.isEmpty else { return false }
+        guard missingLocalTemplateIDs.isEmpty else { return false }
         guard selectedAutomationTemplateNicheIDs.isSubset(of: nicheIDs) else { return false }
         guard let selectedProductID, appModel.overview.products.contains(where: { $0.id == selectedProductID }) else {
             return false

@@ -73,6 +73,7 @@ struct FlickRootView: View {
         .flickAppBackground()
         .task {
             await appModel.refresh()
+            await appModel.loadPendingShareImportIfNeeded()
         }
         .task {
             await appModel.refreshOnCloudKitStoreChanges()
@@ -97,10 +98,17 @@ struct FlickRootView: View {
             guard phase == .active else { return }
             Task {
                 await appModel.refresh()
+                await appModel.loadPendingShareImportIfNeeded()
             }
         }
         .onOpenURL { url in
-            _ = TikTokOpenSDKURLHandler.handle(url, source: "SwiftUI.onOpenURL")
+            if appModel.canHandleShareImportURL(url) {
+                Task {
+                    await appModel.handleShareImportURL(url)
+                }
+            } else {
+                _ = TikTokOpenSDKURLHandler.handle(url, source: "SwiftUI.onOpenURL")
+            }
         }
         .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
             _ = TikTokOpenSDKURLHandler.handle(activity.webpageURL, source: "SwiftUI.onContinueUserActivity")
