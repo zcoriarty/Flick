@@ -781,7 +781,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
 
         let productSummary = productID
             .flatMap { productID in products.first { $0.id == productID }?.name }
-            ?? "product posts"
+            ?? "posts"
 
         return "\(productSummary) - \(templateSummary) - \(schedule.summary())"
     }
@@ -792,8 +792,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
 
     var isReadyToSchedule: Bool {
         (!templateIDs.isEmpty || !templateNicheIDs.isEmpty)
-            && productID != nil
-            && !productImageAssetIDs.isEmpty
+            && (productID == nil || !productImageAssetIDs.isEmpty)
             && schedule.isValid
             && hasValidPublishSettings
             && hasSelectedAccountForEachTarget

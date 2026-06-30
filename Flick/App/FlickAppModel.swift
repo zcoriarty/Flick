@@ -2783,14 +2783,14 @@ private extension FlickAppModel {
             await startAutomationPostProgressStep(
                 progressID,
                 AutomationPostProgressStepID.selectTemplate,
-                detail: "Choosing a template and product image for this run."
+                detail: "Choosing a template for this run."
             )
             let template = try await automationTemplate(for: automation, scheduledAt: scheduledAt)
             let productImage = try automationProductImage(for: automation, scheduledAt: scheduledAt)
             await updateAutomationPostProgress(
                 progressID,
                 templateTitle: template.title,
-                productName: productImage.product.name,
+                productName: productImage?.product.name,
                 creationModelName: automation.creationModel?.name
             )
             await completeAutomationPostProgressStep(
@@ -2798,7 +2798,7 @@ private extension FlickAppModel {
                 AutomationPostProgressStepID.selectTemplate,
                 detail: automationSelectionDetail(
                     templateTitle: template.title,
-                    productName: productImage.product.name,
+                    productName: productImage?.product.name,
                     creationModel: automation.creationModel
                 )
             )
@@ -3079,15 +3079,18 @@ private extension FlickAppModel {
     func automationProductImage(
         for automation: ContentAutomation,
         scheduledAt: Date
-    ) throws -> SlideshowProductImage {
-        guard
-            let productID = automation.productID,
-            let product = overview.products.first(where: { $0.id == productID })
-        else {
+    ) throws -> SlideshowProductImage? {
+        guard let productID = automation.productID else {
+            return nil
+        }
+        guard let product = overview.products.first(where: { $0.id == productID }) else {
             throw AutomationRunError.missingProductImage("The automation product is no longer available.")
         }
 
         let selectedAssetIDs = Set(automation.productImageAssetIDs)
+        guard !selectedAssetIDs.isEmpty else {
+            throw AutomationRunError.missingProductImage("Select at least one product image for \(product.name), or clear the product from this automation.")
+        }
         let selectedAssets = overview.assets.filter { selectedAssetIDs.contains($0.id) }
         let productImageAssets = selectedAssets.filter { asset in
             asset.productIDs.contains(productID) && asset.mediaType == .image
@@ -3113,14 +3116,15 @@ private extension FlickAppModel {
 
     func automationSelectionDetail(
         templateTitle: String,
-        productName: String,
+        productName: String?,
         creationModel: SlideshowCreationModelReference?
     ) -> String {
+        let productDetail = productName.map { " for \($0)" } ?? ""
         guard let creationModel else {
-            return "Selected \(templateTitle) for \(productName)."
+            return "Selected \(templateTitle)\(productDetail)."
         }
 
-        return "Selected \(templateTitle) for \(productName) with \(creationModel.name)."
+        return "Selected \(templateTitle)\(productDetail) with \(creationModel.name)."
     }
 
     func markAutomation(_ automationID: UUID, succeededAt date: Date) {

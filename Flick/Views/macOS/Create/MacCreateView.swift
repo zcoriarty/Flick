@@ -1177,9 +1177,18 @@ struct MacCreateView: View {
 
     private func selectedAutomationSelectionsAreAvailable(in appModel: FlickAppModel) -> Bool {
         let nicheIDs = Set(templateStore.summaries.map(\.id))
+        let localTemplateIDs = Set(appModel.localAutomationTemplates().map(\.id))
+        let missingLocalTemplateIDs = selectedAutomationTemplateIDs.filter { templateID in
+            LocalAutomationTemplateIdentifier.templateID(from: templateID) != nil
+                && !localTemplateIDs.contains(templateID)
+        }
         guard !selectedAutomationTemplateIDs.isEmpty || !selectedAutomationTemplateNicheIDs.isEmpty else { return false }
+        guard missingLocalTemplateIDs.isEmpty else { return false }
         guard selectedAutomationTemplateNicheIDs.isSubset(of: nicheIDs) else { return false }
-        guard let selectedProductID, appModel.overview.products.contains(where: { $0.id == selectedProductID }) else {
+        guard let selectedProductID else {
+            return true
+        }
+        guard appModel.overview.products.contains(where: { $0.id == selectedProductID }) else {
             return false
         }
 

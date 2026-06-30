@@ -1079,6 +1079,46 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(targets.map(\.accountName), [tikTokAccount.displayName, "Main Channel", "Backup Channel"])
     }
 
+    func testAutomationCanScheduleWithoutProductSelection() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let account = makeConnectedAccount(now: now)
+        let automation = ContentAutomation(
+            name: "Template-only posts",
+            templateIDs: ["template-a"],
+            productID: nil,
+            productImageAssetIDs: [],
+            schedule: AutomationSchedule.default,
+            tikTokSettings: DraftTikTokSettings(title: "Try this", privacyLevel: .publicToEveryone),
+            accountSelections: [
+                PlatformAccountSelection(platform: .tiktok, accountID: account.id)
+            ],
+            createdAt: now,
+            updatedAt: now
+        )
+
+        XCTAssertTrue(automation.isReadyToSchedule)
+    }
+
+    func testAutomationWithSelectedProductStillRequiresProductImage() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let account = makeConnectedAccount(now: now)
+        let automation = ContentAutomation(
+            name: "Product posts",
+            templateIDs: ["template-a"],
+            productID: UUID(),
+            productImageAssetIDs: [],
+            schedule: AutomationSchedule.default,
+            tikTokSettings: DraftTikTokSettings(title: "Try this", privacyLevel: .publicToEveryone),
+            accountSelections: [
+                PlatformAccountSelection(platform: .tiktok, accountID: account.id)
+            ],
+            createdAt: now,
+            updatedAt: now
+        )
+
+        XCTAssertFalse(automation.isReadyToSchedule)
+    }
+
     func testCoreDataRoundTripsAutomations() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let persistenceController = PersistenceController(inMemory: true)

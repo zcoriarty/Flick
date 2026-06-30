@@ -1169,7 +1169,10 @@ struct IOSCreateView: View {
         guard !selectedAutomationTemplateIDs.isEmpty || !selectedAutomationTemplateNicheIDs.isEmpty else { return false }
         guard missingLocalTemplateIDs.isEmpty else { return false }
         guard selectedAutomationTemplateNicheIDs.isSubset(of: nicheIDs) else { return false }
-        guard let selectedProductID, appModel.overview.products.contains(where: { $0.id == selectedProductID }) else {
+        guard let selectedProductID else {
+            return true
+        }
+        guard appModel.overview.products.contains(where: { $0.id == selectedProductID }) else {
             return false
         }
 
