@@ -88,7 +88,7 @@ private struct CreateDraftSummaryRow: View {
                 .frame(width: 28)
 
             VStack(alignment: .leading, spacing: 7) {
-                Text(draft.title)
+                Text(displayTitle)
                     .font(.headline)
                     .lineLimit(2)
 
@@ -112,6 +112,11 @@ private struct CreateDraftSummaryRow: View {
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+    }
+
+    private var displayTitle: String {
+        let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? "Untitled" : title
     }
 }
 

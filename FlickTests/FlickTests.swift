@@ -2282,6 +2282,169 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(model.activeCreateDraft?.slides.count, 2)
     }
 
+    func testShareImportCreationAllowsEmptyTitleWithoutPersistedFallback() async throws {
+        #if canImport(UIKit)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let imageData = makeTestJPEGData(width: 72, height: 128)
+        let sourceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("share-import-\(UUID().uuidString).jpg")
+        try imageData.write(to: sourceURL, options: [.atomic])
+        defer { try? FileManager.default.removeItem(at: sourceURL) }
+
+        let session = ShareImportSession(
+            id: UUID(),
+            createdAt: now,
+            images: [
+                ShareImportImage(
+                    id: UUID(),
+                    fileURL: sourceURL,
+                    contentType: .jpeg,
+                    fileSize: Int64(imageData.count)
+                )
+            ]
+        )
+        let repository = InMemoryFlickRepository(state: FlickEmptyState.make())
+        let mediaStorage = FakeMediaStorage()
+        let model = FlickAppModel(
+            repository: repository,
+            configuration: makeTestAppConfiguration(),
+            mediaStorageFactory: { _ in mediaStorage }
+        )
+
+        let result = try await model.createTemplate(
+            from: session,
+            title: "",
+            niche: "Fitness"
+        )
+
+        let template = try XCTUnwrap(model.overview.templates.first { $0.id == result.templateID })
+        let importedTemplate = try XCTUnwrap(model.localAutomationTemplates().first { $0.id == result.selectedTemplateID })
+        let uploadedPath = try XCTUnwrap(mediaStorage.uploadedPaths.first)
+        let uploadedAsset = try XCTUnwrap(model.overview.assets.first)
+
+        XCTAssertEqual(template.name, "")
+        XCTAssertEqual(template.slideCount, 1)
+        XCTAssertEqual(uploadedPath.hasPrefix("template-imports/\(template.id.uuidString)/"), true)
+        XCTAssertEqual(uploadedAsset.storagePath, uploadedPath)
+        XCTAssertEqual(uploadedAsset.publicURL, URL(string: "https://media.example.com/\(uploadedPath)"))
+        XCTAssertEqual(model.overview.drafts, [])
+        XCTAssertNil(model.activeCreateDraftID)
+        XCTAssertEqual(importedTemplate.niche, "Fitness")
+        XCTAssertEqual(importedTemplate.product.medium, "Imported photos")
+        XCTAssertNil(importedTemplate.product.name)
+        XCTAssertTrue(importedTemplate.hasDisplayablePreview)
+        XCTAssertEqual(repository.state.templates.first?.name, "")
+        XCTAssertEqual(repository.state.drafts, [])
+        #endif
+    }
+
+    func testImportedTemplateCanUseRemoteBackedSlidesWithoutSourceDraft() async throws {
+        #if canImport(UIKit)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let imageData = makeTestJPEGData(width: 72, height: 128)
+        let sourceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("template-import-\(UUID().uuidString).jpg")
+        try imageData.write(to: sourceURL, options: [.atomic])
+        defer { try? FileManager.default.removeItem(at: sourceURL) }
+
+        let session = ShareImportSession(
+            id: UUID(),
+            createdAt: now,
+            images: [
+                ShareImportImage(
+                    id: UUID(),
+                    fileURL: sourceURL,
+                    contentType: .jpeg,
+                    fileSize: Int64(imageData.count)
+                )
+            ]
+        )
+        let mediaStorage = FakeMediaStorage()
+        let model = FlickAppModel(
+            repository: InMemoryFlickRepository(state: FlickEmptyState.make()),
+            configuration: makeTestAppConfiguration(),
+            mediaStorageFactory: { _ in mediaStorage }
+        )
+
+        let result = try await model.createTemplate(
+            from: session,
+            title: "",
+            niche: "Fitness"
+        )
+
+        model.overview.assets[0].localFilePath = "/missing/template-import.jpg"
+        let remoteURL = try XCTUnwrap(model.overview.assets[0].publicURL)
+
+        let localTemplate = try XCTUnwrap(model.localAutomationTemplates().first { $0.id == result.selectedTemplateID })
+        XCTAssertEqual(localTemplate.product.medium, "Imported photos")
+        XCTAssertNil(localTemplate.product.name)
+        XCTAssertEqual(model.overview.drafts, [])
+        XCTAssertEqual(localTemplate.slides.first?.localURL, nil)
+        XCTAssertEqual(localTemplate.slides.first?.remoteURL, remoteURL)
+        XCTAssertTrue(localTemplate.hasDisplayablePreview)
+        #endif
+    }
+
+    func testRenderedUploadDerivesPublicURLWhenUploadResponseOmitsIt() async throws {
+        #if canImport(UIKit)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let imageData = makeTestJPEGData(width: 72, height: 128)
+        let sourceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("render-source-\(UUID().uuidString).jpg")
+        try imageData.write(to: sourceURL, options: [.atomic])
+        defer { try? FileManager.default.removeItem(at: sourceURL) }
+
+        let asset = makeMediaAsset(
+            source: .generated,
+            localFilePath: sourceURL.path,
+            publicURL: nil,
+            now: now
+        )
+        let draft = makeSlideshowDraft(
+            slides: [makeSlide(imageAssetID: asset.id, generationStatus: .complete, now: now)],
+            now: now
+        )
+        var state = FlickEmptyState.make()
+        state.assets = [asset]
+        state.drafts = [draft]
+
+        let mediaStorage = FakeMediaStorage(returnsPublicURL: false)
+        let model = FlickAppModel(
+            repository: InMemoryFlickRepository(state: state),
+            configuration: makeTestAppConfiguration(),
+            mediaStorageFactory: { _ in mediaStorage }
+        )
+
+        let renderedAssetIDs = try await model.testRenderImageSequenceForPublish(for: draft.id)
+
+        let renderedAssetID = try XCTUnwrap(renderedAssetIDs.first)
+        let renderedAsset = try XCTUnwrap(model.overview.assets.first { $0.id == renderedAssetID })
+        let uploadedPath = try XCTUnwrap(mediaStorage.uploadedPaths.first)
+        XCTAssertEqual(renderedAsset.publicURL, URL(string: "https://media.example.com/\(uploadedPath)"))
+        XCTAssertEqual(renderedAsset.storagePath, uploadedPath)
+        #endif
+    }
+
+    func testTemplatePreviewAvailabilityUsesMediaLocationsWithoutDecoding() throws {
+        let remoteSlide = makeExampleSlideshowSlide(
+            index: 1,
+            remoteURL: try XCTUnwrap(URL(string: "https://media.example.com/remote-slide.jpg")),
+            localURL: nil
+        )
+        let missingLocalSlide = makeExampleSlideshowSlide(
+            index: 2,
+            remoteURL: nil,
+            localURL: URL(fileURLWithPath: "/missing/template/slide-2.jpg")
+        )
+        let template = makeExampleSlideshowTemplate(
+            slides: [remoteSlide, missingLocalSlide]
+        )
+
+        XCTAssertEqual(template.displayableSlides.map(\.id), [remoteSlide.id])
+        XCTAssertEqual(template.displayablePreviewSlide?.id, remoteSlide.id)
+        XCTAssertTrue(template.hasDisplayablePreview)
+    }
+
     func testDeleteLocalAnalysisRemovesMatchingCreativeTemplate() async throws {
         let sourceTemplate = makeExampleSlideshowTemplate(id: "cached-template")
         let fingerprint = TemplateAnalysisCacheService.fingerprint(for: sourceTemplate)
@@ -4107,13 +4270,17 @@ private func makeExampleSlideshowTemplate(
     )
 }
 
-private func makeExampleSlideshowSlide(index: Int, remoteURL: URL? = nil) -> ExampleSlideshowSlide {
+private func makeExampleSlideshowSlide(
+    index: Int,
+    remoteURL: URL? = nil,
+    localURL: URL? = URL(fileURLWithPath: "/missing/template/slide.jpg")
+) -> ExampleSlideshowSlide {
     ExampleSlideshowSlide(
         id: "slide-\(index)",
         index: index,
         filename: "slide-\(index).jpg",
         relativePath: "template/slide-\(index).jpg",
-        localURL: URL(fileURLWithPath: "/missing/template/slide-\(index).jpg"),
+        localURL: localURL,
         sourceURL: URL(string: "https://example.com/source-slide-\(index).jpg"),
         remoteURL: remoteURL
     )
@@ -4277,6 +4444,11 @@ private func managedObjectCount(entityName: String, in context: NSManagedObjectC
 private final class FakeMediaStorage: MediaStorageProviding {
     private(set) var uploadedPaths: [String] = []
     private(set) var uploadedContentTypes: [String] = []
+    private let returnsPublicURL: Bool
+
+    init(returnsPublicURL: Bool = true) {
+        self.returnsPublicURL = returnsPublicURL
+    }
 
     func uploadAsset(_ asset: LocalMediaAsset, path: String) async throws -> RemoteMediaAsset {
         uploadedPaths.append(path)
@@ -4284,7 +4456,7 @@ private final class FakeMediaStorage: MediaStorageProviding {
         return RemoteMediaAsset(
             storageBucket: "flick-media",
             storagePath: path,
-            publicURL: URL(string: "https://media.example.com/\(path)"),
+            publicURL: returnsPublicURL ? URL(string: "https://media.example.com/\(path)") : nil,
             signedURLExpiration: nil
         )
     }

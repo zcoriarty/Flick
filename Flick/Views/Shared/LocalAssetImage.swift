@@ -33,31 +33,29 @@ struct LocalAssetImage: View {
     var contentMode: ContentMode = .fill
     var maxPixelSize: Int = 1_920
 
+    #if canImport(UIKit) || canImport(AppKit)
+    @State private var localImage: FlickPlatformImage?
+    @State private var didFailLocalLoad = false
+    #endif
+
     var body: some View {
         Group {
             #if canImport(UIKit) || canImport(AppKit)
-            if let fileURL, let image = LocalAssetImageLoader.image(at: fileURL, maxPixelSize: maxPixelSize) {
-                Image(flickPlatformImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: contentMode)
-            } else if let remoteURL {
-                AsyncImage(url: remoteURL) { phase in
-                    switch phase {
-                    case let .success(image):
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: contentMode)
-                    case .empty:
-                        ZStack {
-                            placeholder
-                            ProgressView()
-                        }
-                    case .failure:
+            if fileURL != nil {
+                if let localImage {
+                    Image(flickPlatformImage: localImage)
+                        .resizable()
+                        .aspectRatio(contentMode: contentMode)
+                } else if didFailLocalLoad, remoteURL != nil {
+                    remoteImage
+                } else {
+                    ZStack {
                         placeholder
-                    @unknown default:
-                        placeholder
+                        ProgressView()
                     }
                 }
+            } else if remoteURL != nil {
+                remoteImage
             } else {
                 placeholder
             }
@@ -66,7 +64,61 @@ struct LocalAssetImage: View {
             #endif
         }
         .accessibilityHidden(true)
+        #if canImport(UIKit) || canImport(AppKit)
+        .task(id: localLoadID) {
+            await loadLocalImageIfNeeded()
+        }
+        #endif
     }
+
+    #if canImport(UIKit) || canImport(AppKit)
+    @ViewBuilder
+    private var remoteImage: some View {
+        if let remoteURL {
+            AsyncImage(url: remoteURL) { phase in
+                switch phase {
+                case let .success(image):
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: contentMode)
+                case .empty:
+                    ZStack {
+                        placeholder
+                        ProgressView()
+                    }
+                case .failure:
+                    placeholder
+                @unknown default:
+                    placeholder
+                }
+            }
+        } else {
+            placeholder
+        }
+    }
+
+    private var localLoadID: String {
+        guard let fileURL else {
+            return "nil-\(maxPixelSize)"
+        }
+        return "\(fileURL.path)#\(maxPixelSize)"
+    }
+
+    private func loadLocalImageIfNeeded() async {
+        guard let fileURL else {
+            localImage = nil
+            didFailLocalLoad = false
+            return
+        }
+
+        localImage = nil
+        didFailLocalLoad = false
+        let image = await LocalAssetImageLoader.imageAsync(at: fileURL, maxPixelSize: maxPixelSize)
+        guard !Task.isCancelled else { return }
+        localImage = image
+        didFailLocalLoad = image == nil
+    }
+    #endif
 
     private var placeholder: some View {
         ZStack {
@@ -84,20 +136,20 @@ struct LocalAssetImage: View {
 
 enum LocalAssetImageLoader {
     #if canImport(UIKit) || canImport(AppKit)
-    private static let imageCache: NSCache<NSString, FlickPlatformImage> = {
+    nonisolated(unsafe) private static let imageCache: NSCache<NSString, FlickPlatformImage> = {
         let cache = NSCache<NSString, FlickPlatformImage>()
         cache.countLimit = 180
         cache.totalCostLimit = 96 * 1_024 * 1_024
         return cache
     }()
 
-    private static let failedImageCache: NSCache<NSString, NSNumber> = {
+    nonisolated(unsafe) private static let failedImageCache: NSCache<NSString, NSNumber> = {
         let cache = NSCache<NSString, NSNumber>()
         cache.countLimit = 300
         return cache
     }()
 
-    static func image(at fileURL: URL, maxPixelSize: Int = 1_920) -> FlickPlatformImage? {
+    nonisolated static func image(at fileURL: URL, maxPixelSize: Int = 1_920) -> FlickPlatformImage? {
         let normalizedMaxPixelSize = max(1, maxPixelSize)
         let cacheKey = cacheKey(for: fileURL, maxPixelSize: normalizedMaxPixelSize)
         if let cachedImage = imageCache.object(forKey: cacheKey) {
@@ -116,7 +168,13 @@ enum LocalAssetImageLoader {
         return image
     }
 
-    private static func loadImage(at fileURL: URL, maxPixelSize: Int) -> FlickPlatformImage? {
+    nonisolated static func imageAsync(at fileURL: URL, maxPixelSize: Int = 1_920) async -> FlickPlatformImage? {
+        await Task.detached(priority: .utility) {
+            image(at: fileURL, maxPixelSize: maxPixelSize)
+        }.value
+    }
+
+    nonisolated private static func loadImage(at fileURL: URL, maxPixelSize: Int) -> FlickPlatformImage? {
         switch stillImage(at: fileURL, maxPixelSize: maxPixelSize) {
         case let .image(image):
             return image
@@ -127,14 +185,14 @@ enum LocalAssetImageLoader {
         }
     }
 
-    private static func cacheKey(for fileURL: URL, maxPixelSize: Int) -> NSString {
+    nonisolated private static func cacheKey(for fileURL: URL, maxPixelSize: Int) -> NSString {
         let values = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
         let fileSize = values?.fileSize ?? -1
         let modificationDate = values?.contentModificationDate?.timeIntervalSince1970 ?? -1
         return "\(fileURL.path)#\(maxPixelSize)#\(fileSize)#\(modificationDate)" as NSString
     }
 
-    private static func stillImage(at fileURL: URL, maxPixelSize: Int) -> StillImageLoadResult {
+    nonisolated private static func stillImage(at fileURL: URL, maxPixelSize: Int) -> StillImageLoadResult {
         guard !hasUnsupportedStillImageContainer(at: fileURL) else {
             return .unsupportedImage
         }
@@ -165,7 +223,7 @@ enum LocalAssetImageLoader {
         #endif
     }
 
-    private static func hasUnsupportedStillImageContainer(at fileURL: URL) -> Bool {
+    nonisolated private static func hasUnsupportedStillImageContainer(at fileURL: URL) -> Bool {
         guard let handle = try? FileHandle(forReadingFrom: fileURL) else {
             return false
         }
@@ -187,7 +245,7 @@ enum LocalAssetImageLoader {
         return unsupportedBrands.contains(majorBrand)
     }
 
-    private static func videoFrame(at fileURL: URL, maxPixelSize: Int) -> FlickPlatformImage? {
+    nonisolated private static func videoFrame(at fileURL: URL, maxPixelSize: Int) -> FlickPlatformImage? {
         let asset = AVURLAsset(url: fileURL)
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
@@ -214,7 +272,7 @@ private enum StillImageLoadResult {
 }
 
 private extension FlickPlatformImage {
-    var flickEstimatedCacheCost: Int {
+    nonisolated var flickEstimatedCacheCost: Int {
         #if canImport(UIKit)
         guard let cgImage else { return 1 }
         return cgImage.bytesPerRow * cgImage.height

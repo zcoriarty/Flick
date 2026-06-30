@@ -73,7 +73,10 @@ struct TemplateAnalysisService {
         if let remoteURL = slide.remoteURL {
             return remoteURL.absoluteString
         }
-        return try dataURL(for: slide.localURL)
+        guard let localURL = slide.localURL else {
+            throw TemplateAnalysisInputError.missingImageLocation(slide.index)
+        }
+        return try dataURL(for: localURL)
     }
 
     private func dataURL(for fileURL: URL) throws -> String {
@@ -117,4 +120,15 @@ struct TemplateAnalysisService {
             ]
         ]
     ]
+}
+
+private enum TemplateAnalysisInputError: LocalizedError {
+    case missingImageLocation(Int)
+
+    var errorDescription: String? {
+        switch self {
+        case let .missingImageLocation(index):
+            "Template slide \(index) does not have a local file or public URL."
+        }
+    }
 }

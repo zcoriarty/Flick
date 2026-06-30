@@ -8,9 +8,7 @@ import SwiftUI
 extension ExampleSlideshowTemplate {
     var displayableSlides: [ExampleSlideshowSlide] {
         #if canImport(UIKit) || canImport(AppKit)
-        slides.filter { slide in
-            slide.remoteURL != nil || LocalAssetImageLoader.image(at: slide.localURL, maxPixelSize: 240) != nil
-        }
+        slides.filter(\.hasDisplayableMediaLocation)
         #else
         slides
         #endif
@@ -18,9 +16,7 @@ extension ExampleSlideshowTemplate {
 
     var displayablePreviewSlide: ExampleSlideshowSlide? {
         #if canImport(UIKit) || canImport(AppKit)
-        slides.first { slide in
-            slide.remoteURL != nil || LocalAssetImageLoader.image(at: slide.localURL, maxPixelSize: 240) != nil
-        }
+        slides.first(where: \.hasDisplayableMediaLocation)
         #else
         displayableSlides.first
         #endif
@@ -28,5 +24,17 @@ extension ExampleSlideshowTemplate {
 
     var hasDisplayablePreview: Bool {
         displayablePreviewSlide != nil
+    }
+}
+
+private extension ExampleSlideshowSlide {
+    var hasDisplayableMediaLocation: Bool {
+        if remoteURL != nil {
+            return true
+        }
+        guard let localURL else {
+            return false
+        }
+        return FileManager.default.isReadableFile(atPath: localURL.path)
     }
 }

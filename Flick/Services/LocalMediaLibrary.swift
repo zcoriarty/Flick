@@ -226,7 +226,7 @@ enum LocalMediaPathResolver {
     private static func sourceDirectoryNames(for source: AssetSource) -> [String] {
         switch source {
         case .uploaded:
-            ["ProductMedia"]
+            ["ProductMedia", "TemplateImports"]
         case .generated:
             ["GeneratedImages"]
         case .rendered:

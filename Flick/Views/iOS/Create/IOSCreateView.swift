@@ -7,16 +7,28 @@ import Foundation
 import SwiftUI
 
 #if !os(macOS)
-private enum CreateSheet: String, Identifiable {
+private enum CreateSheet: Identifiable {
     case templatePicker
     case drafts
     case slideEditor
+    case plan(CreatePlanSheet)
     case tikTokSettings
     case youtubeSettings
     case songPicker
     case publishProgress
 
-    var id: String { rawValue }
+    var id: String {
+        switch self {
+        case .templatePicker: "templatePicker"
+        case .drafts: "drafts"
+        case .slideEditor: "slideEditor"
+        case let .plan(sheet): "plan-\(sheet.id)"
+        case .tikTokSettings: "tikTokSettings"
+        case .youtubeSettings: "youtubeSettings"
+        case .songPicker: "songPicker"
+        case .publishProgress: "publishProgress"
+        }
+    }
 }
 
 struct IOSCreateView: View {
@@ -165,6 +177,7 @@ struct IOSCreateView: View {
                     TemplatePickerSheet(
                         templateStore: templateStore,
                         configuration: appModel.configuration,
+                        localTemplates: appModel.localAutomationTemplates(),
                         selectedTemplate: $selectedTemplate
                     )
                 }
@@ -187,46 +200,9 @@ struct IOSCreateView: View {
                     }
                 )
             case .slideEditor:
-                if
-                    let currentDraftID = activeDraftID(in: appModel),
-                    let draftIndex = appModel.overview.drafts.firstIndex(where: { $0.id == currentDraftID })
-                {
-                    let draft = appModel.overview.drafts[draftIndex]
-                    let assetsByID = Dictionary(uniqueKeysWithValues: appModel.overview.assets.map { ($0.id, $0) })
-
-                    CreateSlideEditor(
-                        draft: $appModel.overview.drafts[draftIndex],
-                        selectedSlideID: $selectedSlideID,
-                        assetsByID: assetsByID,
-                        isGenerating: appModel.isGeneratingSlideshowImages,
-                        moveAction: { slideID, direction in
-                            appModel.moveSlide(slideID, in: draft.id, direction: direction)
-                        },
-                        duplicateAction: { slideID in
-                            appModel.duplicateSlide(slideID, in: draft.id)
-                        },
-                        deleteAction: { slideID in
-                            appModel.deleteSlide(slideID, in: draft.id)
-                        },
-                        rewritePromptAction: { slideID, instruction in
-                            Task {
-                                await appModel.rewritePrompt(for: slideID, in: draft.id, instruction: instruction)
-                            }
-                        },
-                        regenerateAction: { slideID, instruction in
-                            Task {
-                                await appModel.regenerateSlideImage(slideID: slideID, in: draft.id, instruction: instruction)
-                            }
-                        }
-                    )
-                    .presentationDetents([.medium, .large], selection: $slideEditorDetent)
-                    .presentationDragIndicator(.visible)
-                } else {
-                    CreateMessageRow(
-                        title: "No slide selected",
-                        message: "Select a slide from the rail to edit it."
-                    )
-                }
+                slideEditorSheet
+            case let .plan(planSheet):
+                planSheetContent(for: planSheet)
             case .tikTokSettings:
                 if isAutomated {
                     TikTokSettingsSheet(
@@ -387,16 +363,107 @@ struct IOSCreateView: View {
             session: session,
             nicheSummaries: templateStore.summaries,
             isCreating: isCreatingShareImport,
-            createAction: { title, niche, openMode in
+            createAction: { title, niche in
                 createShareImportedTemplate(
                     title: title,
                     niche: niche,
-                    openMode: openMode,
                     using: appModel
                 )
             },
             discardAction: {
                 appModel.discardPendingShareImport()
+            }
+        )
+    }
+
+    @ViewBuilder
+    private var slideEditorSheet: some View {
+        if
+            let currentDraftID = activeDraftID(in: appModel),
+            let draftIndex = appModel.overview.drafts.firstIndex(where: { $0.id == currentDraftID })
+        {
+            let assetsByID = Dictionary(uniqueKeysWithValues: appModel.overview.assets.map { ($0.id, $0) })
+
+            CreateSlideEditor(
+                draft: draftBinding(forDraftAt: draftIndex),
+                selectedSlideID: $selectedSlideID,
+                assetsByID: assetsByID,
+                isGenerating: appModel.isGeneratingSlideshowImages,
+                moveAction: { slideID, direction in
+                    appModel.moveSlide(slideID, in: currentDraftID, direction: direction)
+                },
+                duplicateAction: { slideID in
+                    appModel.duplicateSlide(slideID, in: currentDraftID)
+                },
+                deleteAction: { slideID in
+                    appModel.deleteSlide(slideID, in: currentDraftID)
+                },
+                rewritePromptAction: { slideID, instruction in
+                    Task {
+                        await appModel.rewritePrompt(for: slideID, in: currentDraftID, instruction: instruction)
+                    }
+                },
+                regenerateAction: { slideID, instruction in
+                    Task {
+                        await appModel.regenerateSlideImage(slideID: slideID, in: currentDraftID, instruction: instruction)
+                    }
+                }
+            )
+            .presentationDetents([.medium, .large], selection: $slideEditorDetent)
+            .presentationDragIndicator(.visible)
+        } else {
+            CreateMessageRow(
+                title: "No slide selected",
+                message: "Select a slide from the rail to edit it."
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func planSheetContent(for planSheet: CreatePlanSheet) -> some View {
+        if
+            let currentDraftID = activeDraftID(in: appModel),
+            let draftIndex = appModel.overview.drafts.firstIndex(where: { $0.id == currentDraftID })
+        {
+            CreatePlanSheetContent(
+                sheet: planSheet,
+                draft: draftBinding(forDraftAt: draftIndex),
+                styleGuideJSON: styleGuideJSONBinding(forDraftAt: draftIndex)
+            )
+        } else {
+            CreateMessageRow(
+                title: "No draft selected",
+                message: "Create or resume a slideshow draft before editing the plan."
+            )
+        }
+    }
+
+    private func draftBinding(forDraftAt draftIndex: Int) -> Binding<SlideshowDraft> {
+        Binding(
+            get: {
+                appModel.overview.drafts[draftIndex]
+            },
+            set: { newValue in
+                appModel.overview.drafts[draftIndex] = newValue
+            }
+        )
+    }
+
+    private func styleGuideJSONBinding(forDraftAt draftIndex: Int) -> Binding<String> {
+        let draft = appModel.overview.drafts[draftIndex]
+        guard
+            let templateID = draft.templateID,
+            let templateIndex = appModel.overview.templates.firstIndex(where: { $0.id == templateID })
+        else {
+            return .constant("")
+        }
+
+        return Binding(
+            get: {
+                appModel.overview.templates[templateIndex].styleJSON
+            },
+            set: { newValue in
+                appModel.overview.templates[templateIndex].styleJSON = newValue
             }
         )
     }
@@ -608,7 +675,8 @@ struct IOSCreateView: View {
                 appModel: appModel,
                 draftID: currentDraftID,
                 selectedSlideID: $selectedSlideID,
-                openEditorAction: openSlideEditor
+                openEditorAction: openSlideEditor,
+                openPlanSheetAction: { presentedSheet = .plan($0) }
             )
         } else {
             Section("Slideshow") {
@@ -933,7 +1001,6 @@ struct IOSCreateView: View {
     private func createShareImportedTemplate(
         title: String,
         niche: String,
-        openMode: ShareImportOpenMode,
         using appModel: FlickAppModel
     ) {
         guard !isCreatingShareImport else { return }
@@ -942,8 +1009,7 @@ struct IOSCreateView: View {
         Task { @MainActor in
             let result = await appModel.createTemplateFromPendingShareImport(
                 title: title,
-                niche: niche,
-                openMode: openMode
+                niche: niche
             )
             isCreatingShareImport = false
             guard let result else { return }
@@ -955,8 +1021,9 @@ struct IOSCreateView: View {
         _ result: ShareTemplateImportResult,
         using appModel: FlickAppModel
     ) {
-        appModel.selectCreateDraft(id: result.draftID)
-        selectedTemplate = nil
+        appModel.clearActiveCreateDraft()
+        selectedTemplate = appModel.localAutomationTemplates()
+            .first { $0.id == result.selectedTemplateID }
         selectedProductID = nil
         selectedProductImageAssetID = nil
         selectedSlideID = nil
@@ -964,16 +1031,8 @@ struct IOSCreateView: View {
         syncImageVibeSelectionFromActiveDraft(in: appModel)
         updateSelectedSlide(using: appModel)
 
-        switch result.openMode {
-        case .singlePost:
-            withAnimation(.snappy) {
-                isAutomated = false
-            }
-        case .automation:
-            withAnimation(.snappy) {
-                isAutomated = true
-            }
-            selectedAutomationTemplateIDs.insert(result.automationTemplateID)
+        withAnimation(.snappy) {
+            isAutomated = false
         }
     }
 
@@ -1309,6 +1368,7 @@ private struct CreateDraftWorkflowSections: View {
     var draftID: UUID
     @Binding var selectedSlideID: UUID?
     var openEditorAction: () -> Void
+    var openPlanSheetAction: (CreatePlanSheet) -> Void
 
     var body: some View {
         if let draftIndex = appModel.overview.drafts.firstIndex(where: { $0.id == draftID }) {
@@ -1319,12 +1379,14 @@ private struct CreateDraftWorkflowSections: View {
             if let templateIndex = activeTemplateIndex(for: draft) {
                 CreatePlanSection(
                     draft: draftBinding,
-                    styleGuideJSON: $appModel.overview.templates[templateIndex].styleJSON
+                    styleGuideJSON: $appModel.overview.templates[templateIndex].styleJSON,
+                    openSheet: openPlanSheetAction
                 )
             } else {
                 CreatePlanSection(
                     draft: draftBinding,
-                    styleGuideJSON: .constant("")
+                    styleGuideJSON: .constant(""),
+                    openSheet: openPlanSheetAction
                 )
             }
 

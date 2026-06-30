@@ -11,18 +11,17 @@ struct ShareTemplateImportSheet: View {
     var session: ShareImportSession
     var nicheSummaries: [ExampleSlideshowCollectionSummary]
     var isCreating: Bool
-    var createAction: (String, String, ShareImportOpenMode) -> Void
+    var createAction: (String, String) -> Void
     var discardAction: () -> Void
 
     @State private var title: String
     @State private var niche: String
-    @State private var openMode: ShareImportOpenMode
 
     init(
         session: ShareImportSession,
         nicheSummaries: [ExampleSlideshowCollectionSummary],
         isCreating: Bool,
-        createAction: @escaping (String, String, ShareImportOpenMode) -> Void,
+        createAction: @escaping (String, String) -> Void,
         discardAction: @escaping () -> Void
     ) {
         self.session = session
@@ -30,9 +29,8 @@ struct ShareTemplateImportSheet: View {
         self.isCreating = isCreating
         self.createAction = createAction
         self.discardAction = discardAction
-        _title = State(initialValue: session.suggestedTitle)
+        _title = State(initialValue: "")
         _niche = State(initialValue: nicheSummaries.first?.title ?? "Imported")
-        _openMode = State(initialValue: .singlePost)
     }
 
     var body: some View {
@@ -40,7 +38,6 @@ struct ShareTemplateImportSheet: View {
             List {
                 photosSection
                 detailsSection
-                destinationSection
             }
             .flickSettingsListStyle()
             .flickToolbarTitle("Import Template")
@@ -55,7 +52,7 @@ struct ShareTemplateImportSheet: View {
 
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
-                        createAction(title, niche, openMode)
+                        createAction(title, niche)
                     } label: {
                         if isCreating {
                             ProgressView()
@@ -73,8 +70,7 @@ struct ShareTemplateImportSheet: View {
     }
 
     private var canCreate: Bool {
-        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !niche.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !niche.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !session.images.isEmpty
     }
 
@@ -103,7 +99,7 @@ struct ShareTemplateImportSheet: View {
 
     private var detailsSection: some View {
         Section("Template") {
-            TextField("Name", text: $title)
+            TextField("Name (optional)", text: $title)
 
             TextField("Niche", text: $niche)
 
@@ -129,23 +125,6 @@ struct ShareTemplateImportSheet: View {
         }
     }
 
-    private var destinationSection: some View {
-        Section("Open After Import") {
-            Picker("Flow", selection: $openMode) {
-                ForEach(ShareImportOpenMode.allCases) { mode in
-                    Text(mode.displayName).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-
-            FlickSettingsValueRow(
-                title: openMode == .singlePost ? "Selected Draft" : "Selected Template",
-                systemImage: openMode == .singlePost ? "paperplane" : "calendar.badge.clock",
-                iconColor: FlickStyle.appTint,
-                value: openMode == .singlePost ? "Ready in Create" : "Ready in Automation"
-            )
-        }
-    }
 }
 
 private struct ShareImportNicheChip: View {

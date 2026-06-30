@@ -44,13 +44,6 @@ struct ShareImportSession: Identifiable, Hashable {
     var id: UUID
     var createdAt: Date
     var images: [ShareImportImage]
-
-    var suggestedTitle: String {
-        if images.count == 1 {
-            return "Photos template"
-        }
-        return "\(images.count) photo template"
-    }
 }
 
 struct ShareImportImage: Identifiable, Hashable {
@@ -60,27 +53,9 @@ struct ShareImportImage: Identifiable, Hashable {
     var fileSize: Int64?
 }
 
-enum ShareImportOpenMode: String, CaseIterable, Identifiable, Hashable {
-    case singlePost
-    case automation
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .singlePost:
-            "Single Post"
-        case .automation:
-            "Automation"
-        }
-    }
-}
-
 struct ShareTemplateImportResult: Hashable {
     var templateID: UUID
-    var draftID: UUID
-    var automationTemplateID: String
-    var openMode: ShareImportOpenMode
+    var selectedTemplateID: String
 }
 
 enum ShareImportError: LocalizedError {

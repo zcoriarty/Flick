@@ -535,7 +535,7 @@ final class FlickAppModel {
                 id: UUID(),
                 mediaType: .image,
                 source: .reference,
-                localFilePath: slide.remoteURL == nil ? slide.localURL.path : nil,
+                localFilePath: slide.remoteURL == nil ? slide.localURL?.path : nil,
                 storageBucket: nil,
                 storagePath: nil,
                 publicURL: slide.remoteURL,
@@ -543,7 +543,7 @@ final class FlickAppModel {
                 width: 0,
                 height: 0,
                 duration: nil,
-                fileSize: slide.remoteURL == nil ? fileSize(at: slide.localURL) : nil,
+                fileSize: slide.remoteURL == nil ? slide.localURL.flatMap(fileSize(at:)) : nil,
                 checksum: nil,
                 trendTags: [],
                 createdAt: now,
@@ -642,8 +642,7 @@ final class FlickAppModel {
 
     func createTemplateFromPendingShareImport(
         title: String,
-        niche: String,
-        openMode: ShareImportOpenMode
+        niche: String
     ) async -> ShareTemplateImportResult? {
         guard let pendingShareImport else { return nil }
 
@@ -651,8 +650,7 @@ final class FlickAppModel {
             let result = try await createTemplate(
                 from: pendingShareImport,
                 title: title,
-                niche: niche,
-                openMode: openMode
+                niche: niche
             )
             try? shareImportService.discardImport(id: pendingShareImport.id)
             self.pendingShareImport = nil
@@ -666,18 +664,15 @@ final class FlickAppModel {
 
     func localAutomationTemplates() -> [ExampleSlideshowTemplate] {
         let assetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
-        let drafts = overview.drafts.sorted { $0.updatedAt > $1.updatedAt }
 
         return overview.templates.compactMap { template in
             guard
                 template.sourceTemplateID?.hasPrefix("share-import:") == true,
-                let draft = drafts.first(where: { draft in
-                    draft.templateID == template.id && draftHasImportedTemplateSlides(draft, assetsByID: assetsByID)
-                })
+                let manifest = importedTemplateManifest(for: template)
             else {
                 return nil
             }
-            return localAutomationTemplate(from: template, draft: draft, assetsByID: assetsByID)
+            return localAutomationTemplate(from: template, manifest: manifest, assetsByID: assetsByID)
         }
         .filter(\.hasDisplayablePreview)
     }
@@ -692,30 +687,46 @@ final class FlickAppModel {
         }
     }
 
-    private func createTemplate(
+    func createTemplate(
         from session: ShareImportSession,
         title: String,
-        niche: String,
-        openMode: ShareImportOpenMode
+        niche: String
     ) async throws -> ShareTemplateImportResult {
         let now = Date()
         let normalizedNiche = normalizedShareImportNiche(niche)
-        let normalizedTitle = normalizedShareImportTitle(title, niche: normalizedNiche)
+        let normalizedTitle = normalizedShareImportTitle(title)
         let templateID = UUID()
 
-        let importedMedia = try session.images.enumerated().map { offset, image in
+        let storage = mediaStorageFactory(credentialVault.loadValues())
+        var assets: [MediaAsset] = []
+        for image in session.images {
             let storedMedia = try templateImportMediaLibrary.store(fileURL: image.fileURL, contentType: image.contentType)
             let metadata = localMediaMetadata(for: storedMedia)
             let assetID = UUID()
+            let path = importedTemplateMediaStoragePath(
+                templateID: templateID,
+                assetID: assetID,
+                contentType: storedMedia.contentType,
+                fileURL: storedMedia.fileURL
+            )
+            let data = try Data(contentsOf: storedMedia.fileURL)
+            let remote = try await storage.uploadAsset(
+                LocalMediaAsset(
+                    data: data,
+                    contentType: storedMedia.contentType.preferredMIMEType ?? "application/octet-stream"
+                ),
+                path: path
+            )
+            let publicURL = try resolvedPublicURL(for: remote, storage: storage)
             let asset = MediaAsset(
                 id: assetID,
                 mediaType: AssetMediaType(contentType: storedMedia.contentType),
                 source: .uploaded,
                 localFilePath: storedMedia.fileURL.path,
-                storageBucket: nil,
-                storagePath: nil,
-                publicURL: nil,
-                signedURLExpiration: nil,
+                storageBucket: remote.storageBucket,
+                storagePath: remote.storagePath,
+                publicURL: publicURL,
+                signedURLExpiration: remote.signedURLExpiration,
                 width: metadata.width,
                 height: metadata.height,
                 duration: metadata.duration,
@@ -725,39 +736,25 @@ final class FlickAppModel {
                 createdAt: now,
                 updatedAt: now
             )
-            let slide = Slide(
-                id: UUID(),
-                index: offset,
-                imageAssetID: assetID,
-                prompt: "Imported photo \(offset + 1) from the iOS share sheet.",
-                text: "",
-                textPosition: .center,
-                textStyle: SlideTextStyle(),
-                selectedVisualSummary: "Imported photo \(offset + 1).",
-                generationStatus: .complete,
-                generationErrorMessage: nil,
-                promptVersion: 1,
-                createdAt: now,
-                updatedAt: now
-            )
-            return (asset, slide)
+            assets.append(asset)
         }
 
-        let assets = importedMedia.map(\.0)
-        let slides = importedMedia.map(\.1)
-        guard !slides.isEmpty else {
+        guard !assets.isEmpty else {
             throw ShareImportError.emptyImport
         }
 
-        let styleGuide = shareImportedStyleGuide(title: normalizedTitle, niche: normalizedNiche)
+        let manifest = ImportedTemplateManifest(
+            version: 1,
+            slideAssetIDs: assets.map(\.id)
+        )
         let creativeTemplate = CreativeTemplate(
             id: templateID,
             name: normalizedTitle,
             description: "\(normalizedNiche) template imported from Photos.",
             platform: .tiktok,
-            slideCount: slides.count,
-            styleJSON: styleGuide.encodedJSONString(),
-            defaultTextRules: "Imported photos are ready-to-use slide visuals. Add or edit text overlays in Create.",
+            slideCount: assets.count,
+            styleJSON: manifest.encodedJSONString(),
+            defaultTextRules: "Use the imported photos as template references for structure, pacing, composition, and visual style. Generate new slide images from the Create configuration.",
             sourceTemplateID: "share-import:\(session.id.uuidString)",
             sourceTemplateFingerprint: nil,
             analysisSchemaVersion: nil,
@@ -766,37 +763,11 @@ final class FlickAppModel {
             updatedAt: now
         )
 
-        let draft = SlideshowDraft(
-            id: UUID(),
-            title: normalizedTitle,
-            templateID: templateID,
-            imageVibe: .defaultValue,
-            brief: "",
-            topic: normalizedNiche,
-            audience: "",
-            goal: "",
-            tone: "",
-            narrativeArc: [],
-            globalVisualMotif: "",
-            planSummary: "Imported \(slides.count) photos from the share sheet as a reusable \(normalizedNiche) template.",
-            slides: slides,
-            caption: "",
-            hashtags: shareImportHashtags(niche: normalizedNiche),
-            targetPlatforms: [.tiktok, .youtubeShorts],
-            accountSelections: [],
-            tikTokSettings: DraftTikTokSettings(title: normalizedTitle, postAsDraft: true),
-            youtubeSettings: DraftYouTubeSettings(title: normalizedTitle),
-            status: .draft,
-            createdAt: now,
-            updatedAt: now
-        )
-
         let previousOverview = overview
         let previousActiveCreateDraftID = activeCreateDraftID
         overview.assets.insert(contentsOf: assets, at: 0)
         overview.templates.insert(creativeTemplate, at: 0)
-        overview.drafts.insert(draft, at: 0)
-        activeCreateDraftID = draft.id
+        activeCreateDraftID = nil
         selectedSection = .create
 
         do {
@@ -810,9 +781,7 @@ final class FlickAppModel {
 
         return ShareTemplateImportResult(
             templateID: templateID,
-            draftID: draft.id,
-            automationTemplateID: LocalAutomationTemplateIdentifier.id(for: templateID),
-            openMode: openMode
+            selectedTemplateID: LocalAutomationTemplateIdentifier.id(for: templateID)
         )
     }
 
@@ -2427,6 +2396,21 @@ private struct AnalyzedCreativeTemplate {
     var shouldInsert: Bool
 }
 
+private struct ImportedTemplateManifest: Codable, Hashable {
+    var version: Int
+    var slideAssetIDs: [UUID]
+
+    func encodedJSONString() -> String {
+        guard
+            let data = try? JSONEncoder.flick.encode(self),
+            let json = String(data: data, encoding: .utf8)
+        else {
+            return "{}"
+        }
+        return json
+    }
+}
+
 enum SlideshowCreationError: LocalizedError {
     case missingDraft
     case missingStyleGuide
@@ -2452,6 +2436,7 @@ enum ManualPublishError: LocalizedError {
     case missingYouTubeAccount
     case missingPlatformAccounts
     case missingPublishableImageURLs
+    case missingUploadedMediaPublicURL
 
     var errorDescription: String? {
         switch self {
@@ -2463,6 +2448,8 @@ enum ManualPublishError: LocalizedError {
             "Select at least one publishable account before publishing."
         case .missingPublishableImageURLs:
             "Rendered slide images need public URLs before TikTok can publish them."
+        case .missingUploadedMediaPublicURL:
+            "Uploaded media needs a public URL before platforms can publish it."
         }
     }
 }
@@ -3520,14 +3507,15 @@ private extension FlickAppModel {
                 slideID: renderedImage.slideID,
                 assetID: assetID
             )
-            let remote = try await mediaStorageFactory(credentialVault.loadValues())
-                .uploadAsset(
-                    LocalMediaAsset(
-                        data: data,
-                        contentType: renderedImage.contentType
-                    ),
-                    path: path
-                )
+            let storage = mediaStorageFactory(credentialVault.loadValues())
+            let remote = try await storage.uploadAsset(
+                LocalMediaAsset(
+                    data: data,
+                    contentType: renderedImage.contentType
+                ),
+                path: path
+            )
+            let publicURL = try resolvedPublicURL(for: remote, storage: storage)
 
             let asset = MediaAsset(
                 id: assetID,
@@ -3536,7 +3524,7 @@ private extension FlickAppModel {
                 localFilePath: renderedImage.fileURL.path,
                 storageBucket: remote.storageBucket,
                 storagePath: remote.storagePath,
-                publicURL: remote.publicURL,
+                publicURL: publicURL,
                 signedURLExpiration: remote.signedURLExpiration,
                 width: renderedImage.width,
                 height: renderedImage.height,
@@ -4398,12 +4386,37 @@ private extension FlickAppModel {
         return "dat"
     }
 
+    func importedTemplateMediaStoragePath(
+        templateID: UUID,
+        assetID: UUID,
+        contentType: UTType,
+        fileURL: URL
+    ) -> String {
+        let fileExtension = productMediaFileExtension(contentType: contentType, fileURL: fileURL)
+        return "\(configuration.storagePaths.templateImports)/\(templateID.uuidString)/\(assetID.uuidString).\(fileExtension)"
+    }
+
     func renderedStoragePath(
         draftID: UUID,
         slideID: UUID,
         assetID: UUID
     ) -> String {
         "\(configuration.storagePaths.renderedImages)/\(draftID.uuidString)/\(slideID.uuidString)-\(assetID.uuidString).jpg"
+    }
+
+    func resolvedPublicURL(
+        for remote: RemoteMediaAsset,
+        storage: any MediaStorageProviding
+    ) throws -> URL {
+        if let publicURL = remote.publicURL {
+            return publicURL
+        }
+
+        do {
+            return try storage.publicURL(path: remote.storagePath)
+        } catch {
+            throw ManualPublishError.missingUploadedMediaPublicURL
+        }
     }
 
     func reindexSlides(in draftIndex: Int) {
@@ -4430,9 +4443,8 @@ private extension FlickAppModel {
         return normalized.isEmpty ? "Imported" : normalized
     }
 
-    private func normalizedShareImportTitle(_ title: String, niche: String) -> String {
-        let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return normalized.isEmpty ? "\(niche) photo template" : normalized
+    private func normalizedShareImportTitle(_ title: String) -> String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func shareImportTags(niche: String, now: Date) -> [TrendTag] {
@@ -4454,79 +4466,42 @@ private extension FlickAppModel {
         ]
     }
 
-    private func shareImportedStyleGuide(title: String, niche: String) -> TemplateStyleGuide {
-        TemplateStyleGuide(
-            styleName: title,
-            visualTraits: [
-                "User-imported photo sequence",
-                "Use the original photos as direct slide references",
-                "Preserve the selected image order and portrait carousel pacing"
-            ],
-            colorPalette: [],
-            lighting: "Use the lighting and color cues from the imported photos.",
-            recurringMotifs: [],
-            reuseStructurally: [
-                "Reuse the imported photos as ready-made slide visuals.",
-                "Keep the \(niche) context unless the creator edits it."
-            ],
-            avoidCopyingDirectly: [
-                "Do not introduce readable text, watermarks, logos, or unrelated products when regenerating.",
-                "Do not replace user-imported photos unless explicitly requested."
-            ],
-            imageGenerationRules: [
-                "Imported photos are complete slide visuals.",
-                "Generated replacements should match the imported sequence's composition, lighting, and pacing.",
-                "Flick renders text overlays separately; generated images should not contain readable text."
-            ],
-            productImageSlideNumbers: []
-        )
-    }
-
-    private func shareImportHashtags(niche: String) -> [String] {
-        [
-            sanitizedHashtag(niche),
-            "template",
-            "slideshow"
-        ]
-        .filter { !$0.isEmpty }
-    }
-
-    private func draftHasImportedTemplateSlides(_ draft: SlideshowDraft, assetsByID: [UUID: MediaAsset]) -> Bool {
-        !draft.slides.isEmpty && draft.slides.allSatisfy { slide in
-            guard
-                let assetID = slide.imageAssetID,
-                let asset = assetsByID[assetID]
-            else {
-                return false
-            }
-
-            return asset.source == .uploaded
-                && asset.mediaType == .image
-                && asset.hasAvailableMediaLocation
-        }
+    private func importedTemplateManifest(for template: CreativeTemplate) -> ImportedTemplateManifest? {
+        guard let data = template.styleJSON.data(using: .utf8) else { return nil }
+        return try? JSONDecoder.flick.decode(ImportedTemplateManifest.self, from: data)
     }
 
     private func localAutomationTemplate(
         from template: CreativeTemplate,
-        draft: SlideshowDraft,
+        manifest: ImportedTemplateManifest,
         assetsByID: [UUID: MediaAsset]
     ) -> ExampleSlideshowTemplate? {
-        let slides = draft.slides
-            .sorted { $0.index < $1.index }
-            .compactMap { slide -> ExampleSlideshowSlide? in
+        let slides = manifest.slideAssetIDs.enumerated()
+            .compactMap { offset, assetID -> ExampleSlideshowSlide? in
                 guard
-                    let assetID = slide.imageAssetID,
                     let asset = assetsByID[assetID],
-                    let fileURL = asset.localFileURL
+                    asset.source == .uploaded,
+                    asset.mediaType == .image,
+                    asset.localFileURL != nil || asset.publicURL != nil
                 else {
                     return nil
                 }
 
+                let fileURL = asset.localFileURL
+                let filename = fileURL?.lastPathComponent
+                    ?? asset.publicURL?.lastPathComponent
+                    ?? "slide-\(offset + 1).jpg"
+                let relativePath = asset.localFilePath
+                    ?? fileURL?.path
+                    ?? asset.storagePath
+                    ?? asset.publicURL?.absoluteString
+                    ?? filename
+
                 return ExampleSlideshowSlide(
-                    id: "\(template.id.uuidString)-slide-\(slide.index + 1)",
-                    index: slide.index + 1,
-                    filename: fileURL.lastPathComponent,
-                    relativePath: asset.localFilePath ?? fileURL.path,
+                    id: "\(template.id.uuidString)-slide-\(offset + 1)",
+                    index: offset + 1,
+                    filename: filename,
+                    relativePath: relativePath,
                     localURL: fileURL,
                     sourceURL: nil,
                     remoteURL: asset.publicURL
@@ -4550,7 +4525,7 @@ private extension FlickAppModel {
             metrics: ExampleSlideshowMetrics(views: nil, likes: nil, bookmarks: nil, shares: nil),
             product: ExampleSlideshowProduct(
                 medium: "Imported photos",
-                name: template.name,
+                name: nonEmptyLocalTemplateName(for: template),
                 linkInBio: nil
             ),
             creator: ExampleSlideshowCreator(
@@ -4567,6 +4542,11 @@ private extension FlickAppModel {
         template.tags.first { $0.category == .niche }?.name
             ?? template.decodedStyleGuide?.styleName
             ?? "Imported"
+    }
+
+    private func nonEmptyLocalTemplateName(for template: CreativeTemplate) -> String? {
+        let name = template.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? nil : name
     }
 
     func templateHashtags(for template: ExampleSlideshowTemplate) -> [String] {
@@ -4598,6 +4578,14 @@ private extension FlickAppModel {
         """
     }
 }
+
+#if DEBUG
+extension FlickAppModel {
+    func testRenderImageSequenceForPublish(for draftID: UUID) async throws -> [UUID] {
+        try await renderImageSequenceForPublish(for: draftID)
+    }
+}
+#endif
 
 private extension DraftTikTokSettings {
     func fillingTitle(from generatedSettings: DraftTikTokSettings?) -> DraftTikTokSettings {

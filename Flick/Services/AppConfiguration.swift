@@ -152,6 +152,7 @@ struct MetaConfiguration: Hashable {
 
 struct R2StoragePaths: Hashable {
     var productMedia = "product-media"
+    var templateImports = "template-imports"
     var generatedImages = "generated-slides"
     var renderedImages = "rendered-image-sequences"
     var referenceImages = "reference-images"
@@ -160,6 +161,7 @@ struct R2StoragePaths: Hashable {
     var all: [String] {
         [
             productMedia,
+            templateImports,
             generatedImages,
             renderedImages,
             referenceImages,

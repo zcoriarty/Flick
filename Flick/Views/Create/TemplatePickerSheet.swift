@@ -10,13 +10,22 @@ struct TemplatePickerSheet: View {
 
     var templateStore: TemplateLibraryStore
     var configuration: AppConfiguration
+    var localTemplates: [ExampleSlideshowTemplate] = []
     @Binding var selectedTemplate: ExampleSlideshowTemplate?
     @State private var searchText = ""
 
     private var filteredTemplates: [ExampleSlideshowTemplate] {
+        filtered(templateStore.templates)
+    }
+
+    private var filteredLocalTemplates: [ExampleSlideshowTemplate] {
+        filtered(localTemplates)
+    }
+
+    private func filtered(_ templates: [ExampleSlideshowTemplate]) -> [ExampleSlideshowTemplate] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
-        return templateStore.templates
+        return templates
             .filter(\.hasDisplayablePreview)
             .filter { template in
                 guard !query.isEmpty else { return true }
@@ -64,6 +73,23 @@ struct TemplatePickerSheet: View {
     var body: some View {
         NavigationStack {
             List {
+                if !filteredLocalTemplates.isEmpty {
+                    Section("Imported Templates") {
+                        ForEach(filteredLocalTemplates) { template in
+                            Button {
+                                selectedTemplate = template
+                                dismiss()
+                            } label: {
+                                TemplatePickerRow(
+                                    template: template,
+                                    isSelected: selectedTemplate?.id == template.id
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
                 TemplateNicheSelectionSection(
                     summaries: templateStore.summaries,
                     selectedNicheID: templateStore.selectedNicheID,
@@ -71,12 +97,12 @@ struct TemplatePickerSheet: View {
                     templateStore: templateStore
                 )
 
-                if filteredTemplates.isEmpty {
+                if filteredTemplates.isEmpty && filteredLocalTemplates.isEmpty {
                     CreateMessageRow(
                         title: "No matching templates",
                         message: "Adjust the search text to find a template."
                     )
-                } else {
+                } else if !filteredTemplates.isEmpty {
                     Section(selectedNicheTitle) {
                         ForEach(filteredTemplates) { template in
                             Button {

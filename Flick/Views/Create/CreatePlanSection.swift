@@ -8,18 +8,17 @@ import SwiftUI
 struct CreatePlanSection: View {
     @Binding var draft: SlideshowDraft
     @Binding var styleGuideJSON: String
-
-    @State private var presentedSheet: CreatePlanSheet?
+    var openSheet: (CreatePlanSheet) -> Void
 
     var body: some View {
         Section("Plan") {
             CreatePlanRow(
                 title: "Briefing",
                 systemImage: "doc.text",
-                value: draft.title,
+                value: displayTitle,
                 detail: compactDetail([draft.topic, draft.audience, draft.goal])
             ) {
-                presentedSheet = .briefing
+                openSheet(.briefing)
             }
 
             CreatePlanRow(
@@ -28,7 +27,7 @@ struct CreatePlanSection: View {
                 value: draft.narrativeArc.joined(separator: " -> "),
                 detail: "\(draft.slides.count) slides"
             ) {
-                presentedSheet = .narrativeArc
+                openSheet(.narrativeArc)
             }
 
             CreatePlanRow(
@@ -37,7 +36,7 @@ struct CreatePlanSection: View {
                 value: draft.planSummary,
                 detail: draft.globalVisualMotif
             ) {
-                presentedSheet = .summary
+                openSheet(.summary)
             }
 
             CreatePlanRow(
@@ -46,28 +45,50 @@ struct CreatePlanSection: View {
                 value: styleGuide.styleName,
                 detail: styleGuide.promptSummary
             ) {
-                presentedSheet = .styleGuide
+                openSheet(.styleGuide)
             }
         }
-        .sheet(item: $presentedSheet) { sheet in
-            switch sheet {
-            case .briefing:
-                CreatePlanBriefingSheet(draft: $draft)
-            case .narrativeArc:
-                CreatePlanTextSheet(
-                    title: "Narrative Arc",
-                    text: narrativeArcText,
-                    placeholder: "Opening -> Detail -> Proof -> Close"
-                )
-            case .summary:
-                CreatePlanTextSheet(
-                    title: "Plan Summary",
-                    text: $draft.planSummary,
-                    placeholder: "Summarize the source-of-truth plan for this carousel."
-                )
-            case .styleGuide:
-                CreateStyleGuideSheet(styleGuide: styleGuideBinding)
-            }
+    }
+
+    private var styleGuide: TemplateStyleGuide {
+        guard
+            let data = styleGuideJSON.data(using: .utf8),
+            let guide = try? JSONDecoder.flick.decode(TemplateStyleGuide.self, from: data)
+        else {
+            return .empty
+        }
+        return guide
+    }
+
+    private var displayTitle: String {
+        let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? "Untitled" : title
+    }
+}
+
+struct CreatePlanSheetContent: View {
+    var sheet: CreatePlanSheet
+    @Binding var draft: SlideshowDraft
+    @Binding var styleGuideJSON: String
+
+    var body: some View {
+        switch sheet {
+        case .briefing:
+            CreatePlanBriefingSheet(draft: $draft)
+        case .narrativeArc:
+            CreatePlanTextSheet(
+                title: "Narrative Arc",
+                text: narrativeArcText,
+                placeholder: "Opening -> Detail -> Proof -> Close"
+            )
+        case .summary:
+            CreatePlanTextSheet(
+                title: "Plan Summary",
+                text: $draft.planSummary,
+                placeholder: "Summarize the source-of-truth plan for this carousel."
+            )
+        case .styleGuide:
+            CreateStyleGuideSheet(styleGuide: styleGuideBinding)
         }
     }
 
@@ -99,22 +120,24 @@ struct CreatePlanSection: View {
             }
         )
     }
-
-    private func compactDetail(_ values: [String]) -> String {
-        values
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: " • ")
-    }
 }
 
-private enum CreatePlanSheet: String, Identifiable {
+enum CreatePlanSheet: String, Identifiable {
     case briefing
     case narrativeArc
     case summary
     case styleGuide
 
     var id: String { rawValue }
+}
+
+private extension CreatePlanSection {
+    func compactDetail(_ values: [String]) -> String {
+        values
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " • ")
+    }
 }
 
 private struct CreatePlanRow: View {

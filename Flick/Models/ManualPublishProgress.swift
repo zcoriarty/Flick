@@ -86,11 +86,18 @@ struct ManualPublishProgress: Identifiable, Hashable {
 
         return ManualPublishProgress(
             id: UUID(),
-            title: draft.title,
+            title: draft.displayTitle,
             startedAt: now,
             steps: steps,
             errorMessage: nil
         )
+    }
+}
+
+private extension SlideshowDraft {
+    var displayTitle: String {
+        let title = self.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? "Untitled" : title
     }
 }
 

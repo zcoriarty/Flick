@@ -353,7 +353,10 @@ enum ExampleSlideshowLibrary {
                 region: slideshow.creator.region
             ),
             slides: slideshow.slides.map { slide in
-                let localURL = URL(fileURLWithPath: slide.relativePath)
+                let candidateLocalURL = URL(fileURLWithPath: slide.relativePath)
+                let localURL = FileManager.default.isReadableFile(atPath: candidateLocalURL.path)
+                    ? candidateLocalURL
+                    : nil
                 return ExampleSlideshowSlide(
                     id: "\(slideshow.id)-slide-\(slide.index)",
                     index: slide.index,

@@ -119,7 +119,7 @@ struct ExampleSlideshowSlide: Identifiable, Hashable {
     var index: Int
     var filename: String
     var relativePath: String
-    var localURL: URL
+    var localURL: URL?
     var sourceURL: URL?
     var remoteURL: URL?
 }
