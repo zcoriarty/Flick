@@ -59,7 +59,9 @@ struct MacAccountsView: View {
                 PlatformPublishSettingsView(
                     platform: platform,
                     accounts: accounts(for: platform),
-                    deleteAction: deleteAccount
+                    deleteAction: deleteAccount,
+                    refreshAction: refreshAccount,
+                    refreshingAccountID: appModel.refreshingAccountID
                 )
             }
             .frame(minWidth: 520, minHeight: 620)
@@ -121,6 +123,12 @@ struct MacAccountsView: View {
             } catch {
                 appModel.lastErrorMessage = error.localizedDescription
             }
+        }
+    }
+
+    private func refreshAccount(_ account: ConnectedAccount) {
+        Task {
+            await appModel.refreshAccountAuthorization(accountID: account.id)
         }
     }
 }

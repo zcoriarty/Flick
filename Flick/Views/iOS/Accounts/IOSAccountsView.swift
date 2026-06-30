@@ -28,7 +28,9 @@ struct IOSAccountsView: View {
                 PlatformPublishSettingsView(
                     platform: platform,
                     accounts: accounts(for: platform),
-                    deleteAction: deleteAccount
+                    deleteAction: deleteAccount,
+                    refreshAction: refreshAccount,
+                    refreshingAccountID: appModel.refreshingAccountID
                 )
             }
         }
@@ -134,6 +136,12 @@ struct IOSAccountsView: View {
             } catch {
                 appModel.lastErrorMessage = error.localizedDescription
             }
+        }
+    }
+
+    private func refreshAccount(_ account: ConnectedAccount) {
+        Task {
+            await appModel.refreshAccountAuthorization(accountID: account.id)
         }
     }
 }

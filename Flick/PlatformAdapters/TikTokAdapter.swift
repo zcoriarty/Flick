@@ -398,7 +398,7 @@ struct TikTokAdapter: SocialPlatformAdapter {
         return results
     }
 
-    private func validTokenBundle(for account: ConnectedAccount) async throws -> LoginKitTokenBundle {
+    func validTokenBundle(for account: ConnectedAccount, forceRefresh: Bool = false) async throws -> LoginKitTokenBundle {
         let bundle: LoginKitTokenBundle
         do {
             guard let storedBundle = try tokenStore.tokenBundle(for: account) else {
@@ -415,7 +415,7 @@ struct TikTokAdapter: SocialPlatformAdapter {
         }
 
         let refreshLeeway: TimeInterval = 60
-        if bundle.accessTokenExpiresAt > Date().addingTimeInterval(refreshLeeway) {
+        if !forceRefresh, bundle.accessTokenExpiresAt > Date().addingTimeInterval(refreshLeeway) {
             return bundle
         }
 

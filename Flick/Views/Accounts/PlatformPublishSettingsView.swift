@@ -9,6 +9,8 @@ struct PlatformPublishSettingsView: View {
     var platform: SocialPlatform
     var accounts: [ConnectedAccount]
     var deleteAction: (ConnectedAccount) -> Void
+    var refreshAction: (ConnectedAccount) -> Void
+    var refreshingAccountID: UUID?
 
     private var sortedAccounts: [ConnectedAccount] {
         accounts.sortedForAccountsView
@@ -55,7 +57,12 @@ struct PlatformPublishSettingsView: View {
             Section("Accounts") {
                 ForEach(sortedAccounts) { account in
                     NavigationLink {
-                        PlatformAccountDetailView(account: account, deleteAction: deleteAction)
+                        PlatformAccountDetailView(
+                            account: account,
+                            deleteAction: deleteAction,
+                            refreshAction: refreshAction,
+                            isRefreshing: refreshingAccountID == account.id
+                        )
                     } label: {
                         PlatformAccountRow(account: account)
                     }
@@ -171,6 +178,8 @@ private struct PlatformAccountDetailView: View {
 
     var account: ConnectedAccount
     var deleteAction: (ConnectedAccount) -> Void
+    var refreshAction: (ConnectedAccount) -> Void
+    var isRefreshing: Bool
 
     var body: some View {
         List {
@@ -182,7 +191,7 @@ private struct PlatformAccountDetailView: View {
         .flickSettingsListStyle()
         .flickToolbarTitle(account.displayName)
         .safeAreaInset(edge: .bottom) {
-            removeButton
+            bottomActions
                 .padding(.horizontal, 20)
                 .padding(.top, 10)
                 .padding(.bottom, 12)
@@ -261,6 +270,42 @@ private struct PlatformAccountDetailView: View {
         }
     }
 
+    private var bottomActions: some View {
+        VStack(spacing: 10) {
+            if canRefreshAuthorization {
+                refreshButton
+            }
+
+            removeButton
+        }
+    }
+
+    private var refreshButton: some View {
+        Button {
+            refreshAction(account)
+        } label: {
+            HStack(spacing: 8) {
+                if isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                }
+
+                Text(isRefreshing ? "Refreshing Auth" : "Refresh Auth")
+            }
+            .font(.headline)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 13)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.blue)
+        .background(.blue.opacity(0.12), in: .capsule)
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .disabled(isRefreshing)
+        .accessibilityIdentifier("refresh-platform-account-auth-button")
+    }
+
     private var removeButton: some View {
         Button(role: .destructive) {
             deleteAction(account)
@@ -276,6 +321,15 @@ private struct PlatformAccountDetailView: View {
         .background(.red.opacity(0.12), in: .capsule)
         .glassEffect(.regular.interactive(), in: .capsule)
         .accessibilityIdentifier("remove-platform-account-button")
+    }
+
+    private var canRefreshAuthorization: Bool {
+        switch account.authorizationSource {
+        case .loginKit, .nativeOAuth:
+            true
+        case .manualImport, .unavailable:
+            false
+        }
     }
 
     private var validatedAccessory: some View {

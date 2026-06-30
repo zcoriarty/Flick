@@ -166,7 +166,7 @@ struct YouTubeShortsAdapter: SocialPlatformPublishing {
         }
     }
 
-    func validTokenBundle(for account: ConnectedAccount) async throws -> LoginKitTokenBundle {
+    func validTokenBundle(for account: ConnectedAccount, forceRefresh: Bool = false) async throws -> LoginKitTokenBundle {
         let bundle: LoginKitTokenBundle
         do {
             guard let storedBundle = try tokenStore.tokenBundle(for: account) else {
@@ -180,7 +180,7 @@ struct YouTubeShortsAdapter: SocialPlatformPublishing {
         }
 
         let refreshLeeway: TimeInterval = 60
-        if bundle.accessTokenExpiresAt > Date().addingTimeInterval(refreshLeeway) {
+        if !forceRefresh, bundle.accessTokenExpiresAt > Date().addingTimeInterval(refreshLeeway) {
             return bundle
         }
         guard bundle.refreshTokenExpiresAt > Date() else {

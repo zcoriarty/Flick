@@ -65,6 +65,7 @@ final class FlickAppModel {
     var credentialMessage: String?
     var accountConnectionMessage: String?
     var connectingPlatform: SocialPlatform?
+    var refreshingAccountID: UUID?
     var isR2SmokeTestRunning = false
     var r2SmokeTestResult: R2StorageSmokeTestResult?
     var r2SmokeTestErrorMessage: String?
@@ -336,6 +337,64 @@ final class FlickAppModel {
             }
         } catch {
             lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    func refreshAccountAuthorization(accountID: UUID) async {
+        guard refreshingAccountID == nil else { return }
+        guard let account = overview.accounts.first(where: { $0.id == accountID }) else { return }
+
+        refreshingAccountID = accountID
+        accountConnectionMessage = nil
+        lastErrorMessage = nil
+
+        defer {
+            refreshingAccountID = nil
+        }
+
+        do {
+            let refreshedAccount = try await refreshedAuthorizationAccount(for: account)
+            try await upsertConnectedAccount(refreshedAccount)
+            accountConnectionMessage = "Refreshed \(refreshedAccount.displayName)."
+        } catch {
+            let didMarkAccountUnavailable = markAccountTokenUnavailableIfNeeded(
+                error,
+                accountID: account.id,
+                platform: account.platform
+            )
+            if didMarkAccountUnavailable {
+                do {
+                    overview.refreshDerivedState()
+                    try await repository.saveOverview(overview)
+                } catch {
+                    lastErrorMessage = error.localizedDescription
+                    return
+                }
+            }
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func refreshedAuthorizationAccount(for account: ConnectedAccount) async throws -> ConnectedAccount {
+        switch account.platform {
+        case .tiktok:
+            let adapter = TikTokAdapter(configuration: configuration.tiktok)
+            let bundle = try await adapter.validTokenBundle(for: account, forceRefresh: true)
+            let scopes = bundle.scopes.isEmpty ? account.scopes : bundle.scopes
+            return try await tiktokLoginKitClient.refreshAuthorizedAccount(
+                accessToken: bundle.accessToken,
+                scopes: scopes
+            )
+        case .youtubeShorts:
+            let adapter = YouTubeShortsAdapter(configuration: configuration.youtube)
+            let bundle = try await adapter.validTokenBundle(for: account, forceRefresh: true)
+            let scopes = bundle.scopes.isEmpty ? account.scopes : bundle.scopes
+            return try await youtubeOAuthClient.refreshAuthorizedAccount(
+                accessToken: bundle.accessToken,
+                scopes: scopes
+            )
+        case .instagram, .threads, .x:
+            throw PlatformAdapterError.futurePlatform(account.platform)
         }
     }
 
@@ -2079,18 +2138,69 @@ final class FlickAppModel {
 
         switch tokenError {
         case .missingStoredToken:
-            return false
+            return markAccountTokenUnavailable(accountID: accountID, tokenStatus: .notStored, now: now)
         case .refreshTokenExpired:
-            return markTikTokAccountTokenUnavailable(accountID: accountID, tokenStatus: .expired, now: now)
+            return markAccountTokenUnavailable(accountID: accountID, tokenStatus: .expired, now: now)
         case .keychainReadFailed, .refreshNotConfigured, .refreshRequestFailed:
             logger.error("TikTok account token refresh unavailable accountID=\(accountID.uuidString, privacy: .public) details=\(tokenError.diagnosticDescription, privacy: .public)")
             print("[TikTokPublishing] Account token refresh unavailable accountID=\(accountID.uuidString) details=\(tokenError.diagnosticDescription)")
-            return markTikTokAccountTokenUnavailable(accountID: accountID, tokenStatus: .refreshFailed, now: now)
+            return markAccountTokenUnavailable(accountID: accountID, tokenStatus: .refreshFailed, now: now)
+        }
+    }
+
+    @discardableResult
+    private func markYouTubeAccountTokenUnavailableIfNeeded(_ error: Error, accountID: UUID, now: Date = Date()) -> Bool {
+        guard let tokenError = error as? YouTubeOAuthError else { return false }
+
+        switch tokenError {
+        case .missingStoredToken:
+            return markAccountTokenUnavailable(accountID: accountID, tokenStatus: .notStored, now: now)
+        case .refreshTokenExpired:
+            return markAccountTokenUnavailable(accountID: accountID, tokenStatus: .expired, now: now)
+        case .keychainReadFailed, .refreshRequestFailed:
+            logger.error("YouTube account token refresh unavailable accountID=\(accountID.uuidString, privacy: .public) details=\(tokenError.diagnosticDescription, privacy: .public)")
+            print("[YouTubePublishing] Account token refresh unavailable accountID=\(accountID.uuidString) details=\(tokenError.diagnosticDescription)")
+            return markAccountTokenUnavailable(accountID: accountID, tokenStatus: .refreshFailed, now: now)
+        case .notConfigured, .tokenExchangeFailed, .channelRequestFailed:
+            return markAccountTokenUnavailable(accountID: accountID, tokenStatus: .refreshFailed, now: now)
+        case .authorizationUnavailableOnThisPlatform,
+             .authorizationCanceled,
+             .authorizationFailedMessage,
+             .stateMismatch,
+             .missingAuthorizationCode,
+             .missingRefreshToken:
+            return false
+        }
+    }
+
+    @discardableResult
+    private func markAccountTokenUnavailableIfNeeded(
+        _ error: Error,
+        accountID: UUID,
+        platform: SocialPlatform,
+        now: Date = Date()
+    ) -> Bool {
+        switch platform {
+        case .tiktok:
+            return markTikTokAccountTokenUnavailableIfNeeded(error, accountID: accountID, now: now)
+        case .youtubeShorts:
+            return markYouTubeAccountTokenUnavailableIfNeeded(error, accountID: accountID, now: now)
+        case .instagram, .threads, .x:
+            return false
         }
     }
 
     @discardableResult
     private func markTikTokAccountTokenUnavailable(
+        accountID: UUID,
+        tokenStatus: OAuthTokenStatus,
+        now: Date = Date()
+    ) -> Bool {
+        markAccountTokenUnavailable(accountID: accountID, tokenStatus: tokenStatus, now: now)
+    }
+
+    @discardableResult
+    private func markAccountTokenUnavailable(
         accountID: UUID,
         tokenStatus: OAuthTokenStatus,
         now: Date = Date()
