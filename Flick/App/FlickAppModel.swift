@@ -99,9 +99,11 @@ final class FlickAppModel {
     @ObservationIgnored private var tikTokStatusRefreshCooldownsByJobID: [UUID: Date] = [:]
     @ObservationIgnored private var tikTokStatusRefreshCooldownsByAccountID: [UUID: Date] = [:]
     @ObservationIgnored private var tikTokNextPublishAllowedAtByAccountID: [UUID: Date] = [:]
+    @ObservationIgnored private var accountAuthorizationRefreshCooldownsByAccountID: [UUID: Date] = [:]
     @ObservationIgnored private let tikTokPendingInboxStatusRefreshInterval: TimeInterval = 15 * 60
     @ObservationIgnored private let tikTokStatusRateLimitCooldown: TimeInterval = 15 * 60
     @ObservationIgnored private let tikTokPublishRequestSpacing: TimeInterval = 12
+    @ObservationIgnored private let accountAuthorizationRefreshCooldown: TimeInterval = 15 * 60
 
     init(
         repository: FlickRepository,
@@ -204,6 +206,7 @@ final class FlickAppModel {
             configuration = .current
             let didReconcileMediaURLs = reconcileStoredMediaPublicURLs()
             let didReconcileLoginKitTokens = reconcileLoginKitAccountTokenStatus()
+            let didRefreshAccountAuthorizations = await refreshRecoverableAccountAuthorizations()
             let didReconcileAutomationProductImages = reconcileAutomationProductImageSelections()
             applyConnectedAccounts()
             applyCredentialHealth()
@@ -215,6 +218,7 @@ final class FlickAppModel {
             let didPruneProgresses = pruneAutomationPostProgresses()
             if didReconcileMediaURLs
                 || didReconcileLoginKitTokens
+                || didRefreshAccountAuthorizations
                 || reconcileCompletedSlideImages()
                 || didUpdateTikTokStatuses
                 || didReconcilePublishedPosts
@@ -375,6 +379,50 @@ final class FlickAppModel {
         }
     }
 
+    private func refreshRecoverableAccountAuthorizations(now: Date = Date()) async -> Bool {
+        pruneAccountAuthorizationRefreshCooldowns(now: now)
+
+        var didChange = false
+        for account in overview.accounts where shouldAutomaticallyRefreshAuthorization(for: account, now: now) {
+            accountAuthorizationRefreshCooldownsByAccountID[account.id] = now.addingTimeInterval(accountAuthorizationRefreshCooldown)
+
+            do {
+                let refreshedAccount = try await refreshedAuthorizationAccount(for: account)
+                _ = applyConnectedAccount(refreshedAccount)
+                accountAuthorizationRefreshCooldownsByAccountID[account.id] = nil
+                didChange = true
+            } catch {
+                logger.error("Automatic account auth refresh failed accountID=\(account.id.uuidString, privacy: .public) platform=\(account.platform.rawValue, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+                didChange = markAccountTokenUnavailableIfNeeded(
+                    error,
+                    accountID: account.id,
+                    platform: account.platform
+                ) || didChange
+            }
+        }
+
+        return didChange
+    }
+
+    private func shouldAutomaticallyRefreshAuthorization(for account: ConnectedAccount, now: Date) -> Bool {
+        guard account.status == .needsAuth else { return false }
+        guard account.tokenStatus != .expired else { return false }
+        if let cooldown = accountAuthorizationRefreshCooldownsByAccountID[account.id], cooldown > now {
+            return false
+        }
+
+        switch account.authorizationSource {
+        case .loginKit, .nativeOAuth:
+            return account.platform == .tiktok || account.platform == .youtubeShorts
+        case .manualImport, .unavailable:
+            return false
+        }
+    }
+
+    private func pruneAccountAuthorizationRefreshCooldowns(now: Date) {
+        accountAuthorizationRefreshCooldownsByAccountID = accountAuthorizationRefreshCooldownsByAccountID.filter { $0.value > now }
+    }
+
     private func refreshedAuthorizationAccount(for account: ConnectedAccount) async throws -> ConnectedAccount {
         switch account.platform {
         case .tiktok:
@@ -399,17 +447,8 @@ final class FlickAppModel {
     }
 
     func upsertConnectedAccount(_ account: ConnectedAccount) async throws {
-        var syncedAccount = account
-        syncedAccount.updatedAt = Date()
         let previousAccounts = overview.accounts
-
-        if let existingIndex = overview.accounts.firstIndex(where: { $0.id == syncedAccount.id }) {
-            syncedAccount.createdAt = overview.accounts[existingIndex].createdAt
-            overview.accounts[existingIndex] = syncedAccount
-        } else {
-            overview.accounts.append(syncedAccount)
-        }
-        applyConnectedAccounts()
+        let syncedAccount = applyConnectedAccount(account)
 
         do {
             try await repository.upsertConnectedAccount(syncedAccount)
@@ -419,6 +458,22 @@ final class FlickAppModel {
             applyConnectedAccounts()
             throw error
         }
+    }
+
+    @discardableResult
+    private func applyConnectedAccount(_ account: ConnectedAccount, now: Date = Date()) -> ConnectedAccount {
+        var syncedAccount = account
+        syncedAccount.updatedAt = now
+
+        if let existingIndex = overview.accounts.firstIndex(where: { $0.id == syncedAccount.id }) {
+            syncedAccount.createdAt = overview.accounts[existingIndex].createdAt
+            overview.accounts[existingIndex] = syncedAccount
+        } else {
+            overview.accounts.append(syncedAccount)
+        }
+        applyConnectedAccounts()
+
+        return syncedAccount
     }
 
     func deleteConnectedAccount(id accountID: UUID) async throws {
