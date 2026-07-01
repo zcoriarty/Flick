@@ -204,6 +204,7 @@ final class FlickAppModel {
         do {
             overview = try await repository.loadOverview()
             configuration = .current
+            let didNormalizeOverviewRecords = normalizeDuplicateOverviewRecords()
             let didReconcileMediaURLs = reconcileStoredMediaPublicURLs()
             let didReconcileLoginKitTokens = reconcileLoginKitAccountTokenStatus()
             let didRefreshAccountAuthorizations = await refreshRecoverableAccountAuthorizations()
@@ -216,7 +217,8 @@ final class FlickAppModel {
             let didReconcilePublishedPosts = reconcilePublishedPostsFromCompletedJobs()
             clearActiveCreateDraftIfUnavailable()
             let didPruneProgresses = pruneAutomationPostProgresses()
-            if didReconcileMediaURLs
+            if didNormalizeOverviewRecords
+                || didReconcileMediaURLs
                 || didReconcileLoginKitTokens
                 || didRefreshAccountAuthorizations
                 || reconcileCompletedSlideImages()
@@ -663,7 +665,7 @@ final class FlickAppModel {
     }
 
     func localAutomationTemplates() -> [ExampleSlideshowTemplate] {
-        let assetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
+        let assetsByID = overview.assets.latestRecordsByID()
 
         return overview.templates.compactMap { template in
             guard
@@ -1064,8 +1066,8 @@ final class FlickAppModel {
 
     @discardableResult
     private func reconcileAutomationProductImageSelections(now: Date = Date()) -> Bool {
-        let productsByID = Dictionary(uniqueKeysWithValues: overview.products.map { ($0.id, $0) })
-        let assetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
+        let productsByID = overview.products.latestRecordsByID()
+        let assetsByID = overview.assets.latestRecordsByID()
         var didChange = false
 
         for index in overview.automations.indices {
@@ -1431,7 +1433,7 @@ final class FlickAppModel {
                 throw SlideshowCreationError.missingDraft
             }
 
-            let assetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
+            let assetsByID = overview.assets.latestRecordsByID()
             let slideIDs = overview.drafts[draftIndex].slides
                 .sorted { $0.index < $1.index }
                 .filter { slide in
@@ -1600,7 +1602,7 @@ final class FlickAppModel {
                 throw SlideshowCreationError.missingDraft
             }
             let refreshedDraft = overview.drafts[refreshedDraftIndex]
-            let renderedAssetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
+            let renderedAssetsByID = overview.assets.latestRecordsByID()
             let imageURLs = renderedAssetIDs.compactMap { renderedAssetsByID[$0]?.publicURL }
             guard imageURLs.count == renderedAssetIDs.count, !imageURLs.isEmpty else {
                 throw ManualPublishError.missingPublishableImageURLs
@@ -1784,7 +1786,7 @@ final class FlickAppModel {
                     automationProgressID: automationProgressID
                 )
                 reconcileStoredMediaPublicURLs()
-                let renderedAssetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
+                let renderedAssetsByID = overview.assets.latestRecordsByID()
                 let imageURLs = renderedAssetIDs.compactMap { renderedAssetsByID[$0]?.publicURL }
                 guard imageURLs.count == renderedAssetIDs.count, !imageURLs.isEmpty else {
                     throw ManualPublishError.missingPublishableImageURLs
@@ -1825,7 +1827,7 @@ final class FlickAppModel {
 
             var successfulJobCount = 0
             var lastFailure: Error?
-            let accountsByID = Dictionary(uniqueKeysWithValues: overview.accounts.map { ($0.id, $0) })
+            let accountsByID = overview.accounts.latestRecordsByID()
             let tikTokAdapter = TikTokAdapter(configuration: configuration.tiktok)
             let youtubeAdapter = YouTubeShortsAdapter(configuration: configuration.youtube)
 
@@ -2071,6 +2073,34 @@ final class FlickAppModel {
     private func applyConnectedAccounts() {
         overview.accounts = sortedConnectedAccounts(overview.accounts)
         overview.dashboard.connectedAccounts = overview.accounts
+    }
+
+    @discardableResult
+    private func normalizeDuplicateOverviewRecords() -> Bool {
+        var didChange = false
+
+        didChange = deduplicateRecords(&overview.accounts) || didChange
+        didChange = deduplicateRecords(&overview.products) || didChange
+        didChange = deduplicateRecords(&overview.creationModels) || didChange
+        didChange = deduplicateRecords(&overview.assets) || didChange
+        didChange = deduplicateRecords(&overview.templates) || didChange
+        didChange = deduplicateRecords(&overview.drafts) || didChange
+        didChange = deduplicateRecords(&overview.automations) || didChange
+        didChange = deduplicateRecords(&overview.publishingJobs) || didChange
+        didChange = deduplicateRecords(&overview.publishedPosts) || didChange
+
+        for draftIndex in overview.drafts.indices {
+            didChange = deduplicateRecords(&overview.drafts[draftIndex].slides) || didChange
+        }
+
+        return didChange
+    }
+
+    private func deduplicateRecords<Record: OverviewRecordIdentity>(_ records: inout [Record]) -> Bool {
+        let deduplicated = records.deduplicatedByLatestUpdate()
+        guard deduplicated.count != records.count else { return false }
+        records = deduplicated
+        return true
     }
 
     @discardableResult
@@ -2863,7 +2893,7 @@ private extension FlickAppModel {
                 throw SlideshowCreationError.missingDraft
             }
 
-            let assetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
+            let assetsByID = overview.assets.latestRecordsByID()
             guard generatedDraft.hasCompletedCreateImages(assetsByID: assetsByID) else {
                 throw AutomationRunError.generationFailed(lastErrorMessage ?? "")
             }
@@ -3633,8 +3663,8 @@ private extension FlickAppModel {
         let newPosts = overview.publishedPosts.filter { !existingPostIDs.contains($0.id) }
         guard !newPosts.isEmpty else { return }
 
-        let accountsByID = Dictionary(uniqueKeysWithValues: overview.accounts.map { ($0.id, $0) })
-        let draftsByID = Dictionary(uniqueKeysWithValues: overview.drafts.map { ($0.id, $0) })
+        let accountsByID = overview.accounts.latestRecordsByID()
+        let draftsByID = overview.drafts.latestRecordsByID()
 
         for post in newPosts {
             await publishedPostNotificationPublisher.publishNotification(
@@ -3678,7 +3708,7 @@ private extension FlickAppModel {
         }
         guard !awaitingJobs.isEmpty else { return false }
 
-        let accountsByID = Dictionary(uniqueKeysWithValues: overview.accounts.map { ($0.id, $0) })
+        let accountsByID = overview.accounts.latestRecordsByID()
         let adapter = TikTokAdapter(configuration: configuration.tiktok)
         var didChange = false
 
@@ -3950,7 +3980,7 @@ private extension FlickAppModel {
         }
         guard !publishedJobs.isEmpty else { return false }
 
-        let draftsByID = Dictionary(uniqueKeysWithValues: overview.drafts.map { ($0.id, $0) })
+        let draftsByID = overview.drafts.latestRecordsByID()
         let now = Date()
         var didChange = false
 
@@ -4244,7 +4274,7 @@ private extension FlickAppModel {
 
         let now = Date()
         let slide = overview.drafts[draftIndex].slides[slideIndex]
-        let assetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
+        let assetsByID = overview.assets.latestRecordsByID()
 
         if slideHasAvailableCreateImage(slide, assetsByID: assetsByID) {
             overview.drafts[draftIndex].slides[slideIndex].generationStatus = .complete
@@ -4261,7 +4291,7 @@ private extension FlickAppModel {
 
     @discardableResult
     func reconcileCompletedSlideImages(now: Date = Date()) -> Bool {
-        let assetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
+        let assetsByID = overview.assets.latestRecordsByID()
         var didChange = false
 
         for draftIndex in overview.drafts.indices {
@@ -4328,7 +4358,7 @@ private extension FlickAppModel {
             return false
         }
 
-        let assetsByID = Dictionary(uniqueKeysWithValues: overview.assets.map { ($0.id, $0) })
+        let assetsByID = overview.assets.latestRecordsByID()
         return slideUsesAvailableUploadedImage(slide, assetsByID: assetsByID)
     }
 
@@ -4590,6 +4620,55 @@ extension FlickAppModel {
     }
 }
 #endif
+
+private protocol OverviewRecordIdentity {
+    var id: UUID { get }
+    var updatedAt: Date { get }
+}
+
+extension ConnectedAccount: OverviewRecordIdentity {}
+extension FlickProduct: OverviewRecordIdentity {}
+extension FlickCreationModel: OverviewRecordIdentity {}
+extension MediaAsset: OverviewRecordIdentity {}
+extension CreativeTemplate: OverviewRecordIdentity {}
+extension SlideshowDraft: OverviewRecordIdentity {}
+extension Slide: OverviewRecordIdentity {}
+extension ContentAutomation: OverviewRecordIdentity {}
+extension PublishingJob: OverviewRecordIdentity {}
+extension PublishedPost: OverviewRecordIdentity {}
+
+private extension Array where Element: OverviewRecordIdentity {
+    func latestRecordsByID() -> [UUID: Element] {
+        reduce(into: [UUID: Element]()) { recordsByID, record in
+            guard let existing = recordsByID[record.id] else {
+                recordsByID[record.id] = record
+                return
+            }
+
+            if record.updatedAt > existing.updatedAt {
+                recordsByID[record.id] = record
+            }
+        }
+    }
+
+    func deduplicatedByLatestUpdate() -> [Element] {
+        var indicesByID: [UUID: Int] = [:]
+        var records: [Element] = []
+
+        for record in self {
+            if let existingIndex = indicesByID[record.id] {
+                if record.updatedAt > records[existingIndex].updatedAt {
+                    records[existingIndex] = record
+                }
+            } else {
+                indicesByID[record.id] = records.count
+                records.append(record)
+            }
+        }
+
+        return records
+    }
+}
 
 private extension DraftTikTokSettings {
     func fillingTitle(from generatedSettings: DraftTikTokSettings?) -> DraftTikTokSettings {

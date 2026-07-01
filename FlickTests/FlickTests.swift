@@ -135,6 +135,104 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(loadedAsset.productIDs, [product.id])
     }
 
+    func testRefreshDeduplicatesProductAndAssetIDsBeforeAutomationImageReconcile() async throws {
+        let older = Date(timeIntervalSince1970: 1_800_000_000)
+        let newer = older.addingTimeInterval(60)
+        let productID = UUID()
+        let assetID = UUID()
+        let olderProduct = makeProduct(id: productID, name: "Old Product", now: older)
+        let newerProduct = makeProduct(id: productID, name: "New Product", now: newer)
+        let olderAsset = makeMediaAsset(id: assetID, productIDs: [], now: older)
+        let newerAsset = makeMediaAsset(id: assetID, productIDs: [productID], now: newer)
+        let automation = ContentAutomation(
+            name: "Product launch",
+            templateIDs: ["template-a"],
+            productID: productID,
+            productImageAssetIDs: [assetID],
+            schedule: AutomationSchedule(),
+            tikTokSettings: DraftTikTokSettings(title: "Try Flick", privacyLevel: .publicToEveryone),
+            createdAt: older,
+            updatedAt: older
+        )
+        var state = FlickEmptyState.make()
+        state.products = [olderProduct, newerProduct]
+        state.assets = [olderAsset, newerAsset]
+        state.automations = [automation]
+        let repository = InMemoryFlickRepository(state: state)
+        let model = FlickAppModel(
+            repository: repository,
+            configuration: makeTestAppConfiguration(),
+            mediaStorageFactory: { _ in FakeMediaStorage() }
+        )
+
+        await model.refresh()
+
+        XCTAssertEqual(model.overview.products.map(\.id), [productID])
+        XCTAssertEqual(model.overview.products.first?.name, "New Product")
+        XCTAssertEqual(model.overview.assets.map(\.id), [assetID])
+        XCTAssertEqual(model.overview.assets.first?.productIDs, [productID])
+        XCTAssertEqual(model.overview.automations.first?.status, .active)
+        XCTAssertNil(model.lastErrorMessage)
+        XCTAssertEqual(repository.state.products.map(\.id), [productID])
+        XCTAssertEqual(repository.state.assets.map(\.id), [assetID])
+    }
+
+    func testCoreDataSaveOverviewRemovesDuplicateProductAndAssetObjects() async throws {
+        let older = Date(timeIntervalSince1970: 1_800_000_000)
+        let newer = older.addingTimeInterval(60)
+        let persistenceController = PersistenceController(inMemory: true)
+        let context = persistenceController.container.viewContext
+        let repository = CoreDataFlickRepository(
+            context: context,
+            cloudAvailability: { false }
+        )
+        let productID = UUID()
+        let assetID = UUID()
+        let product = makeProduct(id: productID, name: "Canonical Product", now: newer)
+        let asset = makeMediaAsset(id: assetID, source: .uploaded, productIDs: [productID], now: newer)
+
+        for name in ["Stale Product", "Older Product"] {
+            let object = NSEntityDescription.insertNewObject(forEntityName: "CDProduct", into: context)
+            object.setValue(productID, forKey: "id")
+            object.setValue(name, forKey: "name")
+            object.setValue("", forKey: "summary")
+            object.setValue(older, forKey: "createdAt")
+            object.setValue(older, forKey: "updatedAt")
+        }
+
+        for storagePath in ["stale-a.jpg", "stale-b.jpg"] {
+            let object = NSEntityDescription.insertNewObject(forEntityName: "CDAsset", into: context)
+            object.setValue(assetID, forKey: "id")
+            object.setValue(AssetMediaType.image.rawValue, forKey: "mediaType")
+            object.setValue(AssetSource.uploaded.rawValue, forKey: "source")
+            object.setValue("flick-media", forKey: "storageBucket")
+            object.setValue(storagePath, forKey: "storagePath")
+            object.setValue(1024, forKey: "width")
+            object.setValue(1536, forKey: "height")
+            object.setValue(older, forKey: "createdAt")
+            object.setValue(older, forKey: "updatedAt")
+            object.setValue(
+                try XCTUnwrap(String(data: try JSONEncoder().encode([productID.uuidString]), encoding: .utf8)),
+                forKey: "productIDsJSON"
+            )
+        }
+        try context.save()
+
+        var state = FlickEmptyState.make()
+        state.products = [product]
+        state.assets = [asset]
+
+        try await repository.saveOverview(state)
+        let loaded = try await repository.loadOverview()
+
+        XCTAssertEqual(try managedObjectCount(entityName: "CDProduct", in: context), 1)
+        XCTAssertEqual(try managedObjectCount(entityName: "CDAsset", in: context), 1)
+        XCTAssertEqual(loaded.products.map(\.id), [productID])
+        XCTAssertEqual(loaded.products.first?.name, "Canonical Product")
+        XCTAssertEqual(loaded.assets.map(\.id), [assetID])
+        XCTAssertEqual(loaded.assets.first?.productIDs, [productID])
+    }
+
     func testCoreDataRoundTripsCreationModels() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let persistenceController = PersistenceController(inMemory: true)

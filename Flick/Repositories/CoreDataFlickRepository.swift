@@ -89,12 +89,59 @@ final class CoreDataFlickRepository: FlickRepository {
         try saveIfNeeded()
     }
 
+    private func existingObjectsByID(
+        from objects: [NSManagedObject],
+        idKey: String,
+        updatedAtKey: String
+    ) -> [UUID: NSManagedObject] {
+        var objectsByID: [UUID: NSManagedObject] = [:]
+
+        for object in objects {
+            guard let id = object.value(forKey: idKey) as? UUID else { continue }
+
+            guard let existing = objectsByID[id] else {
+                objectsByID[id] = object
+                continue
+            }
+
+            if updatedAt(for: object, key: updatedAtKey) > updatedAt(for: existing, key: updatedAtKey) {
+                context.delete(existing)
+                objectsByID[id] = object
+            } else {
+                context.delete(object)
+            }
+        }
+
+        return objectsByID
+    }
+
+    private func fetchCanonicalObject(
+        id: UUID,
+        request: NSFetchRequest<NSManagedObject>,
+        idKey: String,
+        updatedAtKey: String
+    ) throws -> NSManagedObject? {
+        request.predicate = NSPredicate(format: "%K == %@", idKey, id as NSUUID)
+        request.sortDescriptors = [
+            NSSortDescriptor(key: updatedAtKey, ascending: false)
+        ]
+        let objects = try context.fetch(request)
+        objects.dropFirst().forEach { context.delete($0) }
+        return objects.first
+    }
+
+    private func updatedAt(for object: NSManagedObject, key: String) -> Date {
+        object.value(forKey: key) as? Date ?? .distantPast
+    }
+
     private func syncConnectedAccounts(_ accounts: [ConnectedAccount]) throws {
+        let accounts = accounts.deduplicatedByLatestUpdate()
         let existingAccounts = try context.fetch(connectedAccountFetchRequest())
-        var existingByID = Dictionary(uniqueKeysWithValues: existingAccounts.compactMap { object -> (UUID, NSManagedObject)? in
-            guard let id = object.value(forKey: ConnectedAccountKey.id) as? UUID else { return nil }
-            return (id, object)
-        })
+        var existingByID = existingObjectsByID(
+            from: existingAccounts,
+            idKey: ConnectedAccountKey.id,
+            updatedAtKey: ConnectedAccountKey.updatedAt
+        )
         let stateIDs = Set(accounts.map(\.id))
 
         for account in accounts {
@@ -108,11 +155,13 @@ final class CoreDataFlickRepository: FlickRepository {
     }
 
     private func syncProducts(_ products: [FlickProduct]) throws {
+        let products = products.deduplicatedByLatestUpdate()
         let existingProducts = try context.fetch(productFetchRequest())
-        var existingByID = Dictionary(uniqueKeysWithValues: existingProducts.compactMap { object -> (UUID, NSManagedObject)? in
-            guard let id = object.value(forKey: ProductKey.id) as? UUID else { return nil }
-            return (id, object)
-        })
+        var existingByID = existingObjectsByID(
+            from: existingProducts,
+            idKey: ProductKey.id,
+            updatedAtKey: ProductKey.updatedAt
+        )
         let stateIDs = Set(products.map(\.id))
 
         for product in products {
@@ -126,11 +175,13 @@ final class CoreDataFlickRepository: FlickRepository {
     }
 
     private func syncCreationModels(_ creationModels: [FlickCreationModel]) throws {
+        let creationModels = creationModels.deduplicatedByLatestUpdate()
         let existingModels = try context.fetch(creationModelFetchRequest())
-        var existingByID = Dictionary(uniqueKeysWithValues: existingModels.compactMap { object -> (UUID, NSManagedObject)? in
-            guard let id = object.value(forKey: CreationModelKey.id) as? UUID else { return nil }
-            return (id, object)
-        })
+        var existingByID = existingObjectsByID(
+            from: existingModels,
+            idKey: CreationModelKey.id,
+            updatedAtKey: CreationModelKey.updatedAt
+        )
         let stateIDs = Set(creationModels.map(\.id))
 
         for creationModel in creationModels {
@@ -144,11 +195,13 @@ final class CoreDataFlickRepository: FlickRepository {
     }
 
     private func syncAssets(_ assets: [MediaAsset]) throws {
+        let assets = assets.deduplicatedByLatestUpdate()
         let existingAssets = try context.fetch(assetFetchRequest())
-        var existingByID = Dictionary(uniqueKeysWithValues: existingAssets.compactMap { object -> (UUID, NSManagedObject)? in
-            guard let id = object.value(forKey: AssetKey.id) as? UUID else { return nil }
-            return (id, object)
-        })
+        var existingByID = existingObjectsByID(
+            from: existingAssets,
+            idKey: AssetKey.id,
+            updatedAtKey: AssetKey.updatedAt
+        )
         let stateIDs = Set(assets.map(\.id))
 
         for asset in assets {
@@ -162,11 +215,13 @@ final class CoreDataFlickRepository: FlickRepository {
     }
 
     private func syncTemplates(_ templates: [CreativeTemplate]) throws {
+        let templates = templates.deduplicatedByLatestUpdate()
         let existingTemplates = try context.fetch(templateFetchRequest())
-        var existingByID = Dictionary(uniqueKeysWithValues: existingTemplates.compactMap { object -> (UUID, NSManagedObject)? in
-            guard let id = object.value(forKey: TemplateKey.id) as? UUID else { return nil }
-            return (id, object)
-        })
+        var existingByID = existingObjectsByID(
+            from: existingTemplates,
+            idKey: TemplateKey.id,
+            updatedAtKey: TemplateKey.updatedAt
+        )
         let stateIDs = Set(templates.map(\.id))
 
         for template in templates {
@@ -180,11 +235,13 @@ final class CoreDataFlickRepository: FlickRepository {
     }
 
     private func syncDrafts(_ drafts: [SlideshowDraft]) throws {
+        let drafts = drafts.deduplicatedByLatestUpdate()
         let existingDrafts = try context.fetch(draftFetchRequest())
-        var existingByID = Dictionary(uniqueKeysWithValues: existingDrafts.compactMap { object -> (UUID, NSManagedObject)? in
-            guard let id = object.value(forKey: DraftKey.id) as? UUID else { return nil }
-            return (id, object)
-        })
+        var existingByID = existingObjectsByID(
+            from: existingDrafts,
+            idKey: DraftKey.id,
+            updatedAtKey: DraftKey.updatedAt
+        )
         let stateIDs = Set(drafts.map(\.id))
 
         for draft in drafts {
@@ -198,15 +255,15 @@ final class CoreDataFlickRepository: FlickRepository {
     }
 
     private func syncSlides(in drafts: [SlideshowDraft]) throws {
+        let drafts = drafts.deduplicatedByLatestUpdate()
         let existingSlides = try context.fetch(slideFetchRequest())
-        var existingByID = Dictionary(uniqueKeysWithValues: existingSlides.compactMap { object -> (UUID, NSManagedObject)? in
-            guard let id = object.value(forKey: SlideKey.id) as? UUID else { return nil }
-            return (id, object)
-        })
-        let draftSlides = drafts.flatMap { draft in
-            draft.slides.map { (draft.id, $0) }
-        }
-        let stateIDs = Set(draftSlides.map(\.1.id))
+        var existingByID = existingObjectsByID(
+            from: existingSlides,
+            idKey: SlideKey.id,
+            updatedAtKey: SlideKey.updatedAt
+        )
+        let draftSlides = newestUniqueDraftSlides(in: drafts)
+        let stateIDs = Set(draftSlides.map(\.slide.id))
 
         for (draftID, slide) in draftSlides {
             let object = existingByID.removeValue(forKey: slide.id) ?? insertSlideObject()
@@ -218,12 +275,34 @@ final class CoreDataFlickRepository: FlickRepository {
         }
     }
 
+    private func newestUniqueDraftSlides(in drafts: [SlideshowDraft]) -> [(draftID: UUID, slide: Slide)] {
+        var indicesBySlideID: [UUID: Int] = [:]
+        var draftSlides: [(draftID: UUID, slide: Slide)] = []
+
+        for draft in drafts {
+            for slide in draft.slides {
+                if let existingIndex = indicesBySlideID[slide.id] {
+                    if slide.updatedAt > draftSlides[existingIndex].slide.updatedAt {
+                        draftSlides[existingIndex] = (draft.id, slide)
+                    }
+                } else {
+                    indicesBySlideID[slide.id] = draftSlides.count
+                    draftSlides.append((draft.id, slide))
+                }
+            }
+        }
+
+        return draftSlides
+    }
+
     private func syncAutomations(_ automations: [ContentAutomation]) throws {
+        let automations = automations.deduplicatedByLatestUpdate()
         let existingAutomations = try context.fetch(automationFetchRequest())
-        var existingByID = Dictionary(uniqueKeysWithValues: existingAutomations.compactMap { object -> (UUID, NSManagedObject)? in
-            guard let id = object.value(forKey: AutomationKey.id) as? UUID else { return nil }
-            return (id, object)
-        })
+        var existingByID = existingObjectsByID(
+            from: existingAutomations,
+            idKey: AutomationKey.id,
+            updatedAtKey: AutomationKey.updatedAt
+        )
         let stateIDs = Set(automations.map(\.id))
 
         for automation in automations {
@@ -237,11 +316,13 @@ final class CoreDataFlickRepository: FlickRepository {
     }
 
     private func syncPublishingJobs(_ jobs: [PublishingJob]) throws {
+        let jobs = jobs.deduplicatedByLatestUpdate()
         let existingJobs = try context.fetch(publishingJobFetchRequest())
-        var existingByID = Dictionary(uniqueKeysWithValues: existingJobs.compactMap { object -> (UUID, NSManagedObject)? in
-            guard let id = object.value(forKey: PublishingJobKey.id) as? UUID else { return nil }
-            return (id, object)
-        })
+        var existingByID = existingObjectsByID(
+            from: existingJobs,
+            idKey: PublishingJobKey.id,
+            updatedAtKey: PublishingJobKey.updatedAt
+        )
         let stateIDs = Set(jobs.map(\.id))
 
         for job in jobs {
@@ -287,11 +368,13 @@ final class CoreDataFlickRepository: FlickRepository {
     }
 
     private func syncPublishedPosts(_ posts: [PublishedPost]) throws {
+        let posts = posts.deduplicatedByLatestUpdate()
         let existingPosts = try context.fetch(publishedPostFetchRequest())
-        var existingByID = Dictionary(uniqueKeysWithValues: existingPosts.compactMap { object -> (UUID, NSManagedObject)? in
-            guard let id = object.value(forKey: PublishedPostKey.id) as? UUID else { return nil }
-            return (id, object)
-        })
+        var existingByID = existingObjectsByID(
+            from: existingPosts,
+            idKey: PublishedPostKey.id,
+            updatedAtKey: PublishedPostKey.updatedAt
+        )
         let stateIDs = Set(posts.map(\.id))
 
         for post in posts {
@@ -329,17 +412,21 @@ final class CoreDataFlickRepository: FlickRepository {
     }
 
     private func fetchProduct(id: UUID) throws -> NSManagedObject? {
-        let request = productFetchRequest()
-        request.predicate = NSPredicate(format: "%K == %@", ProductKey.id, id as NSUUID)
-        request.fetchLimit = 1
-        return try context.fetch(request).first
+        try fetchCanonicalObject(
+            id: id,
+            request: productFetchRequest(),
+            idKey: ProductKey.id,
+            updatedAtKey: ProductKey.updatedAt
+        )
     }
 
     private func fetchAsset(id: UUID) throws -> NSManagedObject? {
-        let request = assetFetchRequest()
-        request.predicate = NSPredicate(format: "%K == %@", AssetKey.id, id as NSUUID)
-        request.fetchLimit = 1
-        return try context.fetch(request).first
+        try fetchCanonicalObject(
+            id: id,
+            request: assetFetchRequest(),
+            idKey: AssetKey.id,
+            updatedAtKey: AssetKey.updatedAt
+        )
     }
 
     private func fetchTemplates() throws -> [CreativeTemplate] {
@@ -426,10 +513,12 @@ final class CoreDataFlickRepository: FlickRepository {
     }
 
     private func fetchConnectedAccount(id: UUID) throws -> NSManagedObject? {
-        let request = connectedAccountFetchRequest()
-        request.predicate = NSPredicate(format: "%K == %@", ConnectedAccountKey.id, id as NSUUID)
-        request.fetchLimit = 1
-        return try context.fetch(request).first
+        try fetchCanonicalObject(
+            id: id,
+            request: connectedAccountFetchRequest(),
+            idKey: ConnectedAccountKey.id,
+            updatedAtKey: ConnectedAccountKey.updatedAt
+        )
     }
 
     private func connectedAccountFetchRequest() -> NSFetchRequest<NSManagedObject> {
@@ -713,6 +802,41 @@ final class CoreDataFlickRepository: FlickRepository {
                 continuation.resume(returning: status == .available)
             }
         }
+    }
+}
+
+private protocol CoreDataSyncRecordIdentity {
+    var id: UUID { get }
+    var updatedAt: Date { get }
+}
+
+extension ConnectedAccount: CoreDataSyncRecordIdentity {}
+extension FlickProduct: CoreDataSyncRecordIdentity {}
+extension FlickCreationModel: CoreDataSyncRecordIdentity {}
+extension MediaAsset: CoreDataSyncRecordIdentity {}
+extension CreativeTemplate: CoreDataSyncRecordIdentity {}
+extension SlideshowDraft: CoreDataSyncRecordIdentity {}
+extension ContentAutomation: CoreDataSyncRecordIdentity {}
+extension PublishingJob: CoreDataSyncRecordIdentity {}
+extension PublishedPost: CoreDataSyncRecordIdentity {}
+
+private extension Array where Element: CoreDataSyncRecordIdentity {
+    func deduplicatedByLatestUpdate() -> [Element] {
+        var indicesByID: [UUID: Int] = [:]
+        var records: [Element] = []
+
+        for record in self {
+            if let existingIndex = indicesByID[record.id] {
+                if record.updatedAt > records[existingIndex].updatedAt {
+                    records[existingIndex] = record
+                }
+            } else {
+                indicesByID[record.id] = records.count
+                records.append(record)
+            }
+        }
+
+        return records
     }
 }
 
