@@ -955,14 +955,15 @@ final class FlickAppModel {
             fileURL: storedMedia.fileURL
         )
         let data = try Data(contentsOf: storedMedia.fileURL)
-        let remote = try await mediaStorageFactory(credentialVault.loadValues())
-            .uploadAsset(
-                LocalMediaAsset(
-                    data: data,
-                    contentType: storedMedia.contentType.preferredMIMEType ?? "application/octet-stream"
-                ),
-                path: objectPath
-            )
+        let storage = mediaStorageFactory(credentialVault.loadValues())
+        let remote = try await storage.uploadAsset(
+            LocalMediaAsset(
+                data: data,
+                contentType: storedMedia.contentType.preferredMIMEType ?? "application/octet-stream"
+            ),
+            path: objectPath
+        )
+        let publicURL = try resolvedPublicURL(for: remote, storage: storage)
         let asset = MediaAsset(
             id: assetID,
             mediaType: AssetMediaType(contentType: storedMedia.contentType),
@@ -970,7 +971,7 @@ final class FlickAppModel {
             localFilePath: storedMedia.fileURL.path,
             storageBucket: remote.storageBucket,
             storagePath: remote.storagePath,
-            publicURL: remote.publicURL,
+            publicURL: publicURL,
             signedURLExpiration: remote.signedURLExpiration,
             width: mediaMetadata.width,
             height: mediaMetadata.height,
@@ -1602,11 +1603,7 @@ final class FlickAppModel {
                 throw SlideshowCreationError.missingDraft
             }
             let refreshedDraft = overview.drafts[refreshedDraftIndex]
-            let renderedAssetsByID = overview.assets.latestRecordsByID()
-            let imageURLs = renderedAssetIDs.compactMap { renderedAssetsByID[$0]?.publicURL }
-            guard imageURLs.count == renderedAssetIDs.count, !imageURLs.isEmpty else {
-                throw ManualPublishError.missingPublishableImageURLs
-            }
+            let imageURLs = try publishableImageURLs(forRenderedAssetIDs: renderedAssetIDs)
 
             updatePublishingJob(job.id, status: .publishing)
             job.status = .publishing
@@ -1786,11 +1783,7 @@ final class FlickAppModel {
                     automationProgressID: automationProgressID
                 )
                 reconcileStoredMediaPublicURLs()
-                let renderedAssetsByID = overview.assets.latestRecordsByID()
-                let imageURLs = renderedAssetIDs.compactMap { renderedAssetsByID[$0]?.publicURL }
-                guard imageURLs.count == renderedAssetIDs.count, !imageURLs.isEmpty else {
-                    throw ManualPublishError.missingPublishableImageURLs
-                }
+                let imageURLs = try publishableImageURLs(forRenderedAssetIDs: renderedAssetIDs)
                 tikTokMedia = PreparedPlatformMedia(
                     mode: tikTokSettings?.publishMode ?? .photoDirectPost,
                     imageURLs: imageURLs,
@@ -3429,14 +3422,15 @@ private extension FlickAppModel {
                 settings: settings,
                 fileExtension: generatedImage.fileExtension
             )
-            let remote = try await mediaStorageFactory(credentialVault.loadValues())
-                .uploadAsset(
-                    LocalMediaAsset(
-                        data: generatedImage.data,
-                        contentType: generatedImage.contentType
-                    ),
-                    path: path
-                )
+            let storage = mediaStorageFactory(credentialVault.loadValues())
+            let remote = try await storage.uploadAsset(
+                LocalMediaAsset(
+                    data: generatedImage.data,
+                    contentType: generatedImage.contentType
+                ),
+                path: path
+            )
+            let publicURL = try resolvedPublicURL(for: remote, storage: storage)
 
             let asset = MediaAsset(
                 id: assetID,
@@ -3445,7 +3439,7 @@ private extension FlickAppModel {
                 localFilePath: storedMedia.fileURL.path,
                 storageBucket: remote.storageBucket,
                 storagePath: remote.storagePath,
-                publicURL: remote.publicURL,
+                publicURL: publicURL,
                 signedURLExpiration: remote.signedURLExpiration,
                 width: generatedImage.width,
                 height: generatedImage.height,
@@ -4453,6 +4447,51 @@ private extension FlickAppModel {
         }
     }
 
+    func publishableImageURLs(forRenderedAssetIDs assetIDs: [UUID]) throws -> [URL] {
+        guard !assetIDs.isEmpty else {
+            throw ManualPublishError.missingPublishableImageURLs
+        }
+
+        let assetsByID = overview.assets.latestRecordsByID()
+        let storage = mediaStorageFactory(credentialVault.loadValues())
+        var imageURLs: [URL] = []
+
+        for assetID in assetIDs {
+            guard let asset = assetsByID[assetID] else {
+                throw ManualPublishError.missingPublishableImageURLs
+            }
+
+            if let publicURL = asset.publicURL {
+                imageURLs.append(publicURL)
+                continue
+            }
+
+            guard let storagePath = asset.storagePath else {
+                throw ManualPublishError.missingPublishableImageURLs
+            }
+
+            let publicURL: URL
+            do {
+                publicURL = try storage.publicURL(path: storagePath)
+            } catch {
+                throw ManualPublishError.missingPublishableImageURLs
+            }
+
+            updateStoredPublicURL(publicURL, forAssetID: assetID)
+            imageURLs.append(publicURL)
+        }
+
+        return imageURLs
+    }
+
+    private func updateStoredPublicURL(_ publicURL: URL, forAssetID assetID: UUID, now: Date = Date()) {
+        for index in overview.assets.indices where overview.assets[index].id == assetID {
+            guard overview.assets[index].publicURL != publicURL else { continue }
+            overview.assets[index].publicURL = publicURL
+            overview.assets[index].updatedAt = now
+        }
+    }
+
     func reindexSlides(in draftIndex: Int) {
         let now = Date()
         for index in overview.drafts[draftIndex].slides.indices {
@@ -4617,6 +4656,24 @@ private extension FlickAppModel {
 extension FlickAppModel {
     func testRenderImageSequenceForPublish(for draftID: UUID) async throws -> [UUID] {
         try await renderImageSequenceForPublish(for: draftID)
+    }
+
+    func testGenerateImage(
+        for slideID: UUID,
+        in draftID: UUID,
+        instruction: String?,
+        settings: SlideshowImageGenerationSettings
+    ) async throws {
+        try await generateImage(
+            for: slideID,
+            in: draftID,
+            instruction: instruction,
+            settings: settings
+        )
+    }
+
+    func testPublishableImageURLs(forRenderedAssetIDs assetIDs: [UUID]) throws -> [URL] {
+        try publishableImageURLs(forRenderedAssetIDs: assetIDs)
     }
 }
 #endif

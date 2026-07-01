@@ -753,6 +753,33 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(repository.state.assets.first?.publicURL, asset.publicURL)
     }
 
+    func testAddingProductMediaDerivesPublicURLWhenUploadResponseOmitsIt() async throws {
+        let repository = InMemoryFlickRepository(state: FlickEmptyState.make())
+        let mediaStorage = FakeMediaStorage(returnsPublicURL: false)
+        let model = FlickAppModel(
+            repository: repository,
+            configuration: makeTestAppConfiguration(),
+            mediaStorageFactory: { _ in mediaStorage }
+        )
+        let product = try await model.createProduct(name: "Flick Pro", summary: "Launch assets")
+        #if canImport(UIKit)
+        let imageData = makeTestJPEGData(width: 72, height: 128)
+        #else
+        let imageData = Data([0xFF, 0xD8, 0xFF])
+        #endif
+
+        try await model.addProductMedia(
+            data: imageData,
+            contentType: .jpeg,
+            productIDs: [product.id]
+        )
+
+        let asset = try XCTUnwrap(model.overview.assets.first)
+        let uploadedPath = try XCTUnwrap(mediaStorage.uploadedPaths.first)
+        XCTAssertEqual(asset.publicURL, URL(string: "https://media.example.com/\(uploadedPath)"))
+        XCTAssertEqual(repository.state.assets.first?.publicURL, asset.publicURL)
+    }
+
     func testStoredMediaPublicURLReconciliationRefreshesBucketAssets() throws {
         let mediaStorage = FakeMediaStorage()
         let model = FlickAppModel(
@@ -2563,6 +2590,31 @@ final class FlickTests: XCTestCase {
         #endif
     }
 
+    func testPublishableRenderedImageURLsDeriveMissingPublicURLFromStoragePath() throws {
+        let mediaStorage = FakeMediaStorage(returnsPublicURL: false)
+        let model = FlickAppModel(
+            repository: InMemoryFlickRepository(state: FlickEmptyState.make()),
+            configuration: makeTestAppConfiguration(),
+            mediaStorageFactory: { _ in mediaStorage }
+        )
+        let assetID = UUID()
+        let storagePath = "rendered-image-sequences/draft-id/slide.jpg"
+        let asset = makeMediaAsset(
+            id: assetID,
+            source: .rendered,
+            storagePath: storagePath,
+            publicURL: nil
+        )
+        model.overview.assets = [asset]
+
+        let imageURLs = try model.testPublishableImageURLs(forRenderedAssetIDs: [assetID])
+
+        let expectedURL = URL(string: "https://media.example.com/\(storagePath)")
+        XCTAssertEqual(imageURLs, [expectedURL])
+        XCTAssertEqual(model.overview.assets.first?.publicURL, expectedURL)
+        XCTAssertNotEqual(model.overview.assets.first?.updatedAt, asset.updatedAt)
+    }
+
     func testTemplatePreviewAvailabilityUsesMediaLocationsWithoutDecoding() throws {
         let remoteSlide = makeExampleSlideshowSlide(
             index: 1,
@@ -4075,6 +4127,76 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(image.data, imageBytes)
         XCTAssertEqual(image.contentType, "image/jpeg")
         XCTAssertEqual(image.fileExtension, "jpg")
+    }
+
+    func testGeneratedSlideImageDerivesPublicURLWhenUploadResponseOmitsIt() async throws {
+        #if canImport(UIKit)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let imageBytes = makeTestJPEGData(
+            width: SlideshowImageGenerationSettings.draft.width,
+            height: SlideshowImageGenerationSettings.draft.height
+        )
+        defer { CapturingURLProtocol.requestHandler = nil }
+        CapturingURLProtocol.requestHandler = { request in
+            switch request.url?.path {
+            case "/v1/images/generations":
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data(
+                        """
+                        {
+                            "data": [
+                                {
+                                    "b64_json": "\(imageBytes.base64EncodedString())"
+                                }
+                            ]
+                        }
+                        """.utf8
+                    )
+                )
+            case "/v1/responses":
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data(
+                        """
+                        {
+                            "output_text": "{\\"visualSummary\\":\\"Blue launch slide\\"}"
+                        }
+                        """.utf8
+                    )
+                )
+            default:
+                XCTFail("Unexpected request URL: \(request.url?.absoluteString ?? "nil")")
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!,
+                    Data()
+                )
+            }
+        }
+
+        let client = makeOpenAIClientForTests()
+        let mediaStorage = FakeMediaStorage(returnsPublicURL: false)
+        let template = makeCreativeTemplate(now: now)
+        var draft = makeSlideshowDraft(now: now)
+        draft.templateID = template.id
+        let slide = try XCTUnwrap(draft.slides.first)
+        var state = FlickEmptyState.make()
+        state.templates = [template]
+        state.drafts = [draft]
+        let model = FlickAppModel(
+            repository: InMemoryFlickRepository(state: state),
+            configuration: makeTestAppConfiguration(),
+            openAIClientFactory: { _ in client },
+            mediaStorageFactory: { _ in mediaStorage }
+        )
+
+        try await model.testGenerateImage(for: slide.id, in: draft.id, instruction: nil, settings: .draft)
+
+        let generatedAssetID = try XCTUnwrap(model.overview.drafts.first?.slides.first?.imageAssetID)
+        let generatedAsset = try XCTUnwrap(model.overview.assets.first { $0.id == generatedAssetID })
+        let uploadedPath = try XCTUnwrap(mediaStorage.uploadedPaths.first)
+        XCTAssertEqual(generatedAsset.publicURL, URL(string: "https://media.example.com/\(uploadedPath)"))
+        #endif
     }
 
     func testOpenAIImageGenerationRetriesTimedOutRequestOnce() async throws {
