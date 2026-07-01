@@ -20,7 +20,7 @@ struct CreateAutomationProductImageSection: View {
             if products.isEmpty {
                 CreateMessageRow(
                     title: "No products",
-                    message: "Create a product before configuring automated posts."
+                    message: "No product media will be attached to automated posts."
                 )
             } else {
                 productMenu
@@ -37,7 +37,7 @@ struct CreateAutomationProductImageSection: View {
                 } else {
                     CreateMessageRow(
                         title: "No product selected",
-                        message: "Select a product and choose the image set Flick can randomize for each post."
+                        message: "Posts generated from this automation will not include product media."
                     )
                 }
             }
@@ -52,6 +52,13 @@ struct CreateAutomationProductImageSection: View {
 
     private var productMenu: some View {
         Menu {
+            Button {
+                selectedProductID = nil
+                selectedProductImageAssetIDs.removeAll()
+            } label: {
+                CreateProductMenuOptionLabel(title: "None", isSelected: selectedProductID == nil)
+            }
+
             ForEach(products) { product in
                 Button {
                     selectedProductID = product.id
@@ -67,7 +74,7 @@ struct CreateAutomationProductImageSection: View {
                 iconColor: .blue
             ) {
                 HStack(spacing: 6) {
-                    Text(selectedProduct?.name ?? "Select")
+                    Text(selectedProduct?.name ?? "None")
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
