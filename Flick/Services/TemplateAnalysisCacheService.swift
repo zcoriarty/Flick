@@ -14,7 +14,7 @@ protocol TemplateAnalysisStorageProviding {
 extension R2StorageService: TemplateAnalysisStorageProviding {}
 
 struct TemplateAnalysisCacheService {
-    static let schemaVersion = 2
+    static let schemaVersion = 4
 
     var openAIClient: OpenAIClient
     var storage: any TemplateAnalysisStorageProviding

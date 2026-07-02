@@ -35,11 +35,18 @@ struct SlideshowPlannerService {
                 - Creator profile: @\(template.profile)
                 - Template slide count to keep: \(template.slideCount)
                 - Total planned slide count to return: \(expectedSlideCount)
-                - Template product or medium: \(template.subtitle)
+                - Template product or medium: suppressed; template product metadata is not a selected product and must not be used
                 - Detected template product-image slide numbers: \(slideNumberSummary(templateProductImageSlideNumbers))
 
                 Template style guide:
                 \(styleGuide.promptSummary)
+
+                Template slide blueprints:
+                \(templateSlideBlueprintSummary(
+                    styleGuide.slideBlueprints,
+                    slideCount: template.slideCount,
+                    productImage: productImage
+                ))
 
                 \(imageVibe.planningInstructions)
 
@@ -53,9 +60,14 @@ struct SlideshowPlannerService {
 
                 Create a complete slideshow plan with exactly \(expectedSlideCount) planned slides.
                 Create a concise one-line TikTok post title for the post settings title field.
+                Base each slide's editable text, textPosition, visual subject, person placement, and composition on the matching template slide blueprint.
+                Reuse the template visibleText directly when it is generic, non-brand wording and still fits the user brief. Retarget it only when the selected product image, selected product summary, or user brief requires different specifics.
+                Never copy creator names, usernames, handles, brand names, product names, logos, UI text, watermarks, or product-specific claims from the template.
+                Avoid generic business filler phrases such as "Move the needle" unless that exact phrase appears in the user brief or template visible text reference.
                 Every generated image prompt must look like a real camera photograph made by a human, using the selected image vibe above.
                 Flick will render all text separately, so generated image prompts must forbid readable text, captions, logos, watermarks, fake UI text, and gibberish.
-                Set each slide's textPosition to center and keep the centered text area low-detail.
+                Set each slide's textPosition to the matching template blueprint's textPosition when available; use center only when no blueprint exists.
+                Keep the chosen overlay region clean and low-detail for Flick-rendered text.
                 Keep product-image placeholder handling exactly as specified above.
                 """
             ]
@@ -178,7 +190,11 @@ struct SlideshowPlannerService {
         """
         You are Flick's slideshow planner and prompt writer.
         Normalize the brief, reuse the selected template structurally, and create one cohesive TikTok/Instagram-style image carousel plan.
-        Use the existing Flick template as style and pacing reference only.
+        Use the existing Flick template as style, pacing, layout, and safe-copy reference.
+        Preserve the selected template's slide-by-slide copy role, text density, overlay placement, subject framing, person position, and composition rhythm.
+        Safe generic template wording may be copied directly when it fits the new post; retarget it only for selected product images, selected product summaries, or user-specific brief details.
+        Do not copy creator names, usernames, handles, brand names, product names, logos, UI text, watermarks, or product-specific claims from the template.
+        Avoid generic filler copy such as "Move the needle", "Unlock your potential", "Level up", or "Game changer" unless those exact words are supplied by the user brief or template visible text reference.
         All generated slide visuals must look like real photographs captured by a human with a physical camera, not AI-generated artwork or glossy renders.
         Template people are reference material for pose, camera framing, environment, and background only; never copy their face, hair, skin tone, body, age, gender expression, clothing, or accessories.
         When a selected creation model is supplied, any visible person in generated slide prompts must match that model JSON and stay visually consistent across slides.
@@ -297,6 +313,7 @@ struct SlideshowPlannerService {
                 return """
                 No selected product image was supplied.
                 Set usesProductImage to false for every slide.
+                Do not create product-image slides or visual subjects that look like an app, product, device mockup, store page, package, logo, or product hero.
                 Generated image prompts must not mention, recreate, imply, or visually describe any template product, app screens, screenshots, device UI, logos, packaging, product names, or store pages.
                 """
             }
@@ -306,6 +323,8 @@ struct SlideshowPlannerService {
             Detected template product-image slide numbers: \(slideNumbers).
             Keep the template's pacing and narrative beats, but turn those positions into non-product generated visuals.
             Set usesProductImage to false for every slide.
+            Do not create a substitute product, app UI, phone mockup, store page, packaging, logo, or product hero.
+            For matching product-placeholder blueprints, use only copy role, overlay position, pacing, person placement, and non-product style cues; ignore their template product/app/UI/package/logo/store-page visible text, main subject, and composition details.
             Image prompts must not mention, recreate, imply, or visually describe the template product, app screens, screenshots, device UI, logos, packaging, product names, or store pages.
             """
         }
@@ -355,6 +374,66 @@ struct SlideshowPlannerService {
 
     private func slideNumberSummary(_ slideNumbers: [Int]) -> String {
         slideNumbers.isEmpty ? "none" : slideNumbers.map(String.init).joined(separator: ", ")
+    }
+
+    private func templateSlideBlueprintSummary(
+        _ blueprints: [TemplateSlideBlueprint],
+        slideCount: Int,
+        productImage: SlideshowProductImage?
+    ) -> String {
+        let visibleBlueprints = blueprints
+            .filter { $0.slideNumber > 0 && $0.slideNumber <= slideCount }
+            .sorted { $0.slideNumber < $1.slideNumber }
+
+        guard !visibleBlueprints.isEmpty else {
+            return "No per-slide blueprint was extracted. Use the slide count, style guide, and product-placeholder instructions as the only template structure."
+        }
+
+        return visibleBlueprints.map { blueprint in
+            if blueprint.isProductPlaceholder {
+                let detailHandling: String
+                if productImage == nil {
+                    detailHandling = "Product placeholder details suppressed because no selected product image was supplied; preserve only copy role, overlay position, pacing, person placement, and non-product style cues, then convert this slot into a non-product generated visual."
+                } else {
+                    detailHandling = "Product placeholder details suppressed because the template product must be replaced by the selected product image; preserve only copy role, overlay position, pacing, person placement, and non-product style cues, then retarget this slot to the selected product."
+                }
+
+                return """
+                Slide \(blueprint.slideNumber):
+                - Visible text reference: suppressed for product placeholder
+                - Copy role: \(templateBlueprintValue(blueprint.copyRole, fallback: "unspecified"))
+                - Overlay position: \(blueprint.textPosition.rawValue)
+                - Person presence: \(templateBlueprintValue(blueprint.personPresence, fallback: "none"))
+                - Person position: \(templateBlueprintValue(blueprint.personPosition, fallback: "none"))
+                - Main subject: suppressed for product placeholder
+                - Composition: suppressed for product placeholder
+                - Product placeholder: yes
+                - Product placeholder detail handling: \(detailHandling)
+                """
+            }
+
+            return """
+            Slide \(blueprint.slideNumber):
+            - Visible text reference: \(templateBlueprintValue(blueprint.visibleText, fallback: "none"))
+            - Copy role: \(templateBlueprintValue(blueprint.copyRole, fallback: "unspecified"))
+            - Overlay position: \(blueprint.textPosition.rawValue)
+            - Person presence: \(templateBlueprintValue(blueprint.personPresence, fallback: "none"))
+            - Person position: \(templateBlueprintValue(blueprint.personPosition, fallback: "none"))
+            - Main subject: \(templateBlueprintValue(blueprint.mainSubject, fallback: "unspecified"))
+            - Composition: \(templateBlueprintValue(blueprint.composition, fallback: "unspecified"))
+            - Product placeholder: \(blueprint.isProductPlaceholder ? "yes" : "no")
+            """
+        }
+        .joined(separator: "\n")
+    }
+
+    private func templateBlueprintValue(_ value: String, fallback: String) -> String {
+        let normalized = value
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return normalized.isEmpty ? fallback : normalized
     }
 
     private func creationModelInstructions(for creationModel: SlideshowCreationModelReference?) -> String {

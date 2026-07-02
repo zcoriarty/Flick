@@ -3234,7 +3234,7 @@ private extension FlickAppModel {
                     imageAssetID: usesProductImage ? productImage?.asset.id : nil,
                     prompt: usesProductImage ? productImagePrompt(for: productImage) : plannedSlide.imagePrompt,
                     text: plannedSlide.text,
-                    textPosition: .center,
+                    textPosition: plannedSlide.textPosition,
                     textStyle: SlideTextStyle(),
                     selectedVisualSummary: selectedVisualSummary(for: plannedSlide, productImage: usesProductImage ? productImage : nil),
                     generationStatus: usesProductImage ? .complete : .notStarted,

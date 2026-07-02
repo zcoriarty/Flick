@@ -15,6 +15,7 @@ struct TemplateStyleGuide: Codable, Hashable {
     var avoidCopyingDirectly: [String]
     var imageGenerationRules: [String]
     var productImageSlideNumbers: [Int]
+    var slideBlueprints: [TemplateSlideBlueprint]
 
     private enum CodingKeys: String, CodingKey {
         case styleName
@@ -26,6 +27,7 @@ struct TemplateStyleGuide: Codable, Hashable {
         case avoidCopyingDirectly
         case imageGenerationRules
         case productImageSlideNumbers
+        case slideBlueprints
     }
 
     init(
@@ -37,7 +39,8 @@ struct TemplateStyleGuide: Codable, Hashable {
         reuseStructurally: [String],
         avoidCopyingDirectly: [String],
         imageGenerationRules: [String],
-        productImageSlideNumbers: [Int] = []
+        productImageSlideNumbers: [Int] = [],
+        slideBlueprints: [TemplateSlideBlueprint] = []
     ) {
         self.styleName = styleName
         self.visualTraits = visualTraits
@@ -48,6 +51,7 @@ struct TemplateStyleGuide: Codable, Hashable {
         self.avoidCopyingDirectly = avoidCopyingDirectly
         self.imageGenerationRules = imageGenerationRules
         self.productImageSlideNumbers = Self.normalizedSlideNumbers(productImageSlideNumbers)
+        self.slideBlueprints = Self.normalizedSlideBlueprints(slideBlueprints)
     }
 
     init(from decoder: Decoder) throws {
@@ -63,10 +67,19 @@ struct TemplateStyleGuide: Codable, Hashable {
         productImageSlideNumbers = Self.normalizedSlideNumbers(
             try container.decodeIfPresent([Int].self, forKey: .productImageSlideNumbers) ?? []
         )
+        slideBlueprints = Self.normalizedSlideBlueprints(
+            try container.decodeIfPresent([TemplateSlideBlueprint].self, forKey: .slideBlueprints) ?? []
+        )
     }
 
     private static func normalizedSlideNumbers(_ slideNumbers: [Int]) -> [Int] {
         Array(Set(slideNumbers.filter { $0 > 0 })).sorted()
+    }
+
+    private static func normalizedSlideBlueprints(_ blueprints: [TemplateSlideBlueprint]) -> [TemplateSlideBlueprint] {
+        blueprints
+            .filter { $0.slideNumber > 0 }
+            .sorted { $0.slideNumber < $1.slideNumber }
     }
 
     static var empty: TemplateStyleGuide {
@@ -79,9 +92,22 @@ struct TemplateStyleGuide: Codable, Hashable {
             reuseStructurally: [],
             avoidCopyingDirectly: [],
             imageGenerationRules: [],
-            productImageSlideNumbers: []
+            productImageSlideNumbers: [],
+            slideBlueprints: []
         )
     }
+}
+
+struct TemplateSlideBlueprint: Codable, Hashable {
+    var slideNumber: Int
+    var visibleText: String
+    var copyRole: String
+    var textPosition: TextPosition
+    var personPresence: String
+    var personPosition: String
+    var mainSubject: String
+    var composition: String
+    var isProductPlaceholder: Bool
 }
 
 struct PlannedSlideshow: Codable, Hashable {
@@ -304,7 +330,15 @@ struct SlideshowImageGenerationSettings: Hashable {
 
 extension TemplateStyleGuide {
     func productImageSlideNumbers(limitedTo slideCount: Int) -> [Int] {
-        productImageSlideNumbers.filter { $0 <= slideCount }
+        let explicitSlideNumbers = productImageSlideNumbers.filter { $0 <= slideCount }
+        if !explicitSlideNumbers.isEmpty {
+            return explicitSlideNumbers
+        }
+
+        return Array(Set(slideBlueprints
+            .filter { $0.slideNumber <= slideCount && $0.isProductPlaceholder }
+            .map(\.slideNumber)))
+            .sorted()
     }
 
     var promptSummary: String {
