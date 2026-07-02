@@ -280,7 +280,7 @@ final class FlickAppModel {
         if activeCreateDraftID == draftID {
             activeCreateDraftID = nil
         }
-        removeDraftOwnedMediaAssets(referencedBy: deletedDraft)
+        removeDraftOwnedMediaAssets(referencedBy: [deletedDraft])
 
         do {
             try await repository.saveOverview(overview)
@@ -297,18 +297,23 @@ final class FlickAppModel {
         activeCreateDraftID = nil
     }
 
-    private func removeDraftOwnedMediaAssets(referencedBy deletedDraft: SlideshowDraft) {
-        let deletedAssetIDs = deletedDraft.referencedAssetIDs
-        guard !deletedAssetIDs.isEmpty else { return }
+    private func removeDraftOwnedMediaAssets(referencedBy deletedDrafts: [SlideshowDraft]) {
+        let deletedAssetIDs = deletedDrafts.reduce(into: Set<UUID>()) { result, draft in
+            result.formUnion(draft.referencedAssetIDs)
+        }
+        let deletedDraftIDStrings = Set(deletedDrafts.map { $0.id.uuidString })
+        guard !deletedAssetIDs.isEmpty || !deletedDraftIDStrings.isEmpty else { return }
 
         let retainedAssetIDs = overview.drafts.reduce(into: Set<UUID>()) { result, draft in
             result.formUnion(draft.referencedAssetIDs)
         }
 
         overview.assets.removeAll { asset in
-            deletedAssetIDs.contains(asset.id)
-                && !retainedAssetIDs.contains(asset.id)
-                && asset.source != .uploaded
+            guard asset.source != .uploaded, !retainedAssetIDs.contains(asset.id) else {
+                return false
+            }
+
+            return deletedAssetIDs.contains(asset.id) || asset.isScoped(toAnyDraftIDStringIn: deletedDraftIDStrings)
         }
     }
 
@@ -1192,7 +1197,20 @@ final class FlickAppModel {
         guard overview.automations.contains(where: { $0.id == automationID }) else { return }
 
         let previousOverview = overview
+        let deletedDraftIDs = automationOwnedDraftIDs(for: automationID)
+        let deletedDrafts = overview.drafts.filter { deletedDraftIDs.contains($0.id) }
         overview.automations.removeAll { $0.id == automationID }
+        overview.automationPostProgresses.removeAll { progress in
+            progress.automationID == automationID || progress.draftID.map(deletedDraftIDs.contains) == true
+        }
+        overview.publishingJobs.removeAll { job in
+            job.automationID == automationID || deletedDraftIDs.contains(job.draftID)
+        }
+        overview.publishedPosts.removeAll { post in
+            post.automationID == automationID || deletedDraftIDs.contains(post.draftID)
+        }
+        overview.drafts.removeAll { deletedDraftIDs.contains($0.id) }
+        removeDraftOwnedMediaAssets(referencedBy: deletedDrafts)
         overview.refreshDerivedState()
 
         do {
@@ -1202,6 +1220,30 @@ final class FlickAppModel {
             overview = previousOverview
             lastErrorMessage = error.localizedDescription
         }
+    }
+
+    private func automationOwnedDraftIDs(for automationID: UUID) -> Set<UUID> {
+        var draftIDs = Set(
+            overview.drafts
+                .filter { $0.automationID == automationID }
+                .map(\.id)
+        )
+        draftIDs.formUnion(
+            overview.automationPostProgresses.compactMap { progress in
+                progress.automationID == automationID ? progress.draftID : nil
+            }
+        )
+        draftIDs.formUnion(
+            overview.publishingJobs.compactMap { job in
+                job.automationID == automationID ? job.draftID : nil
+            }
+        )
+        draftIDs.formUnion(
+            overview.publishedPosts.compactMap { post in
+                post.automationID == automationID ? post.draftID : nil
+            }
+        )
+        return draftIDs
     }
 
     func updateAutomationStatus(id automationID: UUID, status: ContentAutomationStatus) async {
@@ -2862,6 +2904,7 @@ private extension FlickAppModel {
                 overview.templates.insert(result.creativeTemplate, at: 0)
             }
             var generatedDraft = result.draft
+            generatedDraft.automationID = automation.id
             generatedDraft.targetPlatforms = automation.targetPlatforms
             generatedDraft.accountSelections = automation.accountSelections.normalizedUniqueSelections()
             generatedDraft.tikTokSettings = automation.tikTokSettings
@@ -4746,6 +4789,18 @@ private extension DraftTikTokSettings {
 private extension SlideshowDraft {
     var referencedAssetIDs: Set<UUID> {
         Set(slides.compactMap(\.imageAssetID)).union(exportedImageAssetIDs)
+    }
+}
+
+private extension MediaAsset {
+    func isScoped(toAnyDraftIDStringIn draftIDStrings: Set<String>) -> Bool {
+        guard !draftIDStrings.isEmpty else { return false }
+
+        return draftIDStrings.contains(where: { draftIDString in
+            storagePath?.contains(draftIDString) == true
+                || localFilePath?.contains(draftIDString) == true
+                || publicURL?.absoluteString.contains(draftIDString) == true
+        })
     }
 }
 

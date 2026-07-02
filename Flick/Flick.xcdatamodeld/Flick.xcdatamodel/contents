@@ -142,6 +142,7 @@
     </entity>
     <entity name="CDSlideshowDraft" representedClassName="CDSlideshowDraft" syncable="YES" codeGenerationType="class">
         <attribute name="accountSelectionsJSON" optional="YES" attributeType="String"/>
+        <attribute name="automationID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="audience" optional="YES" attributeType="String"/>
         <attribute name="brief" optional="YES" attributeType="String"/>
         <attribute name="caption" optional="YES" attributeType="String"/>

@@ -67,7 +67,7 @@ struct MacAutomationDetailView: View {
                     }
                     Button("Cancel", role: .cancel) { }
                 } message: {
-                    Text("This removes the automation schedule. Existing drafts and published post records are kept.")
+                    Text("This deletes the automation and its generated drafts, slides, progress, jobs, and published post records.")
                 }
             } else {
                 ContentUnavailableView(

@@ -694,6 +694,7 @@ final class CoreDataFlickRepository: FlickRepository {
 
     private func apply(_ draft: SlideshowDraft, to object: NSManagedObject) {
         object.setValue(draft.id, forKey: DraftKey.id)
+        object.setValue(draft.automationID, forKey: DraftKey.automationID)
         object.setValue(draft.title, forKey: DraftKey.title)
         object.setValue(draft.templateID, forKey: DraftKey.templateID)
         object.setValue(draft.creationModel?.id, forKey: DraftKey.creationModelID)
@@ -916,6 +917,7 @@ private enum TemplateKey {
 
 private enum DraftKey {
     static let accountSelectionsJSON = "accountSelectionsJSON"
+    static let automationID = "automationID"
     static let brief = "brief"
     static let caption = "caption"
     static let creationModelID = "creationModelID"
@@ -1192,6 +1194,7 @@ private extension SlideshowDraft {
 
         self.init(
             id: id,
+            automationID: managedObject.value(forKey: DraftKey.automationID) as? UUID,
             title: title,
             templateID: managedObject.value(forKey: DraftKey.templateID) as? UUID,
             creationModel: managedObject.decodedJSON(SlideshowCreationModelReference.self, forKey: DraftKey.creationModelJSON),

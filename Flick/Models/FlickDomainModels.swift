@@ -534,6 +534,7 @@ struct CreativeTemplate: Identifiable, Codable, Hashable {
 
 struct SlideshowDraft: Identifiable, Codable, Hashable {
     var id: UUID
+    var automationID: UUID?
     var title: String
     var templateID: UUID?
     var creationModel: SlideshowCreationModelReference?
@@ -561,6 +562,7 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
 
     init(
         id: UUID,
+        automationID: UUID? = nil,
         title: String,
         templateID: UUID?,
         creationModel: SlideshowCreationModelReference? = nil,
@@ -587,6 +589,7 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
         updatedAt: Date
     ) {
         self.id = id
+        self.automationID = automationID
         self.title = title
         self.templateID = templateID
         self.creationModel = creationModel
@@ -615,6 +618,7 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
 
     private enum CodingKeys: String, CodingKey {
         case id
+        case automationID
         case title
         case templateID
         case creationModel
@@ -644,6 +648,7 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
+        automationID = try container.decodeIfPresent(UUID.self, forKey: .automationID)
         title = try container.decode(String.self, forKey: .title)
         templateID = try container.decodeIfPresent(UUID.self, forKey: .templateID)
         creationModel = try container.decodeIfPresent(SlideshowCreationModelReference.self, forKey: .creationModel)

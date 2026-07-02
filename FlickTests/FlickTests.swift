@@ -81,7 +81,9 @@ final class FlickTests: XCTestCase {
         )
         let creationModel = makeCreationModel(now: now)
         let slide = makeSlide(imageAssetID: asset.id, generationStatus: .complete, now: now)
+        let automationID = UUID()
         let draft = makeSlideshowDraft(
+            automationID: automationID,
             slides: [slide],
             creationModel: creationModel.generationReference,
             imageVibe: .warmFilm,
@@ -100,6 +102,7 @@ final class FlickTests: XCTestCase {
 
         XCTAssertEqual(loadedSlide.imageAssetID, asset.id)
         XCTAssertEqual(loadedSlide.generationStatus, .complete)
+        XCTAssertEqual(loadedDraft.automationID, automationID)
         XCTAssertEqual(loadedDraft.creationModel?.id, creationModel.id)
         XCTAssertEqual(loadedDraft.creationModel?.name, creationModel.name)
         XCTAssertEqual(loadedDraft.imageVibe, .warmFilm)
@@ -1745,6 +1748,220 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(try managedObjectCount(entityName: "CDSlideshowDraft", in: context), 0)
         XCTAssertEqual(try managedObjectCount(entityName: "CDSlide", in: context), 0)
         XCTAssertEqual(try managedObjectCount(entityName: "CDAsset", in: context), 1)
+    }
+
+    func testDeletingAutomationRemovesOwnedDataButKeepsSameNameAutomation() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let automation = ContentAutomation(
+            name: "Weekday launches",
+            templateIDs: ["template-a"],
+            productID: nil,
+            productImageAssetIDs: [],
+            schedule: AutomationSchedule(),
+            tikTokSettings: DraftTikTokSettings(title: "Try Flick", privacyLevel: .publicToEveryone),
+            createdAt: now,
+            updatedAt: now
+        )
+        let sameNameAutomation = ContentAutomation(
+            name: automation.name,
+            templateIDs: ["template-b"],
+            productID: nil,
+            productImageAssetIDs: [],
+            schedule: AutomationSchedule(),
+            tikTokSettings: DraftTikTokSettings(title: "Try Flick", privacyLevel: .publicToEveryone),
+            createdAt: now,
+            updatedAt: now
+        )
+        let taggedDraftID = UUID()
+        let legacyDraftID = UUID()
+        let retainedDraftID = UUID()
+        let generatedAsset = makeMediaAsset(
+            source: .generated,
+            storagePath: "generated-slides/\(taggedDraftID.uuidString)/slide.png",
+            now: now
+        )
+        let renderedAsset = makeMediaAsset(
+            source: .rendered,
+            storagePath: "rendered-image-sequences/\(taggedDraftID.uuidString)/slide.jpg",
+            now: now
+        )
+        let legacyAsset = makeMediaAsset(
+            source: .generated,
+            storagePath: "generated-slides/\(legacyDraftID.uuidString)/slide.png",
+            now: now
+        )
+        let retainedAsset = makeMediaAsset(source: .generated, now: now)
+        let uploadedAsset = makeMediaAsset(source: .uploaded, now: now)
+        let scopedVideoAsset = MediaAsset(
+            id: UUID(),
+            mediaType: .video,
+            source: .rendered,
+            localFilePath: "/tmp/youtube-shorts-\(taggedDraftID.uuidString)-clip.mp4",
+            storageBucket: nil,
+            storagePath: nil,
+            publicURL: nil,
+            signedURLExpiration: nil,
+            width: 1080,
+            height: 1920,
+            duration: 12,
+            fileSize: 4096,
+            checksum: nil,
+            trendTags: [],
+            createdAt: now,
+            updatedAt: now
+        )
+        var taggedDraft = makeSlideshowDraft(
+            id: taggedDraftID,
+            automationID: automation.id,
+            slides: [
+                makeSlide(imageAssetID: generatedAsset.id, generationStatus: .complete, now: now),
+                makeSlide(imageAssetID: uploadedAsset.id, generationStatus: .complete, now: now)
+            ],
+            now: now
+        )
+        taggedDraft.exportedImageAssetIDs = [renderedAsset.id]
+        let legacyDraft = makeSlideshowDraft(
+            id: legacyDraftID,
+            slides: [makeSlide(imageAssetID: legacyAsset.id, generationStatus: .complete, now: now)],
+            now: now
+        )
+        let retainedDraft = makeSlideshowDraft(
+            id: retainedDraftID,
+            automationID: sameNameAutomation.id,
+            slides: [makeSlide(imageAssetID: retainedAsset.id, generationStatus: .complete, now: now)],
+            now: now
+        )
+        var deletedJob = makePublishingJob(status: .failed)
+        deletedJob.automationID = automation.id
+        deletedJob.draftID = legacyDraft.id
+        var retainedJob = makePublishingJob(status: .failed)
+        retainedJob.automationID = sameNameAutomation.id
+        retainedJob.draftID = retainedDraft.id
+        let deletedPost = PublishedPost(
+            id: UUID(),
+            platform: .tiktok,
+            accountID: UUID(),
+            automationID: automation.id,
+            platformPostID: "deleted-post",
+            platformURL: nil,
+            publishedAt: now,
+            draftID: taggedDraft.id,
+            templateID: nil,
+            trendTags: [],
+            caption: "Try Flick",
+            createdAt: now,
+            updatedAt: now
+        )
+        var deletedProgress = AutomationPostProgress.make(
+            automationID: automation.id,
+            title: "Launch Carousel",
+            productName: nil,
+            scheduledAt: now,
+            now: now
+        )
+        deletedProgress.draftID = legacyDraft.id
+
+        var state = FlickEmptyState.make()
+        state.assets = [generatedAsset, renderedAsset, legacyAsset, retainedAsset, uploadedAsset, scopedVideoAsset]
+        state.drafts = [taggedDraft, legacyDraft, retainedDraft]
+        state.automations = [automation, sameNameAutomation]
+        state.automationPostProgresses = [deletedProgress]
+        state.publishingJobs = [deletedJob, retainedJob]
+        state.publishedPosts = [deletedPost]
+        let repository = InMemoryFlickRepository(state: state)
+        let model = FlickAppModel(repository: repository, configuration: .current)
+
+        await model.refresh()
+        await model.deleteAutomation(id: automation.id)
+
+        XCTAssertEqual(model.overview.automations.map(\.id), [sameNameAutomation.id])
+        XCTAssertEqual(model.overview.drafts.map(\.id), [retainedDraft.id])
+        XCTAssertEqual(model.overview.publishingJobs.map(\.id), [retainedJob.id])
+        XCTAssertTrue(model.overview.publishedPosts.isEmpty)
+        XCTAssertTrue(model.overview.automationPostProgresses.isEmpty)
+        XCTAssertEqual(Set(model.overview.assets.map(\.id)), [retainedAsset.id, uploadedAsset.id])
+        XCTAssertEqual(repository.state.automations.map(\.id), [sameNameAutomation.id])
+        XCTAssertEqual(repository.state.drafts.map(\.id), [retainedDraft.id])
+        XCTAssertEqual(Set(repository.state.assets.map(\.id)), [retainedAsset.id, uploadedAsset.id])
+    }
+
+    func testDeletingAutomationRemovesOwnedRowsFromCoreData() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let persistenceController = PersistenceController(inMemory: true)
+        let context = persistenceController.container.viewContext
+        let repository = CoreDataFlickRepository(
+            context: context,
+            cloudAvailability: { false }
+        )
+        let automation = ContentAutomation(
+            name: "Weekday launches",
+            templateIDs: ["template-a"],
+            productID: nil,
+            productImageAssetIDs: [],
+            schedule: AutomationSchedule(),
+            tikTokSettings: DraftTikTokSettings(title: "Try Flick", privacyLevel: .publicToEveryone),
+            createdAt: now,
+            updatedAt: now
+        )
+        let asset = makeMediaAsset(source: .generated, now: now)
+        let draft = makeSlideshowDraft(
+            automationID: automation.id,
+            slides: [makeSlide(imageAssetID: asset.id, generationStatus: .complete, now: now)],
+            now: now
+        )
+        var job = makePublishingJob(status: .failed)
+        job.automationID = automation.id
+        job.draftID = draft.id
+        let post = PublishedPost(
+            id: UUID(),
+            platform: .tiktok,
+            accountID: UUID(),
+            automationID: automation.id,
+            platformPostID: "deleted-post",
+            platformURL: nil,
+            publishedAt: now,
+            draftID: draft.id,
+            templateID: nil,
+            trendTags: [],
+            caption: "Try Flick",
+            createdAt: now,
+            updatedAt: now
+        )
+        var progress = AutomationPostProgress.make(
+            automationID: automation.id,
+            title: "Launch Carousel",
+            productName: nil,
+            scheduledAt: now,
+            now: now
+        )
+        progress.draftID = draft.id
+        var state = FlickEmptyState.make()
+        state.assets = [asset]
+        state.drafts = [draft]
+        state.automations = [automation]
+        state.automationPostProgresses = [progress]
+        state.publishingJobs = [job]
+        state.publishedPosts = [post]
+        try await repository.saveOverview(state)
+
+        let model = FlickAppModel(repository: repository, configuration: .current)
+        await model.refresh()
+        await model.deleteAutomation(id: automation.id)
+        let loaded = try await repository.loadOverview()
+
+        XCTAssertTrue(loaded.automations.isEmpty)
+        XCTAssertTrue(loaded.drafts.isEmpty)
+        XCTAssertTrue(loaded.assets.isEmpty)
+        XCTAssertTrue(loaded.automationPostProgresses.isEmpty)
+        XCTAssertTrue(loaded.publishingJobs.isEmpty)
+        XCTAssertTrue(loaded.publishedPosts.isEmpty)
+        XCTAssertEqual(try managedObjectCount(entityName: "CDContentAutomation", in: context), 0)
+        XCTAssertEqual(try managedObjectCount(entityName: "CDSlideshowDraft", in: context), 0)
+        XCTAssertEqual(try managedObjectCount(entityName: "CDSlide", in: context), 0)
+        XCTAssertEqual(try managedObjectCount(entityName: "CDAsset", in: context), 0)
+        XCTAssertEqual(try managedObjectCount(entityName: "CDPublishingJob", in: context), 0)
+        XCTAssertEqual(try managedObjectCount(entityName: "CDPublishedPost", in: context), 0)
+        XCTAssertEqual(try managedObjectCount(entityName: "CDWorkflowState", in: context), 0)
     }
 
     func testGeneratedAssetWithMissingLocalFileCanUsePublicURL() throws {
@@ -4630,6 +4847,7 @@ private func removingTopLevelJSONKey(_ key: String, from data: Data) throws -> D
 
 private func makeSlideshowDraft(
     id: UUID = UUID(),
+    automationID: UUID? = nil,
     slides: [Slide]? = nil,
     creationModel: SlideshowCreationModelReference? = nil,
     imageVibe: SlideshowImageVibe = .defaultValue,
@@ -4637,6 +4855,7 @@ private func makeSlideshowDraft(
 ) -> SlideshowDraft {
     SlideshowDraft(
         id: id,
+        automationID: automationID,
         title: "Launch Carousel",
         templateID: nil,
         creationModel: creationModel,

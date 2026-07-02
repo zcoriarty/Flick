@@ -45,7 +45,7 @@ struct IOSAutomationDetailView: View {
                     }
                     Button("Cancel", role: .cancel) { }
                 } message: {
-                    Text("This removes the automation schedule. Existing drafts and published post records are kept.")
+                    Text("This deletes the automation and its generated drafts, slides, progress, jobs, and published post records.")
                 }
             } else {
                 ContentUnavailableView(
@@ -107,7 +107,7 @@ struct IOSAutomationDetailView: View {
                     title: "Delete Automation",
                     systemImage: "trash",
                     iconColor: .red,
-                    value: "Remove schedule",
+                    value: "Delete generated data",
                     valueLineLimit: 1
                 )
             }
