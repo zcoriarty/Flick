@@ -5110,6 +5110,10 @@ private final class InMemoryFlickRepository: FlickRepository {
         state.macRunnerHeartbeat = heartbeat
     }
 
+    func saveAutomationPostProgresses(_ progresses: [AutomationPostProgress]) async throws {
+        state.automationPostProgresses = progresses
+    }
+
     func upsertConnectedAccount(_ account: ConnectedAccount) async throws {
         state.accounts.removeAll { $0.id == account.id }
         state.accounts.insert(account, at: 0)

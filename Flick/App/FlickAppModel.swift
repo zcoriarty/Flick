@@ -2676,7 +2676,7 @@ private extension FlickAppModel {
 
     func persistAutomationPostProgresses() async {
         do {
-            try await repository.saveOverview(overview)
+            try await repository.saveAutomationPostProgresses(overview.automationPostProgresses)
         } catch {
             lastErrorMessage = error.localizedDescription
         }

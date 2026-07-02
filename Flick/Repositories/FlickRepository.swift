@@ -10,6 +10,7 @@ protocol FlickRepository {
     func loadOverview() async throws -> FlickOverviewState
     func saveOverview(_ state: FlickOverviewState) async throws
     func saveMacRunnerHeartbeat(_ heartbeat: MacRunnerHeartbeat) async throws
+    func saveAutomationPostProgresses(_ progresses: [AutomationPostProgress]) async throws
     func upsertConnectedAccount(_ account: ConnectedAccount) async throws
     func deleteConnectedAccount(id: UUID) async throws
     func upsertProduct(_ product: FlickProduct) async throws
@@ -28,6 +29,10 @@ struct EmptyFlickRepository: FlickRepository {
 
     func saveMacRunnerHeartbeat(_ heartbeat: MacRunnerHeartbeat) async throws {
         _ = heartbeat
+    }
+
+    func saveAutomationPostProgresses(_ progresses: [AutomationPostProgress]) async throws {
+        _ = progresses
     }
 
     func upsertConnectedAccount(_ account: ConnectedAccount) async throws {

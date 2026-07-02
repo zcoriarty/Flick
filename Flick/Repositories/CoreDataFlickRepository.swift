@@ -59,6 +59,11 @@ final class CoreDataFlickRepository: FlickRepository {
         try saveIfNeeded()
     }
 
+    func saveAutomationPostProgresses(_ progresses: [AutomationPostProgress]) async throws {
+        try syncAutomationPostProgresses(progresses)
+        try saveIfNeeded()
+    }
+
     func upsertConnectedAccount(_ account: ConnectedAccount) async throws {
         let object = try fetchConnectedAccount(id: account.id) ?? insertConnectedAccountObject()
         apply(account, to: object)

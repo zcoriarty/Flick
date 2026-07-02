@@ -9,14 +9,10 @@ import SwiftUI
 struct IOSDashboardView: View {
     @Environment(FlickAppModel.self) private var appModel
     @State private var exampleTemplates: [ExampleSlideshowTemplate] = []
-    @State private var statusRefreshDate = Date()
     private let chartHeaderHorizontalOffset: CGFloat = 16
 
-    private var automationSnapshot: AutomationDashboardSnapshot {
-        AutomationDashboardSnapshot.make(
-            overview: appModel.overview,
-            exampleTemplates: exampleTemplates
-        )
+    private var activeAutomationPostProgresses: [AutomationPostProgress] {
+        appModel.overview.automationPostProgresses.activeAutomationPostProgresses
     }
 
     private var awaitingPublishingJobs: [PublishingJob] {
@@ -29,13 +25,6 @@ struct IOSDashboardView: View {
         appModel.overview.accounts
             .filter { $0.authorizationSource == .loginKit || $0.authorizationSource == .nativeOAuth }
             .count
-    }
-
-    private var macRunnerStatus: MacRunnerStatus {
-        MacRunnerStatus(
-            heartbeat: appModel.overview.macRunnerHeartbeat,
-            now: statusRefreshDate
-        )
     }
 
     var body: some View {
@@ -53,7 +42,7 @@ struct IOSDashboardView: View {
 
             overviewSections
 
-            if !automationSnapshot.activeProgresses.isEmpty {
+            if !activeAutomationPostProgresses.isEmpty {
                 inProgressSection
             }
         }
@@ -65,13 +54,10 @@ struct IOSDashboardView: View {
         .task {
             await loadExampleTemplates()
         }
-        .task {
-            await runMacRunnerStatusClock()
-        }
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                MacRunnerStatusLabel(status: macRunnerStatus)
+                MacRunnerStatusTimelineLabel(heartbeat: appModel.overview.macRunnerHeartbeat)
                     .fixedSize(horizontal: true, vertical: false)
             }
             .sharedBackgroundVisibility(.hidden)
@@ -136,7 +122,7 @@ struct IOSDashboardView: View {
 
     private var inProgressSection: some View {
         Section("In Progress") {
-            ForEach(automationSnapshot.activeProgresses) { progress in
+            ForEach(activeAutomationPostProgresses) { progress in
                 AutomationProgressSummaryRow(progress: progress)
             }
         }
@@ -160,14 +146,6 @@ struct IOSDashboardView: View {
             exampleTemplates = []
         }
     }
-
-    @MainActor
-    private func runMacRunnerStatusClock(interval: Duration = .seconds(30)) async {
-        while !Task.isCancelled {
-            statusRefreshDate = Date()
-            try? await Task.sleep(for: interval)
-        }
-    }
 }
 
 private enum MacRunnerStatus {
@@ -189,6 +167,21 @@ private enum MacRunnerStatus {
         switch self {
         case .running: .green
         case .stopped: .red
+        }
+    }
+}
+
+private struct MacRunnerStatusTimelineLabel: View {
+    var heartbeat: MacRunnerHeartbeat
+
+    var body: some View {
+        TimelineView(.periodic(from: Date(), by: 30)) { context in
+            MacRunnerStatusLabel(
+                status: MacRunnerStatus(
+                    heartbeat: heartbeat,
+                    now: context.date
+                )
+            )
         }
     }
 }

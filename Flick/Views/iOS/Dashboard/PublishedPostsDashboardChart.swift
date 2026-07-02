@@ -18,6 +18,7 @@ struct PublishedPostsDashboardChart: View {
     @State private var selectedBucketIndex: Int?
     @State private var hasInteractedWithChart = false
     @State private var selectionResetToken = 0
+    @State private var resolvedState: PublishedPostsChartResolvedState
 
     private static let selectionResetDelay: Duration = .seconds(6)
 
@@ -34,88 +35,50 @@ struct PublishedPostsDashboardChart: View {
         .brown
     ]
 
-    private var accountByID: [UUID: ConnectedAccount] {
-        Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0) })
-    }
-
-    private var chartEvents: [PublishedPostsChartEvent] {
-        selectedPostType.events(posts: posts, publishingJobs: publishingJobs)
+    init(
+        posts: [PublishedPost],
+        publishingJobs: [PublishingJob],
+        accounts: [ConnectedAccount],
+        horizontalPadding: CGFloat = 16
+    ) {
+        self.posts = posts
+        self.publishingJobs = publishingJobs
+        self.accounts = accounts
+        self.horizontalPadding = horizontalPadding
+        _resolvedState = State(
+            initialValue: Self.makeResolvedState(
+                posts: posts,
+                publishingJobs: publishingJobs,
+                accounts: accounts,
+                selectedPostType: .sent,
+                selectedPlatform: nil,
+                selectedAccountID: nil
+            )
+        )
     }
 
     private var platformOptions: [SocialPlatform] {
-        SocialPlatform.allCases.filter { platform in
-            chartEvents.contains { $0.platform == platform }
-        }
+        resolvedState.platformOptions
     }
 
     private var effectiveSelectedPlatform: SocialPlatform? {
-        guard let selectedPlatform,
-              platformOptions.contains(selectedPlatform)
-        else { return nil }
-
-        return selectedPlatform
+        resolvedState.effectiveSelectedPlatform
     }
 
     private var accountOptions: [PublishedPostsAccountOption] {
-        guard let effectiveSelectedPlatform else { return [] }
-
-        let platformEvents = chartEvents.filter { $0.platform == effectiveSelectedPlatform }
-        let eventsByAccountID = Dictionary(grouping: platformEvents, by: \.accountID)
-
-        return eventsByAccountID.map { accountID, accountEvents in
-            let account = accountByID[accountID]
-            return PublishedPostsAccountOption(
-                id: accountID,
-                displayName: account?.displayName.trimmedNonEmpty ?? "Unavailable account",
-                platformUserID: account?.platformUserID.trimmedNonEmpty,
-                postCount: accountEvents.count
-            )
-        }
-        .sorted {
-            if $0.postCount == $1.postCount {
-                return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
-            }
-            return $0.postCount > $1.postCount
-        }
+        resolvedState.accountOptions
     }
 
     private var accountColorByID: [UUID: Color] {
-        Dictionary(uniqueKeysWithValues: accountOptions.enumerated().map { index, option in
-            (option.id, Self.accountPalette[index % Self.accountPalette.count])
-        })
+        resolvedState.accountColorByID
     }
 
     private var effectiveSelectedAccountID: UUID? {
-        guard effectiveSelectedPlatform != nil,
-              let selectedAccountID,
-              accountOptions.contains(where: { $0.id == selectedAccountID })
-        else { return nil }
-
-        return selectedAccountID
-    }
-
-    private var filteredEvents: [PublishedPostsChartEvent] {
-        chartEvents.filter { event in
-            if let effectiveSelectedPlatform, event.platform != effectiveSelectedPlatform {
-                return false
-            }
-
-            if let effectiveSelectedAccountID, event.accountID != effectiveSelectedAccountID {
-                return false
-            }
-
-            return true
-        }
+        resolvedState.effectiveSelectedAccountID
     }
 
     private var snapshot: PublishedPostsChartSnapshot {
-        PublishedPostsChartSnapshot.make(
-            events: filteredEvents,
-            selectedPlatform: effectiveSelectedPlatform,
-            selectedAccountID: effectiveSelectedAccountID,
-            accountOptions: accountOptions,
-            accountColorByID: accountColorByID
-        )
+        resolvedState.snapshot
     }
 
     private var effectiveSelectedBucket: PublishedPostsChartBucket? {
@@ -162,19 +125,28 @@ struct PublishedPostsDashboardChart: View {
         }
         .padding(.horizontal, horizontalPadding)
         .onChange(of: posts) { _, _ in
+            updateResolvedState()
             resetSelection()
         }
         .onChange(of: publishingJobs) { _, _ in
+            updateResolvedState()
+            resetSelection()
+        }
+        .onChange(of: accounts) { _, _ in
+            updateResolvedState()
             resetSelection()
         }
         .onChange(of: selectedPostType) { _, _ in
+            updateResolvedState()
             resetSelection()
         }
         .onChange(of: selectedPlatform) { _, _ in
             selectedAccountID = nil
+            updateResolvedState()
             resetSelection()
         }
         .onChange(of: selectedAccountID) { _, _ in
+            updateResolvedState()
             resetSelection()
         }
         .task(id: selectionResetToken) {
@@ -191,6 +163,100 @@ struct PublishedPostsDashboardChart: View {
         }
         .animation(.spring(response: 0.34, dampingFraction: 0.86), value: snapshot.animationID)
         .accessibilityElement(children: .contain)
+    }
+
+    private static func makeResolvedState(
+        posts: [PublishedPost],
+        publishingJobs: [PublishingJob],
+        accounts: [ConnectedAccount],
+        selectedPostType: PublishedPostsChartType,
+        selectedPlatform: SocialPlatform?,
+        selectedAccountID: UUID?
+    ) -> PublishedPostsChartResolvedState {
+        let accountByID = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0) })
+        let chartEvents = selectedPostType.events(posts: posts, publishingJobs: publishingJobs)
+        let platformOptions = SocialPlatform.allCases.filter { platform in
+            chartEvents.contains { $0.platform == platform }
+        }
+        let effectiveSelectedPlatform = selectedPlatform.flatMap { platform in
+            platformOptions.contains(platform) ? platform : nil
+        }
+        let accountOptions: [PublishedPostsAccountOption]
+
+        if let effectiveSelectedPlatform {
+            let platformEvents = chartEvents.filter { $0.platform == effectiveSelectedPlatform }
+            let eventsByAccountID = Dictionary(grouping: platformEvents, by: \.accountID)
+
+            accountOptions = eventsByAccountID.map { accountID, accountEvents in
+                let account = accountByID[accountID]
+                return PublishedPostsAccountOption(
+                    id: accountID,
+                    displayName: account?.displayName.trimmedNonEmpty ?? "Unavailable account",
+                    platformUserID: account?.platformUserID.trimmedNonEmpty,
+                    postCount: accountEvents.count
+                )
+            }
+            .sorted {
+                if $0.postCount == $1.postCount {
+                    return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+                }
+                return $0.postCount > $1.postCount
+            }
+        } else {
+            accountOptions = []
+        }
+
+        let accountColorByID = Dictionary(uniqueKeysWithValues: accountOptions.enumerated().map { index, option in
+            (option.id, Self.accountPalette[index % Self.accountPalette.count])
+        })
+        let effectiveSelectedAccountID: UUID?
+
+        if effectiveSelectedPlatform != nil,
+           let selectedAccountID,
+           accountOptions.contains(where: { $0.id == selectedAccountID }) {
+            effectiveSelectedAccountID = selectedAccountID
+        } else {
+            effectiveSelectedAccountID = nil
+        }
+
+        let filteredEvents = chartEvents.filter { event in
+            if let effectiveSelectedPlatform, event.platform != effectiveSelectedPlatform {
+                return false
+            }
+
+            if let effectiveSelectedAccountID, event.accountID != effectiveSelectedAccountID {
+                return false
+            }
+
+            return true
+        }
+        let snapshot = PublishedPostsChartSnapshot.make(
+            events: filteredEvents,
+            selectedPlatform: effectiveSelectedPlatform,
+            selectedAccountID: effectiveSelectedAccountID,
+            accountOptions: accountOptions,
+            accountColorByID: accountColorByID
+        )
+
+        return PublishedPostsChartResolvedState(
+            platformOptions: platformOptions,
+            effectiveSelectedPlatform: effectiveSelectedPlatform,
+            accountOptions: accountOptions,
+            accountColorByID: accountColorByID,
+            effectiveSelectedAccountID: effectiveSelectedAccountID,
+            snapshot: snapshot
+        )
+    }
+
+    private func updateResolvedState() {
+        resolvedState = Self.makeResolvedState(
+            posts: posts,
+            publishingJobs: publishingJobs,
+            accounts: accounts,
+            selectedPostType: selectedPostType,
+            selectedPlatform: selectedPlatform,
+            selectedAccountID: selectedAccountID
+        )
     }
 
     private var filterControls: some View {
@@ -797,6 +863,15 @@ private enum PublishedPostsChartType: String, CaseIterable, Identifiable {
                 )
             }
     }
+}
+
+private struct PublishedPostsChartResolvedState {
+    var platformOptions: [SocialPlatform]
+    var effectiveSelectedPlatform: SocialPlatform?
+    var accountOptions: [PublishedPostsAccountOption]
+    var accountColorByID: [UUID: Color]
+    var effectiveSelectedAccountID: UUID?
+    var snapshot: PublishedPostsChartSnapshot
 }
 
 private struct PublishedPostsChartEvent: Identifiable, Hashable {
