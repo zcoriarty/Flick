@@ -155,6 +155,11 @@ private func imageDimensionValue(_ value: Any?) -> Int? {
     return nil
 }
 
+private struct OverlayTextLayout {
+    var attributedText: NSAttributedString
+    var boundingSize: CGSize
+}
+
 #if canImport(UIKit)
 @MainActor
 private func renderImageDataWithUIKit(background: CGImage, slide: Slide, options: ImageRenderOptions) -> Data {
@@ -194,6 +199,69 @@ private func drawOverlayTextUIKit(slide: Slide, canvasSize: CGSize) {
 
     let overlayRect = overlayContainerRect(for: slide.textPosition, canvasSize: canvasSize)
     let textRect = overlayRect.insetBy(dx: 0, dy: canvasSize.height * 0.04)
+    let layout = fittedOverlayTextLayoutUIKit(
+        text: text,
+        slide: slide,
+        canvasSize: canvasSize,
+        textRect: textRect
+    )
+    let drawRect = alignedTextRect(for: layout.boundingSize, in: textRect, position: slide.textPosition)
+    layout.attributedText.draw(with: drawRect, options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
+}
+
+private func fittedOverlayTextLayoutUIKit(
+    text: String,
+    slide: Slide,
+    canvasSize: CGSize,
+    textRect: CGRect
+) -> OverlayTextLayout {
+    let baseFontSize = canvasSize.height * 0.058 * slide.textStyle.sizeScale
+    let minimumFontSize = max(8, baseFontSize * 0.45)
+    let baseLayout = overlayTextLayoutUIKit(
+        text: text,
+        slide: slide,
+        fontSize: baseFontSize,
+        maxWidth: textRect.width
+    )
+    guard baseLayout.boundingSize.height > textRect.height else {
+        return baseLayout
+    }
+
+    var lowerBound = minimumFontSize
+    var upperBound = baseFontSize
+    var bestLayout = overlayTextLayoutUIKit(
+        text: text,
+        slide: slide,
+        fontSize: minimumFontSize,
+        maxWidth: textRect.width
+    )
+
+    for _ in 0..<7 {
+        let candidateFontSize = (lowerBound + upperBound) / 2
+        let candidate = overlayTextLayoutUIKit(
+            text: text,
+            slide: slide,
+            fontSize: candidateFontSize,
+            maxWidth: textRect.width
+        )
+
+        if candidate.boundingSize.height <= textRect.height {
+            bestLayout = candidate
+            lowerBound = candidateFontSize
+        } else {
+            upperBound = candidateFontSize
+        }
+    }
+
+    return bestLayout
+}
+
+private func overlayTextLayoutUIKit(
+    text: String,
+    slide: Slide,
+    fontSize: CGFloat,
+    maxWidth: CGFloat
+) -> OverlayTextLayout {
     let attributedText = NSMutableAttributedString()
     let paragraph = NSMutableParagraphStyle()
     paragraph.alignment = NSTextAlignment(slide.textPosition)
@@ -202,7 +270,7 @@ private func drawOverlayTextUIKit(slide: Slide, canvasSize: CGSize) {
 
     let headlineFont = UIFont.flickFont(
         name: slide.textStyle.fontName,
-        size: canvasSize.height * 0.058 * slide.textStyle.sizeScale,
+        size: fontSize,
         weight: UIFont.Weight(slide.textStyle.weight)
     )
     let foreground = UIColor(hex: slide.textStyle.foregroundHex)
@@ -220,12 +288,11 @@ private func drawOverlayTextUIKit(slide: Slide, canvasSize: CGSize) {
     ))
 
     let boundingSize = attributedText.boundingRect(
-        with: textRect.size,
+        with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
         options: [.usesLineFragmentOrigin, .usesFontLeading],
         context: nil
     ).integral.size
-    let drawRect = alignedTextRect(for: boundingSize, in: textRect, position: slide.textPosition)
-    attributedText.draw(with: drawRect, options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
+    return OverlayTextLayout(attributedText: attributedText, boundingSize: boundingSize)
 }
 #endif
 
@@ -282,13 +349,76 @@ private func drawOverlayTextAppKit(slide: Slide, canvasSize: CGSize) {
 
     let overlayRect = overlayContainerRect(for: slide.textPosition, canvasSize: canvasSize)
     let textRect = overlayRect.insetBy(dx: 0, dy: canvasSize.height * 0.04)
+    let layout = fittedOverlayTextLayoutAppKit(
+        text: text,
+        slide: slide,
+        canvasSize: canvasSize,
+        textRect: textRect
+    )
+    let drawRect = alignedTextRect(for: layout.boundingSize, in: textRect, position: slide.textPosition)
+    layout.attributedText.draw(with: drawRect, options: [.usesLineFragmentOrigin, .usesFontLeading])
+}
+
+private func fittedOverlayTextLayoutAppKit(
+    text: String,
+    slide: Slide,
+    canvasSize: CGSize,
+    textRect: CGRect
+) -> OverlayTextLayout {
+    let baseFontSize = canvasSize.height * 0.058 * slide.textStyle.sizeScale
+    let minimumFontSize = max(8, baseFontSize * 0.45)
+    let baseLayout = overlayTextLayoutAppKit(
+        text: text,
+        slide: slide,
+        fontSize: baseFontSize,
+        maxWidth: textRect.width
+    )
+    guard baseLayout.boundingSize.height > textRect.height else {
+        return baseLayout
+    }
+
+    var lowerBound = minimumFontSize
+    var upperBound = baseFontSize
+    var bestLayout = overlayTextLayoutAppKit(
+        text: text,
+        slide: slide,
+        fontSize: minimumFontSize,
+        maxWidth: textRect.width
+    )
+
+    for _ in 0..<7 {
+        let candidateFontSize = (lowerBound + upperBound) / 2
+        let candidate = overlayTextLayoutAppKit(
+            text: text,
+            slide: slide,
+            fontSize: candidateFontSize,
+            maxWidth: textRect.width
+        )
+
+        if candidate.boundingSize.height <= textRect.height {
+            bestLayout = candidate
+            lowerBound = candidateFontSize
+        } else {
+            upperBound = candidateFontSize
+        }
+    }
+
+    return bestLayout
+}
+
+private func overlayTextLayoutAppKit(
+    text: String,
+    slide: Slide,
+    fontSize: CGFloat,
+    maxWidth: CGFloat
+) -> OverlayTextLayout {
     let attributedText = NSMutableAttributedString()
     let paragraph = NSMutableParagraphStyle()
     paragraph.alignment = NSTextAlignment(slide.textPosition)
     paragraph.lineBreakMode = .byWordWrapping
     paragraph.lineSpacing = 8
 
-    let headlineFont = NSFont.systemFont(ofSize: canvasSize.height * 0.058 * slide.textStyle.sizeScale, weight: NSFont.Weight(slide.textStyle.weight))
+    let headlineFont = NSFont.systemFont(ofSize: fontSize, weight: NSFont.Weight(slide.textStyle.weight))
     let foreground = NSColor(hex: slide.textStyle.foregroundHex)
     let outline = NSColor(hex: slide.textStyle.outlineColorHex)
 
@@ -304,11 +434,10 @@ private func drawOverlayTextAppKit(slide: Slide, canvasSize: CGSize) {
     ))
 
     let boundingSize = attributedText.boundingRect(
-        with: textRect.size,
+        with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
         options: [.usesLineFragmentOrigin, .usesFontLeading]
     ).integral.size
-    let drawRect = alignedTextRect(for: boundingSize, in: textRect, position: slide.textPosition)
-    attributedText.draw(with: drawRect, options: [.usesLineFragmentOrigin, .usesFontLeading])
+    return OverlayTextLayout(attributedText: attributedText, boundingSize: boundingSize)
 }
 #endif
 

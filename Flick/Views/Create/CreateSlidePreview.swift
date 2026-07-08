@@ -119,16 +119,19 @@ struct SlideOverlayPreview: View {
 
     var body: some View {
         GeometryReader { proxy in
+            let frame = overlayFrame(in: proxy.size)
+
             overlayContent
-                .frame(width: overlayFrame(in: proxy.size).width, height: overlayFrame(in: proxy.size).height, alignment: overlayAlignment)
-                .position(x: overlayFrame(in: proxy.size).midX, y: overlayFrame(in: proxy.size).midY)
+                .frame(width: frame.width, height: frame.height, alignment: overlayAlignment)
+                .clipped()
+                .position(x: frame.midX, y: frame.midY)
         }
     }
 
     private var overlayContent: some View {
-        VStack(alignment: stackAlignment, spacing: 6) {
+        Group {
             if !slide.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                OutlinedSlideText(
+                FittedOutlinedSlideText(
                     text: slide.text,
                     textStyle: slide.textStyle,
                     textAlignment: textAlignment
@@ -137,17 +140,6 @@ struct SlideOverlayPreview: View {
         }
         .multilineTextAlignment(textAlignment)
         .padding(.vertical, 24)
-    }
-
-    private var stackAlignment: HorizontalAlignment {
-        switch slide.textPosition {
-        case .right:
-            .trailing
-        case .center, .top, .bottom:
-            .center
-        case .left, .split:
-            .leading
-        }
     }
 
     private var textAlignment: TextAlignment {
@@ -204,12 +196,72 @@ struct SlideOverlayPreview: View {
     }
 }
 
+private struct FittedOutlinedSlideText: View {
+    private static let minimumFontScale: CGFloat = 0.55
+
+    var text: String
+    var textStyle: SlideTextStyle
+    var textAlignment: TextAlignment
+
+    var body: some View {
+        GeometryReader { proxy in
+            ViewThatFits(in: .vertical) {
+                fittedText(fontScale: 1)
+                fittedText(fontScale: 0.92)
+                fittedText(fontScale: 0.84)
+                fittedText(fontScale: 0.76)
+                fittedText(fontScale: 0.68)
+                fittedText(fontScale: 0.6)
+                fittedText(fontScale: Self.minimumFontScale)
+                fittedText(
+                    fontScale: Self.minimumFontScale,
+                    lineLimit: fallbackLineLimit(in: proxy.size.height)
+                )
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: textFrameAlignment)
+            .clipped()
+        }
+    }
+
+    private func fittedText(fontScale: CGFloat, lineLimit: Int? = nil) -> some View {
+        OutlinedSlideText(
+            text: text,
+            textStyle: textStyle,
+            textAlignment: textAlignment,
+            fontScale: fontScale,
+            lineLimit: lineLimit
+        )
+        .frame(maxWidth: .infinity, alignment: textFrameAlignment)
+    }
+
+    private func fallbackLineLimit(in height: CGFloat) -> Int {
+        let fontSize = CGFloat(24 * textStyle.sizeScale) * Self.minimumFontScale
+        let strokeWidth = CGFloat(1.45 * textStyle.sizeScale) * Self.minimumFontScale
+        let availableTextHeight = max(0, height - strokeWidth * 4)
+        let estimatedLineHeight = max(1, fontSize * 1.2)
+        return max(1, Int((availableTextHeight / estimatedLineHeight).rounded(.down)))
+    }
+
+    private var textFrameAlignment: Alignment {
+        switch textAlignment {
+        case .leading:
+            .leading
+        case .trailing:
+            .trailing
+        case .center:
+            .center
+        }
+    }
+}
+
 private struct OutlinedSlideText: View {
     private let symbolID = "slide-text-stroke"
 
     var text: String
     var textStyle: SlideTextStyle
     var textAlignment: TextAlignment
+    var fontScale: CGFloat = 1
+    var lineLimit: Int?
 
     var body: some View {
         baseText
@@ -234,16 +286,17 @@ private struct OutlinedSlideText: View {
                 design: textStyle.swiftUIFontDesign
             ))
             .minimumScaleFactor(0.55)
-            .lineLimit(4)
+            .lineLimit(lineLimit)
+            .fixedSize(horizontal: false, vertical: true)
             .multilineTextAlignment(textAlignment)
     }
 
     private var fontSize: CGFloat {
-        CGFloat(24 * textStyle.sizeScale)
+        CGFloat(24 * textStyle.sizeScale) * fontScale
     }
 
     private var strokeWidth: CGFloat {
-        CGFloat(1.45 * textStyle.sizeScale)
+        CGFloat(1.45 * textStyle.sizeScale) * fontScale
     }
 
     private var textFrameAlignment: Alignment {
@@ -265,7 +318,9 @@ private struct OutlinedSlideText: View {
             String(format: "%.2f", textStyle.sizeScale),
             textStyle.foregroundHex,
             textStyle.outlineColorHex,
-            textAlignment.renderID
+            textAlignment.renderID,
+            String(format: "%.2f", fontScale),
+            lineLimit.map(String.init) ?? "unlimited"
         ].joined(separator: "|")
     }
 
