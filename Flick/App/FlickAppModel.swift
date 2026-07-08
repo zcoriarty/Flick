@@ -1576,8 +1576,8 @@ final class FlickAppModel {
         }
     }
 
-    func beginManualPublishProgress(for draft: SlideshowDraft) {
-        manualPublishProgress = ManualPublishProgress.make(for: draft)
+    func beginManualPublishProgress(for draft: SlideshowDraft, platforms: Set<SocialPlatform>? = nil) {
+        manualPublishProgress = ManualPublishProgress.make(for: draft, platforms: platforms)
         logPublish("Manual publish progress opened draftID=\(draft.id.uuidString) slideCount=\(draft.slides.count)")
     }
 
@@ -1604,7 +1604,7 @@ final class FlickAppModel {
                 throw SlideshowCreationError.missingDraft
             }
             if manualPublishProgress == nil || manualPublishProgress?.isFinished == true {
-                beginManualPublishProgress(for: draft)
+                beginManualPublishProgress(for: draft, platforms: [.tiktok])
             }
             startPublishStep(ManualPublishProgressStepID.validate, detail: "Checking account, media, and TikTok options.")
             reconcileLoginKitAccountTokenStatus()
@@ -1635,7 +1635,7 @@ final class FlickAppModel {
             completePublishStep(ManualPublishProgressStepID.createJob, detail: "Publish job \(job.id.uuidString.prefix(8)) created.")
 
             logPublish("Manual TikTok publish started draftID=\(draftID.uuidString) jobID=\(job.id.uuidString) mode=\(settings.publishMode.rawValue)")
-            let renderedAssetIDs = try await renderImageSequenceForPublish(
+            let renderedImageSequence = try await renderImageSequenceForPublish(
                 for: draftID,
                 automationProgressID: automationProgressID
             )
@@ -1645,7 +1645,7 @@ final class FlickAppModel {
                 throw SlideshowCreationError.missingDraft
             }
             let refreshedDraft = overview.drafts[refreshedDraftIndex]
-            let imageURLs = try publishableImageURLs(forRenderedAssetIDs: renderedAssetIDs)
+            let imageURLs = renderedImageSequence.imageURLs
 
             updatePublishingJob(job.id, status: .publishing)
             job.status = .publishing
@@ -1762,7 +1762,17 @@ final class FlickAppModel {
                 throw SlideshowCreationError.missingDraft
             }
             if manualPublishProgress == nil || manualPublishProgress?.isFinished == true {
-                beginManualPublishProgress(for: draft)
+                var progressPlatforms = Set<SocialPlatform>()
+                if tikTokSettings != nil {
+                    progressPlatforms.insert(.tiktok)
+                }
+                if youtubeSettings != nil {
+                    progressPlatforms.insert(.youtubeShorts)
+                }
+                beginManualPublishProgress(
+                    for: draft,
+                    platforms: progressPlatforms.isEmpty ? nil : progressPlatforms
+                )
             }
 
             startPublishStep(ManualPublishProgressStepID.validate, detail: "Checking selected accounts and platform settings.")
@@ -1820,15 +1830,14 @@ final class FlickAppModel {
 
             var tikTokMedia: PreparedPlatformMedia?
             if tikTokSettings != nil, !tikTokAccountIDs.isEmpty {
-                let renderedAssetIDs = try await renderImageSequenceForPublish(
+                let renderedImageSequence = try await renderImageSequenceForPublish(
                     for: draftID,
                     automationProgressID: automationProgressID
                 )
                 reconcileStoredMediaPublicURLs()
-                let imageURLs = try publishableImageURLs(forRenderedAssetIDs: renderedAssetIDs)
                 tikTokMedia = PreparedPlatformMedia(
                     mode: tikTokSettings?.publishMode ?? .photoDirectPost,
-                    imageURLs: imageURLs,
+                    imageURLs: renderedImageSequence.imageURLs,
                     videoURL: nil,
                     warnings: []
                 )
@@ -2474,6 +2483,11 @@ private struct ImportedTemplateManifest: Codable, Hashable {
         }
         return json
     }
+}
+
+struct RenderedPublishImageSequence: Hashable {
+    var assetIDs: [UUID]
+    var imageURLs: [URL]
 }
 
 enum SlideshowCreationError: LocalizedError {
@@ -3534,7 +3548,7 @@ private extension FlickAppModel {
     func renderImageSequenceForPublish(
         for draftID: UUID,
         automationProgressID: UUID? = nil
-    ) async throws -> [UUID] {
+    ) async throws -> RenderedPublishImageSequence {
         guard let draftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) else {
             throw SlideshowCreationError.missingDraft
         }
@@ -3563,6 +3577,8 @@ private extension FlickAppModel {
 
         createWorkflowMessage = "Uploading rendered images..."
         var renderedAssetIDs: [UUID] = []
+        var renderedAssets: [MediaAsset] = []
+        var imageURLs: [URL] = []
         for (offset, renderedImage) in renderedImages.enumerated() {
             let uploadStepID = ManualPublishProgressStepID.uploadSlide(renderedImage.slideID)
             await startAutomationPostProgressStep(
@@ -3606,8 +3622,9 @@ private extension FlickAppModel {
                 createdAt: Date(),
                 updatedAt: Date()
             )
-            overview.assets.insert(asset, at: 0)
+            renderedAssets.append(asset)
             renderedAssetIDs.append(assetID)
+            imageURLs.append(publicURL)
             completePublishStep(uploadStepID, detail: "Uploaded rendered image to Cloudflare R2.")
         }
         await completeAutomationPostProgressStep(
@@ -3616,14 +3633,18 @@ private extension FlickAppModel {
             detail: "Uploaded \(renderedAssetIDs.count) rendered images."
         )
 
-        if let refreshedDraftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) {
-            overview.drafts[refreshedDraftIndex].exportedImageAssetIDs = renderedAssetIDs
-            overview.drafts[refreshedDraftIndex].updatedAt = Date()
+        let committedAssetIDs = Set(renderedAssetIDs)
+        overview.assets.removeAll { committedAssetIDs.contains($0.id) }
+        overview.assets.insert(contentsOf: renderedAssets, at: 0)
+        guard let refreshedDraftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) else {
+            throw SlideshowCreationError.missingDraft
         }
+        overview.drafts[refreshedDraftIndex].exportedImageAssetIDs = renderedAssetIDs
+        overview.drafts[refreshedDraftIndex].updatedAt = Date()
 
         try await repository.saveOverview(overview)
-        logPublish("Rendered publish image sequence draftID=\(draftID.uuidString) renderedCount=\(renderedAssetIDs.count)")
-        return renderedAssetIDs
+        logPublish("Rendered publish image sequence draftID=\(draftID.uuidString) renderedCount=\(renderedAssetIDs.count) publicURLCount=\(imageURLs.count)")
+        return RenderedPublishImageSequence(assetIDs: renderedAssetIDs, imageURLs: imageURLs)
     }
 
     func renderYouTubeShortsVideoForPublish(
@@ -4698,6 +4719,11 @@ private extension FlickAppModel {
 #if DEBUG
 extension FlickAppModel {
     func testRenderImageSequenceForPublish(for draftID: UUID) async throws -> [UUID] {
+        let result = try await renderImageSequenceForPublish(for: draftID)
+        return result.assetIDs
+    }
+
+    func testRenderImageSequenceForPublishResult(for draftID: UUID) async throws -> RenderedPublishImageSequence {
         try await renderImageSequenceForPublish(for: draftID)
     }
 

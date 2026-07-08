@@ -25,7 +25,12 @@ struct ManualPublishProgress: Identifiable, Hashable {
         steps.count
     }
 
-    static func make(for draft: SlideshowDraft, now: Date = Date()) -> ManualPublishProgress {
+    static func make(
+        for draft: SlideshowDraft,
+        platforms: Set<SocialPlatform>? = nil,
+        now: Date = Date()
+    ) -> ManualPublishProgress {
+        let selectedPlatforms = platforms ?? Set(draft.targetPlatforms.isEmpty ? [.tiktok] : draft.targetPlatforms)
         let sortedSlides = draft.slides.sorted { $0.index < $1.index }
         var steps = [
             ManualPublishProgressStep(
@@ -42,32 +47,36 @@ struct ManualPublishProgress: Identifiable, Hashable {
             )
         ]
 
-        steps.append(
-            ManualPublishProgressStep(
-                id: ManualPublishProgressStepID.renderImages,
-                title: "Snapshot slides",
-                detail: "Rendering the current edited slides.",
-                systemImage: "rectangle.stack"
+        if selectedPlatforms.contains(.tiktok) {
+            steps.append(
+                ManualPublishProgressStep(
+                    id: ManualPublishProgressStepID.renderImages,
+                    title: "Snapshot slides",
+                    detail: "Rendering the current edited slides.",
+                    systemImage: "rectangle.stack"
+                )
             )
-        )
 
-        steps.append(
-            ManualPublishProgressStep(
-                id: ManualPublishProgressStepID.renderVideo,
-                title: "Render video",
-                detail: "Preparing a vertical MP4 for video platforms.",
-                systemImage: "film"
-            )
-        )
+            steps.append(contentsOf: sortedSlides.map { slide in
+                ManualPublishProgressStep(
+                    id: ManualPublishProgressStepID.uploadSlide(slide.id),
+                    title: "Upload slide \(slide.index + 1)",
+                    detail: "Uploading the rendered image to Cloudflare R2.",
+                    systemImage: "icloud.and.arrow.up"
+                )
+            })
+        }
 
-        steps.append(contentsOf: sortedSlides.map { slide in
-            ManualPublishProgressStep(
-                id: ManualPublishProgressStepID.uploadSlide(slide.id),
-                title: "Upload slide \(slide.index + 1)",
-                detail: "Uploading the rendered image to Cloudflare R2.",
-                systemImage: "icloud.and.arrow.up"
+        if selectedPlatforms.contains(.youtubeShorts) {
+            steps.append(
+                ManualPublishProgressStep(
+                    id: ManualPublishProgressStepID.renderVideo,
+                    title: "Render video",
+                    detail: "Preparing a vertical MP4 for video platforms.",
+                    systemImage: "film"
+                )
             )
-        })
+        }
 
         steps.append(contentsOf: [
             ManualPublishProgressStep(

@@ -2807,6 +2807,52 @@ final class FlickTests: XCTestCase {
         #endif
     }
 
+    func testRenderedUploadSurvivesRefreshDuringUpload() async throws {
+        #if canImport(UIKit)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let imageData = makeTestJPEGData(width: 72, height: 128)
+        let sourceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("render-source-\(UUID().uuidString).jpg")
+        try imageData.write(to: sourceURL, options: [.atomic])
+        defer { try? FileManager.default.removeItem(at: sourceURL) }
+
+        let sourceAsset = makeMediaAsset(
+            source: .generated,
+            localFilePath: sourceURL.path,
+            publicURL: nil,
+            now: now
+        )
+        var firstSlide = makeSlide(imageAssetID: sourceAsset.id, generationStatus: .complete, now: now)
+        firstSlide.index = 0
+        var secondSlide = makeSlide(imageAssetID: sourceAsset.id, generationStatus: .complete, now: now)
+        secondSlide.index = 1
+        let draft = makeSlideshowDraft(
+            slides: [firstSlide, secondSlide],
+            now: now
+        )
+        var state = FlickEmptyState.make()
+        state.assets = [sourceAsset]
+        state.drafts = [draft]
+
+        let mediaStorage = FakeMediaStorage(returnsPublicURL: false)
+        let model = FlickAppModel(
+            repository: InMemoryFlickRepository(state: state),
+            configuration: makeTestAppConfiguration(),
+            mediaStorageFactory: { _ in mediaStorage }
+        )
+        mediaStorage.onUpload = { _ in
+            await model.refresh()
+        }
+
+        let result = try await model.testRenderImageSequenceForPublishResult(for: draft.id)
+        let imageURLs = try model.testPublishableImageURLs(forRenderedAssetIDs: result.assetIDs)
+
+        XCTAssertEqual(result.assetIDs.count, 2)
+        XCTAssertEqual(model.overview.assets.filter { result.assetIDs.contains($0.id) }.count, 2)
+        XCTAssertEqual(imageURLs, result.imageURLs)
+        #endif
+    }
+
     func testPublishableRenderedImageURLsDeriveMissingPublicURLFromStoragePath() throws {
         let mediaStorage = FakeMediaStorage(returnsPublicURL: false)
         let model = FlickAppModel(
@@ -5247,6 +5293,7 @@ private func managedObjectCount(entityName: String, in context: NSManagedObjectC
 private final class FakeMediaStorage: MediaStorageProviding {
     private(set) var uploadedPaths: [String] = []
     private(set) var uploadedContentTypes: [String] = []
+    var onUpload: ((String) async -> Void)?
     private let returnsPublicURL: Bool
 
     init(returnsPublicURL: Bool = true) {
@@ -5256,6 +5303,9 @@ private final class FakeMediaStorage: MediaStorageProviding {
     func uploadAsset(_ asset: LocalMediaAsset, path: String) async throws -> RemoteMediaAsset {
         uploadedPaths.append(path)
         uploadedContentTypes.append(asset.contentType)
+        if let onUpload {
+            await onUpload(path)
+        }
         return RemoteMediaAsset(
             storageBucket: "flick-media",
             storagePath: path,

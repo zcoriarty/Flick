@@ -1274,7 +1274,14 @@ struct MacCreateView: View {
         let tikTokSettings = publishSettings(for: draft)
         let youtubeSettings = youtubePublishSettings(for: draft)
         guard tikTokSettings != nil || youtubeSettings != nil else { return }
-        appModel.beginManualPublishProgress(for: draft)
+        var platforms = Set<SocialPlatform>()
+        if tikTokSettings != nil {
+            platforms.insert(.tiktok)
+        }
+        if youtubeSettings != nil {
+            platforms.insert(.youtubeShorts)
+        }
+        appModel.beginManualPublishProgress(for: draft, platforms: platforms)
         presentedSheet = .publishProgress
         Task { @MainActor in
             let didPublish = await appModel.publishManualSlideshow(
