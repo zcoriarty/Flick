@@ -3344,6 +3344,151 @@ final class FlickTests: XCTestCase {
         XCTAssertTrue(status.privacyOptions.contains(TikTokPrivacyLevel.publicToEveryone.rawValue))
     }
 
+    func testTikTokManualPublishSettingsAppendsRequiredHashtags() {
+        let settings = TikTokManualPublishSettings(
+            title: "Launch",
+            description: "Try Flick\n\n#launch",
+            postAsDraft: false,
+            privacyLevel: .publicToEveryone,
+            allowComment: true,
+            allowDuet: true,
+            allowStitch: true,
+            disclosesVideoContent: false,
+            promotesYourBrand: false,
+            promotesBrandedContent: false
+        )
+
+        XCTAssertEqual(settings.description, "Try Flick\n\n#launch\n\n#abcxyz #fyp")
+
+        let settingsWithGeneratedTags = TikTokManualPublishSettings(
+            title: "Launch",
+            description: "Try Flick #ABCXYZ\n#fyp",
+            postAsDraft: false,
+            privacyLevel: .publicToEveryone,
+            allowComment: true,
+            allowDuet: true,
+            allowStitch: true,
+            disclosesVideoContent: false,
+            promotesYourBrand: false,
+            promotesBrandedContent: false
+        )
+
+        XCTAssertEqual(settingsWithGeneratedTags.description, "Try Flick #ABCXYZ\n#fyp")
+    }
+
+    func testTikTokAdapterRequestsAutoMusicForDirectPhotoPosts() async throws {
+        let secretStore = MemorySecretStore()
+        let account = LoginKitAccountMapper.connectedAccount(
+            from: LoginKitAuthorizedUser(
+                platform: .tiktok,
+                openID: "real-open-id",
+                displayName: "@realaccount",
+                avatarURL: nil,
+                scopes: ["user.info.basic", "video.publish"]
+            )
+        )
+        let tokenBundle = LoginKitTokenBundle(
+            platform: .tiktok,
+            platformUserID: account.platformUserID,
+            accessToken: "valid-access-token",
+            refreshToken: "refresh-token",
+            tokenType: "Bearer",
+            scopes: account.scopes,
+            accessTokenExpiresAt: Date(timeIntervalSinceNow: 3_600),
+            refreshTokenExpiresAt: Date(timeIntervalSinceNow: 86_400),
+            updatedAt: Date()
+        )
+        try LoginKitTokenStore(store: secretStore).save(tokenBundle, for: account)
+
+        let publishBody = CapturingURLProtocol.CapturedValue()
+        CapturingURLProtocol.requestHandler = { request in
+            switch request.url?.path.removingTrailingSlash {
+            case "/rendered-slide.jpg":
+                XCTAssertEqual(request.httpMethod, "HEAD")
+                return (
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: [
+                            "Content-Type": "image/jpeg",
+                            "Content-Length": "1024"
+                        ]
+                    )!,
+                    Data()
+                )
+            case "/v2/post/publish/content/init":
+                publishBody.value = request.encodedBodyString
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data(
+                        """
+                        {
+                            "data": {
+                                "publish_id": "p_pub_url~v2.123"
+                            },
+                            "error": {
+                                "code": "ok",
+                                "message": "",
+                                "log_id": "log-123"
+                            }
+                        }
+                        """.utf8
+                    )
+                )
+            default:
+                XCTFail("Unexpected request URL: \(request.url?.absoluteString ?? "nil")")
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!,
+                    Data()
+                )
+            }
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CapturingURLProtocol.self]
+        let adapter = TikTokAdapter(
+            configuration: TikTokConfiguration(values: [
+                "TIKTOK_CLIENT_ID": "client-key",
+                "TIKTOK_VERIFIED_BASE_URL": "https://example.com"
+            ]),
+            tokenStore: secretStore,
+            urlSession: URLSession(configuration: configuration)
+        )
+        var job = makePublishingJob()
+        job.accountID = account.id
+
+        _ = try await adapter.publish(
+            job,
+            account: account,
+            media: PreparedPlatformMedia(
+                mode: .photoDirectPost,
+                imageURLs: [try XCTUnwrap(URL(string: "https://example.com/rendered-slide.jpg"))],
+                videoURL: nil,
+                warnings: []
+            ),
+            settings: TikTokManualPublishSettings(
+                title: "Launch",
+                description: "Try Flick",
+                postAsDraft: false,
+                privacyLevel: .selfOnly,
+                allowComment: true,
+                allowDuet: false,
+                allowStitch: false,
+                disclosesVideoContent: false,
+                promotesYourBrand: false,
+                promotesBrandedContent: false
+            )
+        )
+
+        let body = try XCTUnwrap(publishBody.value)
+        let bodyData = try XCTUnwrap(body.data(using: .utf8))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: bodyData) as? [String: Any])
+        let postInfo = try XCTUnwrap(object["post_info"] as? [String: Any])
+        XCTAssertEqual(postInfo["auto_add_music"] as? Bool, true)
+        XCTAssertEqual(postInfo["description"] as? String, "Try Flick\n\n#abcxyz #fyp")
+    }
+
     func testTikTokAdapterRefreshesExpiredAccessTokenBeforePublishing() async throws {
         let secretStore = MemorySecretStore()
         let account = LoginKitAccountMapper.connectedAccount(

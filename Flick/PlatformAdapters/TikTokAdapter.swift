@@ -693,7 +693,7 @@ private struct TikTokPhotoPostInfo: Encodable {
         guard !settings.postAsDraft else { return }
         privacyLevel = settings.privacyLevel.rawValue
         disableComment = !settings.allowComment
-        autoAddMusic = false
+        autoAddMusic = true
         brandContentToggle = settings.disclosesVideoContent && settings.promotesBrandedContent
         brandOrganicToggle = settings.disclosesVideoContent && settings.promotesYourBrand
     }
