@@ -5,7 +5,7 @@
 
 import Foundation
 
-extension DraftTikTokSettings {
+nonisolated extension DraftTikTokSettings {
     func manualPublishSettings(description: String) -> TikTokManualPublishSettings? {
         publishSettings(description: description, allowsDraftUpload: true)
     }
@@ -39,7 +39,7 @@ extension DraftTikTokSettings {
     }
 }
 
-extension DraftYouTubeSettings {
+nonisolated extension DraftYouTubeSettings {
     func manualPublishSettings(
         fallbackTitle: String,
         fallbackDescription: String,
@@ -97,7 +97,7 @@ extension DraftYouTubeSettings {
     }
 }
 
-extension SlideshowDraft {
+nonisolated extension SlideshowDraft {
     var publishDescription: String {
         let trimmedCaption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
         let formattedHashtags = hashtags
@@ -114,7 +114,7 @@ extension SlideshowDraft {
     }
 }
 
-private extension Array where Element: Hashable {
+nonisolated private extension Array where Element: Hashable {
     func uniqued() -> [Element] {
         var seen = Set<Element>()
         return filter { seen.insert($0).inserted }

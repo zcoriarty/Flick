@@ -57,7 +57,7 @@ final class YouTubeOAuthClient {
             refreshToken: refreshToken,
             scopes: scopes
         )
-        try tokenStore.save(bundle, for: account)
+        try await tokenStore.saveAsync(bundle, for: account)
         logger.info("Stored YouTube OAuth token bundle channelID=\(account.platformUserID, privacy: .public)")
         return account
     }
@@ -265,7 +265,7 @@ final class YouTubeOAuthClient {
     }
 }
 
-struct YouTubeTokenStore {
+nonisolated struct YouTubeTokenStore {
     private let prefix = "youtube_oauth_tokens.v1"
     var store: SecretStoring = KeychainSecretStore(synchronizesAcrossDevices: false)
 
@@ -274,13 +274,27 @@ struct YouTubeTokenStore {
         try store.save(data, for: key(for: account))
     }
 
+    func saveAsync(_ bundle: LoginKitTokenBundle, for account: ConnectedAccount) async throws {
+        let data = try JSONEncoder.flick.encode(bundle)
+        try await store.saveAsync(data, for: key(for: account))
+    }
+
     func tokenBundle(for account: ConnectedAccount) throws -> LoginKitTokenBundle? {
         guard let data = try store.data(for: key(for: account)) else { return nil }
         return try JSONDecoder.flick.decode(LoginKitTokenBundle.self, from: data)
     }
 
+    func tokenBundleAsync(for account: ConnectedAccount) async throws -> LoginKitTokenBundle? {
+        guard let data = try await store.dataAsync(for: key(for: account)) else { return nil }
+        return try JSONDecoder.flick.decode(LoginKitTokenBundle.self, from: data)
+    }
+
     func deleteTokenBundle(for account: ConnectedAccount) throws {
         try store.delete(key(for: account))
+    }
+
+    func deleteTokenBundleAsync(for account: ConnectedAccount) async throws {
+        try await store.deleteAsync(key(for: account))
     }
 
     private func key(for account: ConnectedAccount) -> String {

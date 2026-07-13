@@ -5,7 +5,7 @@
 
 import Foundation
 
-enum ContentAutomationStatus: String, CaseIterable, Codable, Identifiable, Hashable {
+nonisolated enum ContentAutomationStatus: String, CaseIterable, Codable, Identifiable, Hashable {
     case active
     case paused
 
@@ -19,7 +19,7 @@ enum ContentAutomationStatus: String, CaseIterable, Codable, Identifiable, Hasha
     }
 }
 
-enum AutomationWeekday: Int, CaseIterable, Codable, Identifiable, Hashable, Comparable {
+nonisolated enum AutomationWeekday: Int, CaseIterable, Codable, Identifiable, Hashable, Comparable {
     case sunday = 1
     case monday = 2
     case tuesday = 3
@@ -59,7 +59,7 @@ enum AutomationWeekday: Int, CaseIterable, Codable, Identifiable, Hashable, Comp
     }
 }
 
-struct AutomationTimeOfDay: Codable, Hashable, Identifiable, Comparable {
+nonisolated struct AutomationTimeOfDay: Codable, Hashable, Identifiable, Comparable {
     var hour: Int
     var minute: Int
 
@@ -103,7 +103,7 @@ struct AutomationTimeOfDay: Codable, Hashable, Identifiable, Comparable {
     }
 }
 
-struct AutomationScheduleSlot: Codable, Hashable {
+nonisolated struct AutomationScheduleSlot: Codable, Hashable {
     var time: AutomationTimeOfDay?
 
     init(time: AutomationTimeOfDay? = nil) {
@@ -115,7 +115,7 @@ struct AutomationScheduleSlot: Codable, Hashable {
     }
 }
 
-enum AutomationIntervalUnit: String, CaseIterable, Codable, Identifiable, Hashable {
+nonisolated enum AutomationIntervalUnit: String, CaseIterable, Codable, Identifiable, Hashable {
     case minutes
     case hours
 
@@ -150,7 +150,7 @@ enum AutomationIntervalUnit: String, CaseIterable, Codable, Identifiable, Hashab
     }
 }
 
-struct AutomationIntervalCadence: Codable, Hashable {
+nonisolated struct AutomationIntervalCadence: Codable, Hashable {
     var value: Int
     var unit: AutomationIntervalUnit
 
@@ -192,7 +192,7 @@ struct AutomationIntervalCadence: Codable, Hashable {
     }
 }
 
-enum AutomationScheduleCadence: Hashable {
+nonisolated enum AutomationScheduleCadence: Hashable {
     enum Kind: String, CaseIterable, Identifiable {
         case slots
         case interval
@@ -229,7 +229,7 @@ enum AutomationScheduleCadence: Hashable {
     }
 }
 
-extension AutomationScheduleCadence: Codable {
+nonisolated extension AutomationScheduleCadence: Codable {
     private enum CodingKeys: String, CodingKey {
         case kind
         case slots
@@ -269,7 +269,7 @@ extension AutomationScheduleCadence: Codable {
     }
 }
 
-struct AutomationSchedule: Codable, Hashable {
+nonisolated struct AutomationSchedule: Codable, Hashable {
     static let maximumPostsPerDay = 6
 
     var weekdays: [AutomationWeekday]
@@ -601,7 +601,7 @@ struct AutomationSchedule: Codable, Hashable {
     }
 }
 
-extension AutomationSchedule {
+nonisolated extension AutomationSchedule {
     private enum CodingKeys: String, CodingKey {
         case weekdays
         case fixedTimes
@@ -631,7 +631,7 @@ extension AutomationSchedule {
     }
 }
 
-struct ContentAutomation: Identifiable, Codable, Hashable {
+nonisolated struct ContentAutomation: Identifiable, Codable, Hashable {
     var id: UUID
     var name: String
     var templateIDs: [String]
@@ -858,7 +858,7 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
     }
 }
 
-private func stableSeed(_ string: String) -> UInt64 {
+nonisolated private func stableSeed(_ string: String) -> UInt64 {
     var hash: UInt64 = 14_695_981_039_346_656_037
     for byte in string.utf8 {
         hash ^= UInt64(byte)
@@ -867,7 +867,7 @@ private func stableSeed(_ string: String) -> UInt64 {
     return hash
 }
 
-private extension Array where Element: Hashable {
+nonisolated private extension Array where Element: Hashable {
     func uniqued() -> [Element] {
         var seen = Set<Element>()
         return filter { seen.insert($0).inserted }

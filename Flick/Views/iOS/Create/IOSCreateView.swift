@@ -128,16 +128,8 @@ struct IOSCreateView: View {
             syncImageVibeSelectionFromActiveDraft(in: appModel)
             updateSelectedSlide(using: appModel)
         }
-        .onChange(of: appModel.overview.drafts) { _, _ in
+        .onChange(of: appModel.createDraftPersistenceRevisions) { _, _ in
             updateSelectedSlide(using: appModel)
-            Task {
-                await appModel.persistCreateState()
-            }
-        }
-        .onChange(of: appModel.overview.templates) { _, _ in
-            Task {
-                await appModel.persistCreateState()
-            }
         }
         .onChange(of: appModel.overview.products) { _, _ in
             reconcileProductSelection(in: appModel)
@@ -300,6 +292,9 @@ struct IOSCreateView: View {
         }
         .onDisappear {
             automationSuccessDismissTask?.cancel()
+            Task {
+                await appModel.flushScheduledCreateStatePersistence()
+            }
         }
     }
 
@@ -371,7 +366,9 @@ struct IOSCreateView: View {
                 )
             },
             discardAction: {
-                appModel.discardPendingShareImport()
+                Task {
+                    await appModel.discardPendingShareImport()
+                }
             }
         )
     }
@@ -439,12 +436,13 @@ struct IOSCreateView: View {
     }
 
     private func draftBinding(forDraftAt draftIndex: Int) -> Binding<SlideshowDraft> {
-        Binding(
+        let draft = appModel.overview.drafts[draftIndex]
+        return Binding(
             get: {
-                appModel.overview.drafts[draftIndex]
+                appModel.overview.drafts.first(where: { $0.id == draft.id }) ?? draft
             },
             set: { newValue in
-                appModel.overview.drafts[draftIndex] = newValue
+                appModel.replaceCreateDraft(id: draft.id, with: newValue)
             }
         )
     }
@@ -457,13 +455,14 @@ struct IOSCreateView: View {
         else {
             return .constant("")
         }
+        let styleJSON = appModel.overview.templates[templateIndex].styleJSON
 
         return Binding(
             get: {
-                appModel.overview.templates[templateIndex].styleJSON
+                appModel.overview.templates.first(where: { $0.id == templateID })?.styleJSON ?? styleJSON
             },
             set: { newValue in
-                appModel.overview.templates[templateIndex].styleJSON = newValue
+                appModel.updateCreateTemplateStyle(id: templateID, styleJSON: newValue)
             }
         )
     }
@@ -924,6 +923,7 @@ struct IOSCreateView: View {
 
         update(&appModel.overview.drafts[draftIndex])
         appModel.overview.drafts[draftIndex].updatedAt = Date()
+        appModel.scheduleCreateStatePersistence()
     }
 
     private func openSlideEditor() {
@@ -1385,14 +1385,29 @@ private struct CreateDraftWorkflowSections: View {
 
     var body: some View {
         if let draftIndex = appModel.overview.drafts.firstIndex(where: { $0.id == draftID }) {
-            let draftBinding = $appModel.overview.drafts[draftIndex]
             let draft = appModel.overview.drafts[draftIndex]
+            let draftBinding = Binding(
+                get: {
+                    appModel.overview.drafts.first(where: { $0.id == draftID }) ?? draft
+                },
+                set: { newValue in
+                    appModel.replaceCreateDraft(id: draftID, with: newValue)
+                }
+            )
             let assetsByID = Dictionary(uniqueKeysWithValues: appModel.overview.assets.map { ($0.id, $0) })
 
             if let templateIndex = activeTemplateIndex(for: draft) {
+                let template = appModel.overview.templates[templateIndex]
                 CreatePlanSection(
                     draft: draftBinding,
-                    styleGuideJSON: $appModel.overview.templates[templateIndex].styleJSON,
+                    styleGuideJSON: Binding(
+                        get: {
+                            appModel.overview.templates.first(where: { $0.id == template.id })?.styleJSON ?? template.styleJSON
+                        },
+                        set: { newValue in
+                            appModel.updateCreateTemplateStyle(id: template.id, styleJSON: newValue)
+                        }
+                    ),
                     openSheet: openPlanSheetAction
                 )
             } else {

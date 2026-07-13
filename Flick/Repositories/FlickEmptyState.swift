@@ -5,7 +5,7 @@
 
 import Foundation
 
-enum FlickEmptyState {
+nonisolated enum FlickEmptyState {
     static func make(now: Date = Date()) -> FlickOverviewState {
         _ = now
 

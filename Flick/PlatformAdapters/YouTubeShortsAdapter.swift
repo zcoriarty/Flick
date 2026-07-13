@@ -169,7 +169,7 @@ struct YouTubeShortsAdapter: SocialPlatformPublishing {
     func validTokenBundle(for account: ConnectedAccount, forceRefresh: Bool = false) async throws -> LoginKitTokenBundle {
         let bundle: LoginKitTokenBundle
         do {
-            guard let storedBundle = try tokenStore.tokenBundle(for: account) else {
+            guard let storedBundle = try await tokenStore.tokenBundleAsync(for: account) else {
                 throw YouTubeOAuthError.missingStoredToken(accountID: account.id, platformUserID: account.platformUserID)
             }
             bundle = storedBundle
@@ -188,7 +188,7 @@ struct YouTubeShortsAdapter: SocialPlatformPublishing {
         }
 
         let refreshedBundle = try await refreshTokenBundle(bundle, for: account)
-        try tokenStore.save(refreshedBundle, for: account)
+        try await tokenStore.saveAsync(refreshedBundle, for: account)
         return refreshedBundle
     }
 

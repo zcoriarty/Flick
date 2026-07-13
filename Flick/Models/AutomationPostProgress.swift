@@ -5,7 +5,7 @@
 
 import Foundation
 
-struct AutomationPostProgress: Identifiable, Codable, Hashable {
+nonisolated struct AutomationPostProgress: Identifiable, Codable, Hashable {
     var id: UUID
     var automationID: UUID
     var draftID: UUID?
@@ -138,7 +138,7 @@ struct AutomationPostProgress: Identifiable, Codable, Hashable {
     }
 }
 
-extension AutomationPostProgress {
+nonisolated extension AutomationPostProgress {
     private enum CodingKeys: String, CodingKey {
         case id
         case automationID
@@ -195,7 +195,7 @@ extension AutomationPostProgress {
     }
 }
 
-struct AutomationPostProgressStep: Identifiable, Codable, Hashable {
+nonisolated struct AutomationPostProgressStep: Identifiable, Codable, Hashable {
     var id: String
     var title: String
     var detail: String
@@ -208,7 +208,7 @@ struct AutomationPostProgressStep: Identifiable, Codable, Hashable {
     var attemptDetail: String? = nil
 }
 
-extension AutomationPostProgressStep {
+nonisolated extension AutomationPostProgressStep {
     var progressContribution: Double {
         switch state {
         case .completed:
@@ -275,14 +275,14 @@ extension AutomationPostProgressStep {
     }
 }
 
-enum AutomationPostProgressStepState: String, Codable, Hashable {
+nonisolated enum AutomationPostProgressStepState: String, Codable, Hashable {
     case pending
     case current
     case completed
     case failed
 }
 
-enum AutomationPostProgressStepID {
+nonisolated enum AutomationPostProgressStepID {
     static let selectTemplate = "select-template"
     static let planSlideshow = "plan-slideshow"
     static let generateImages = "generate-images"
@@ -293,7 +293,7 @@ enum AutomationPostProgressStepID {
     static let recordResult = "record-result"
 }
 
-extension Array where Element == AutomationPostProgress {
+nonisolated extension Array where Element == AutomationPostProgress {
     var activeAutomationPostProgresses: [AutomationPostProgress] {
         filter(\.isActive)
             .sorted { lhs, rhs in

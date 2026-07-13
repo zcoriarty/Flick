@@ -24,10 +24,14 @@ struct CredentialsView: View {
                     CredentialEditorRow(
                         draft: $draft,
                         saveAction: {
-                            saveCredential(draft)
+                            Task {
+                                await saveCredential(draft)
+                            }
                         },
                         deleteAction: {
-                            deleteCredential(draft)
+                            Task {
+                                await deleteCredential(draft)
+                            }
                         }
                     )
                 }
@@ -37,7 +41,9 @@ struct CredentialsView: View {
                 }
                 .confirmationDialog("Clear stored credentials?", isPresented: $isClearCredentialsConfirmationPresented) {
                     Button("Clear stored", role: .destructive) {
-                        clearStoredCredentials()
+                        Task {
+                            await clearStoredCredentials()
+                        }
                     }
                     Button("Cancel", role: .cancel) { }
                 } message: {
@@ -68,20 +74,20 @@ struct CredentialsView: View {
         .accessibilityHint(credentialsExportDocument.isEmpty ? "No stored credentials to export" : "Exports stored credentials as JSON")
     }
 
-    private func clearStoredCredentials() {
-        if appModel.clearStoredCredentials() {
+    private func clearStoredCredentials() async {
+        if await appModel.clearStoredCredentials() {
             reloadCredentialDrafts()
         }
     }
 
-    private func saveCredential(_ draft: CredentialEditorDraft) {
-        if appModel.storeCredentialValue(draft.trimmedValue, for: draft.definition.key) {
+    private func saveCredential(_ draft: CredentialEditorDraft) async {
+        if await appModel.storeCredentialValue(draft.trimmedValue, for: draft.definition.key) {
             reloadCredentialDrafts()
         }
     }
 
-    private func deleteCredential(_ draft: CredentialEditorDraft) {
-        if appModel.deleteStoredCredential(for: draft.definition.key) {
+    private func deleteCredential(_ draft: CredentialEditorDraft) async {
+        if await appModel.deleteStoredCredential(for: draft.definition.key) {
             reloadCredentialDrafts()
         }
     }

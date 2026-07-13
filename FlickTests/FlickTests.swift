@@ -4,6 +4,7 @@
 //
 
 import CoreData
+import Dispatch
 import ImageIO
 import UniformTypeIdentifiers
 import XCTest
@@ -66,6 +67,62 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(model.createDrafts.map(\.id), [draft.id])
     }
 
+    func testRapidCreateEditsCoalesceIntoOneScopedPersistenceWrite() async {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let draft = makeSlideshowDraft(now: now)
+        var state = FlickEmptyState.make()
+        state.drafts = [draft]
+        let repository = InMemoryFlickRepository(state: state)
+        let model = FlickAppModel(repository: repository, configuration: .current)
+
+        await model.refresh()
+
+        for editIndex in 0..<20 {
+            model.overview.drafts[0].title = "Draft \(editIndex)"
+            model.scheduleCreateStatePersistence(debounceInterval: .seconds(60))
+        }
+
+        await model.flushScheduledCreateStatePersistence()
+
+        XCTAssertEqual(repository.saveCreateStateCallCount, 1)
+        XCTAssertEqual(repository.saveOverviewCallCount, 0)
+        XCTAssertEqual(repository.state.drafts[0].title, "Draft 19")
+    }
+
+    func testCreateAutosaveIncludesNewlyReferencedAssetMetadata() async {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let draft = makeSlideshowDraft(now: now)
+        var state = FlickEmptyState.make()
+        state.drafts = [draft]
+        let repository = InMemoryFlickRepository(state: state)
+        let model = FlickAppModel(repository: repository, configuration: .current)
+
+        await model.refresh()
+
+        let asset = makeMediaAsset(
+            storagePath: "generated-slides/scoped-autosave.png",
+            publicURL: URL(string: "https://media.example.com/generated-slides/scoped-autosave.png"),
+            now: now.addingTimeInterval(60)
+        )
+        let slide = makeSlide(
+            imageAssetID: asset.id,
+            generationStatus: .complete,
+            now: now.addingTimeInterval(60)
+        )
+        model.overview.assets.append(asset)
+        model.overview.drafts[0].slides.append(slide)
+        model.scheduleCreateStatePersistence(debounceInterval: .seconds(60))
+
+        await model.flushScheduledCreateStatePersistence()
+
+        XCTAssertEqual(repository.saveCreateStateCallCount, 1)
+        XCTAssertEqual(repository.state.assets.first(where: { $0.id == asset.id }), asset)
+        XCTAssertEqual(
+            repository.state.drafts.first(where: { $0.id == draft.id })?.slides.last?.imageAssetID,
+            asset.id
+        )
+    }
+
     func testCoreDataRoundTripsGeneratedSlideImageAsset() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let persistenceController = PersistenceController(inMemory: true)
@@ -109,6 +166,260 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(loadedAsset.id, asset.id)
         XCTAssertEqual(loadedAsset.source, .generated)
         XCTAssertEqual(loadedAsset.publicURL, asset.publicURL)
+    }
+
+    func testCoreDataIdenticalOverviewDoesNotCreateAnotherHistoryTransaction() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let persistenceController = PersistenceController(inMemory: true)
+        let context = persistenceController.container.viewContext
+        let repository = CoreDataFlickRepository(
+            context: context,
+            cloudAvailability: { false }
+        )
+        var state = FlickEmptyState.make()
+        state.products = [makeProduct(name: "Flick Pro", now: now)]
+
+        try await repository.saveOverview(state)
+        let initialTransactionCount = try persistentHistoryTransactionCount(in: context)
+
+        try await repository.saveOverview(state)
+        let repeatedTransactionCount = try persistentHistoryTransactionCount(in: context)
+
+        XCTAssertGreaterThan(initialTransactionCount, 0)
+        XCTAssertEqual(repeatedTransactionCount, initialTransactionCount)
+    }
+
+    func testCoreDataOrdinaryOverviewSaveDoesNotDeleteOmittedRecords() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let persistenceController = PersistenceController(inMemory: true)
+        let repository = CoreDataFlickRepository(
+            context: persistenceController.container.viewContext,
+            cloudAvailability: { false }
+        )
+        let retainedProduct = makeProduct(name: "Retained product", now: now)
+        var initialState = FlickEmptyState.make()
+        initialState.products = [retainedProduct]
+        try await repository.saveOverview(initialState)
+
+        try await repository.saveOverview(FlickEmptyState.make())
+
+        let loaded = try await repository.loadOverview()
+        XCTAssertEqual(loaded.products, [retainedProduct])
+    }
+
+    func testCoreDataDeletionTombstoneRejectsStaleWritesAndAllowsNewerRecreation() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let persistenceController = PersistenceController(inMemory: true)
+        let repository = CoreDataFlickRepository(
+            context: persistenceController.container.viewContext,
+            cloudAvailability: { false }
+        )
+        let product = makeProduct(name: "Deleted product", now: now)
+        var state = FlickEmptyState.make()
+        state.products = [product]
+        try await repository.saveOverview(state)
+
+        try await repository.saveOverview(
+            FlickEmptyState.make(),
+            deletions: [OverviewDeletion(kind: .product, id: product.id, deletedAt: now)]
+        )
+        let stateAfterDeletion = try await repository.loadOverview()
+        XCTAssertTrue(stateAfterDeletion.products.isEmpty)
+
+        var staleState = FlickEmptyState.make()
+        staleState.products = [product]
+        try await repository.saveOverview(staleState)
+        let stateAfterStaleWrite = try await repository.loadOverview()
+        XCTAssertTrue(stateAfterStaleWrite.products.isEmpty)
+
+        var recreatedProduct = product
+        recreatedProduct.name = "Recreated product"
+        recreatedProduct.updatedAt = now.addingTimeInterval(1)
+        var recreatedState = FlickEmptyState.make()
+        recreatedState.products = [recreatedProduct]
+        try await repository.saveOverview(recreatedState)
+
+        let stateAfterRecreation = try await repository.loadOverview()
+        XCTAssertEqual(stateAfterRecreation.products, [recreatedProduct])
+        XCTAssertEqual(
+            try managedObjectCount(entityName: "CDAuditEvent", in: persistenceController.container.viewContext),
+            1
+        )
+    }
+
+    func testCoreDataSlideDeletionDoesNotRemoveARecordUpdatedAfterTheDeletionCutoff() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let newer = now.addingTimeInterval(120)
+        let persistenceController = PersistenceController(inMemory: true)
+        let repository = CoreDataFlickRepository(
+            context: persistenceController.container.viewContext,
+            cloudAvailability: { false }
+        )
+        let slide = makeSlide(now: newer)
+        let draft = makeSlideshowDraft(slides: [slide], now: newer)
+        var state = FlickEmptyState.make()
+        state.drafts = [draft]
+        try await repository.saveOverview(state)
+
+        try await repository.saveCreateState(
+            drafts: [],
+            templates: [],
+            assets: [],
+            deletions: [OverviewDeletion(kind: .slide, id: slide.id, deletedAt: now)]
+        )
+
+        let loaded = try await repository.loadOverview()
+        XCTAssertEqual(loaded.drafts.first?.slides, [slide])
+    }
+
+    func testCoreDataModelStoresMediaMetadataWithoutCloudKitImageBytes() {
+        let model = PersistenceController(inMemory: true).container.managedObjectModel
+        let binaryAttributes = model.entities.flatMap { entity in
+            entity.attributesByName.values.filter { $0.attributeType == .binaryDataAttributeType }
+        }
+
+        XCTAssertTrue(binaryAttributes.isEmpty)
+    }
+
+    func testPersistentHistoryIgnoresRemoteMacRunnerHeartbeatButKeepsWorkflowProgressRelevant() async throws {
+        let persistenceController = PersistenceController(inMemory: true)
+        let remoteContext = persistenceController.container.newBackgroundContext()
+        remoteContext.transactionAuthor = "RemoteDevice"
+        let defaultsSuite = "FlickTests.PersistentHistory.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsSuite))
+        defer { defaults.removePersistentDomain(forName: defaultsSuite) }
+        let monitor = PersistentHistoryChangeMonitor(
+            container: persistenceController.container,
+            userDefaults: defaults
+        )
+
+        try await remoteContext.perform {
+            let object = NSEntityDescription.insertNewObject(
+                forEntityName: "CDWorkflowState",
+                into: remoteContext
+            )
+            object.setValue(UUID(), forKey: "id")
+            object.setValue("mac-runner-heartbeat", forKey: "key")
+            object.setValue("{}", forKey: "valueJSON")
+            object.setValue(Date(), forKey: "updatedAt")
+            try remoteContext.save()
+        }
+
+        let heartbeatWasRelevant = try await monitor.hasRelevantChanges()
+        XCTAssertFalse(heartbeatWasRelevant)
+
+        try await remoteContext.perform {
+            let object = NSEntityDescription.insertNewObject(
+                forEntityName: "CDWorkflowState",
+                into: remoteContext
+            )
+            object.setValue(UUID(), forKey: "id")
+            object.setValue("automation-post-progress", forKey: "key")
+            object.setValue("[]", forKey: "valueJSON")
+            object.setValue(Date(), forKey: "updatedAt")
+            try remoteContext.save()
+        }
+
+        let progressWasRelevant = try await monitor.hasRelevantChanges()
+        XCTAssertTrue(progressWasRelevant)
+    }
+
+    func testScopedCreateSavePreservesUnrelatedCloudKitMetadata() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let persistenceController = PersistenceController(inMemory: true)
+        let repository = CoreDataFlickRepository(
+            context: persistenceController.container.viewContext,
+            cloudAvailability: { false }
+        )
+        let product = makeProduct(name: "Flick Pro", now: now)
+        var draft = makeSlideshowDraft(now: now)
+        var state = FlickEmptyState.make()
+        state.products = [product]
+        state.drafts = [draft]
+        try await repository.saveOverview(state)
+
+        draft.title = "Updated draft"
+        draft.updatedAt = now.addingTimeInterval(60)
+        try await repository.saveCreateState(
+            drafts: [draft],
+            templates: [],
+            assets: [],
+            deletions: []
+        )
+
+        let loaded = try await repository.loadOverview()
+        XCTAssertEqual(loaded.products, [product])
+        XCTAssertEqual(loaded.drafts.first?.title, "Updated draft")
+    }
+
+    func testScopedCreateSavePersistsNewRecordsAndPreservesNewerAndUnrelatedCreateRecords() async throws {
+        let old = Date(timeIntervalSince1970: 1_800_000_000)
+        let newer = old.addingTimeInterval(120)
+        let persistenceController = PersistenceController(inMemory: true)
+        let repository = CoreDataFlickRepository(
+            context: persistenceController.container.viewContext,
+            cloudAvailability: { false }
+        )
+
+        let sharedAssetID = UUID()
+        var newerAsset = makeMediaAsset(id: sharedAssetID, now: newer)
+        newerAsset.storagePath = "generated-slides/newer-remote.png"
+        let unrelatedAsset = makeMediaAsset(now: newer)
+
+        let sharedSlideID = UUID()
+        var newerSlide = makeSlide(id: sharedSlideID, imageAssetID: sharedAssetID, now: newer)
+        newerSlide.text = "Newer remote slide"
+        let sharedDraftID = UUID()
+        var newerDraft = makeSlideshowDraft(id: sharedDraftID, slides: [newerSlide], now: newer)
+        newerDraft.title = "Newer remote draft"
+        let unrelatedDraft = makeSlideshowDraft(now: newer)
+
+        var newerTemplate = makeCreativeTemplate(now: newer)
+        newerTemplate.name = "Newer remote template"
+        let unrelatedTemplate = makeCreativeTemplate(now: newer)
+
+        var initialState = FlickEmptyState.make()
+        initialState.assets = [newerAsset, unrelatedAsset]
+        initialState.templates = [newerTemplate, unrelatedTemplate]
+        initialState.drafts = [newerDraft, unrelatedDraft]
+        try await repository.saveOverview(initialState)
+
+        var staleAsset = newerAsset
+        staleAsset.storagePath = "generated-slides/stale-local.png"
+        staleAsset.updatedAt = old
+        var staleSlide = newerSlide
+        staleSlide.text = "Stale local slide"
+        staleSlide.updatedAt = old
+        var staleDraft = newerDraft
+        staleDraft.title = "Stale local draft"
+        staleDraft.slides = [staleSlide]
+        staleDraft.updatedAt = old
+        var staleTemplate = newerTemplate
+        staleTemplate.name = "Stale local template"
+        staleTemplate.updatedAt = old
+
+        let addedAsset = makeMediaAsset(now: newer.addingTimeInterval(60))
+        let addedDraft = makeSlideshowDraft(
+            slides: [makeSlide(imageAssetID: addedAsset.id, now: newer.addingTimeInterval(60))],
+            now: newer.addingTimeInterval(60)
+        )
+
+        try await repository.saveCreateState(
+            drafts: [staleDraft, addedDraft],
+            templates: [staleTemplate],
+            assets: [staleAsset, addedAsset],
+            deletions: []
+        )
+
+        let loaded = try await repository.loadOverview()
+        XCTAssertEqual(loaded.assets.first(where: { $0.id == sharedAssetID }), newerAsset)
+        XCTAssertEqual(loaded.assets.first(where: { $0.id == unrelatedAsset.id }), unrelatedAsset)
+        XCTAssertEqual(loaded.assets.first(where: { $0.id == addedAsset.id }), addedAsset)
+        XCTAssertEqual(loaded.templates.first(where: { $0.id == newerTemplate.id }), newerTemplate)
+        XCTAssertEqual(loaded.templates.first(where: { $0.id == unrelatedTemplate.id }), unrelatedTemplate)
+        XCTAssertEqual(loaded.drafts.first(where: { $0.id == sharedDraftID }), newerDraft)
+        XCTAssertEqual(loaded.drafts.first(where: { $0.id == unrelatedDraft.id }), unrelatedDraft)
+        XCTAssertEqual(loaded.drafts.first(where: { $0.id == addedDraft.id }), addedDraft)
     }
 
     func testCoreDataRoundTripsProductsAndMediaProductLinks() async throws {
@@ -206,6 +517,7 @@ final class FlickTests: XCTestCase {
         let repository = InMemoryFlickRepository(state: state)
         let model = FlickAppModel(repository: repository, configuration: .current)
 
+        await model.refresh()
         await model.updateAutomationStatus(id: automation.id, status: .paused)
 
         XCTAssertEqual(model.overview.automations.first?.status, .paused)
@@ -401,7 +713,7 @@ final class FlickTests: XCTestCase {
         XCTAssertFalse(MacRunnerHeartbeat().isFresh(asOf: now))
     }
 
-    func testPublishingTikTokAccountUsesSelectedAccountID() throws {
+    func testPublishingTikTokAccountUsesSelectedAccountID() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let firstAccount = makeConnectedAccount(
             id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
@@ -448,6 +760,7 @@ final class FlickTests: XCTestCase {
             tiktokLoginKitClient: client
         )
         model.overview = state
+        await model.refreshPublishingReadinessFromTokenStores(now: now)
 
         XCTAssertEqual(model.publishingTikTokAccount(for: draft)?.id, secondAccount.id)
     }
@@ -465,7 +778,7 @@ final class FlickTests: XCTestCase {
         XCTAssertNil(model.publishingTikTokAccount(for: draft))
     }
 
-    func testPublishingTikTokAccountUsesGrantedScopesWhenTokenBundleScopesAreMissing() throws {
+    func testPublishingTikTokAccountUsesGrantedScopesWhenTokenBundleScopesAreMissing() async throws {
         let now = Date()
         var account = makeConnectedAccount(now: now)
         account.scopes = ["user.info.basic", "video.upload"]
@@ -503,6 +816,7 @@ final class FlickTests: XCTestCase {
             tiktokLoginKitClient: client
         )
         model.overview = state
+        await model.refreshPublishingReadinessFromTokenStores(now: now)
 
         XCTAssertEqual(model.publishingTikTokAccount(for: draft)?.id, account.id)
     }
@@ -526,7 +840,7 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(normalized.count, 3)
     }
 
-    func testPublishingAccountsUsesLocalYouTubeTokenStore() throws {
+    func testPublishingAccountsUsesLocalYouTubeTokenStore() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let account = makeYouTubeAccount(now: now)
         let tokenStore = YouTubeTokenStore(store: MemorySecretStore())
@@ -556,6 +870,7 @@ final class FlickTests: XCTestCase {
             ),
             for: account
         )
+        await model.refreshPublishingReadinessFromTokenStores(now: now)
 
         XCTAssertEqual(model.publishingAccounts(for: .youtubeShorts, in: selections).map(\.id), [account.id])
     }
@@ -695,6 +1010,56 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(status["privacyStatus"] as? String, "private")
         XCTAssertEqual(status["selfDeclaredMadeForKids"] as? Bool, false)
         XCTAssertEqual(status["containsSyntheticMedia"] as? Bool, true)
+    }
+
+    func testPlatformAdaptersReadCachedTokensThroughConcurrentSecretStorePath() async throws {
+        let now = Date()
+        let secretStore = ConcurrentRecordingSecretStore()
+        let tikTokAccount = makeConnectedAccount(now: now)
+        let youTubeAccount = makeYouTubeAccount(now: now)
+
+        try LoginKitTokenStore(store: secretStore).save(
+            LoginKitTokenBundle(
+                platform: .tiktok,
+                platformUserID: tikTokAccount.platformUserID,
+                accessToken: "tiktok-access-token",
+                refreshToken: "tiktok-refresh-token",
+                tokenType: "Bearer",
+                scopes: tikTokAccount.scopes,
+                accessTokenExpiresAt: now.addingTimeInterval(3_600),
+                refreshTokenExpiresAt: now.addingTimeInterval(86_400),
+                updatedAt: now
+            ),
+            for: tikTokAccount
+        )
+        try YouTubeTokenStore(store: secretStore).save(
+            LoginKitTokenBundle(
+                platform: .youtubeShorts,
+                platformUserID: youTubeAccount.platformUserID,
+                accessToken: "youtube-access-token",
+                refreshToken: "youtube-refresh-token",
+                tokenType: "Bearer",
+                scopes: youTubeAccount.scopes,
+                accessTokenExpiresAt: now.addingTimeInterval(3_600),
+                refreshTokenExpiresAt: now.addingTimeInterval(86_400),
+                updatedAt: now
+            ),
+            for: youTubeAccount
+        )
+
+        let tikTokBundle = try await TikTokAdapter(
+            configuration: TikTokConfiguration(values: [:]),
+            tokenStore: secretStore
+        ).validTokenBundle(for: tikTokAccount)
+        let youTubeBundle = try await YouTubeShortsAdapter(
+            configuration: YouTubeConfiguration(values: [:]),
+            tokenStore: YouTubeTokenStore(store: secretStore)
+        ).validTokenBundle(for: youTubeAccount)
+
+        XCTAssertEqual(tikTokBundle.accessToken, "tiktok-access-token")
+        XCTAssertEqual(youTubeBundle.accessToken, "youtube-access-token")
+        XCTAssertEqual(secretStore.concurrentReadCount, 2)
+        XCTAssertEqual(secretStore.synchronousReadCount, 0)
     }
 
     func testConnectedAccountUpsertUpdateAndDeleteUseRepository() async throws {
@@ -1483,15 +1848,87 @@ final class FlickTests: XCTestCase {
         progress.steps[1].state = .current
         progress.steps[1].detail = "Creating the carousel plan."
         progress.updatedAt = now.addingTimeInterval(60)
-        var state = FlickEmptyState.make()
-        state.automationPostProgresses = [progress]
-
-        try await repository.saveOverview(state)
+        try await repository.saveAutomationPostProgresses([progress])
         let loaded = try await repository.loadOverview()
         let loadedProgress = try XCTUnwrap(loaded.automationPostProgresses.first)
 
         XCTAssertEqual(loadedProgress, progress)
         XCTAssertEqual(loadedProgress.currentStep?.id, AutomationPostProgressStepID.planSlideshow)
+    }
+
+    func testCoreDataOrdinaryOverviewSaveDoesNotRewriteAutomationProgressBlob() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let persistenceController = PersistenceController(inMemory: true)
+        let repository = CoreDataFlickRepository(
+            context: persistenceController.container.viewContext,
+            cloudAvailability: { false }
+        )
+        let progress = AutomationPostProgress.make(
+            automationID: UUID(),
+            title: "Launch Carousel",
+            productName: "Flick Pro",
+            scheduledAt: now,
+            now: now
+        )
+        try await repository.saveAutomationPostProgresses([progress])
+
+        var unrelatedState = FlickEmptyState.make()
+        unrelatedState.products = [makeProduct(name: "Unrelated product", now: now)]
+        try await repository.saveOverview(unrelatedState)
+
+        let loaded = try await repository.loadOverview()
+        XCTAssertEqual(loaded.automationPostProgresses, [progress])
+    }
+
+    func testCoreDataAutomationProgressTombstoneIsAtomicAndRejectsStaleReinsertion() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let persistenceController = PersistenceController(inMemory: true)
+        let repository = CoreDataFlickRepository(
+            context: persistenceController.container.viewContext,
+            cloudAvailability: { false }
+        )
+        let deletedProgress = AutomationPostProgress.make(
+            automationID: UUID(),
+            title: "Delete me",
+            productName: nil,
+            scheduledAt: now,
+            now: now
+        )
+        let retainedProgress = AutomationPostProgress.make(
+            automationID: UUID(),
+            title: "Keep me",
+            productName: nil,
+            scheduledAt: now,
+            now: now
+        )
+        try await repository.saveAutomationPostProgresses([deletedProgress, retainedProgress])
+
+        try await repository.saveOverview(
+            FlickEmptyState.make(),
+            deletions: [
+                OverviewDeletion(
+                    kind: .automationPostProgress,
+                    id: deletedProgress.id,
+                    deletedAt: deletedProgress.updatedAt
+                )
+            ]
+        )
+        let stateAfterDeletion = try await repository.loadOverview()
+        XCTAssertEqual(stateAfterDeletion.automationPostProgresses, [retainedProgress])
+
+        try await repository.saveAutomationPostProgresses([deletedProgress])
+        let stateAfterStaleWrite = try await repository.loadOverview()
+        XCTAssertEqual(stateAfterStaleWrite.automationPostProgresses, [retainedProgress])
+
+        var recreatedProgress = deletedProgress
+        recreatedProgress.title = "Recreated"
+        recreatedProgress.updatedAt = now.addingTimeInterval(1)
+        try await repository.saveAutomationPostProgresses([recreatedProgress])
+        let stateAfterRecreation = try await repository.loadOverview()
+        XCTAssertEqual(
+            Set(stateAfterRecreation.automationPostProgresses.map(\.id)),
+            [retainedProgress.id, recreatedProgress.id]
+        )
     }
 
     func testAutomationPostProgressDecodesLegacyPayloadWithoutTargetPlatforms() throws {
@@ -1574,10 +2011,7 @@ final class FlickTests: XCTestCase {
         progress.steps[2].totalImageCount = 8
         progress.steps[2].currentImageIndex = 3
         progress.steps[2].attemptDetail = "Attempt 2 of 2 after the request timed out."
-        var state = FlickEmptyState.make()
-        state.automationPostProgresses = [progress]
-
-        try await repository.saveOverview(state)
+        try await repository.saveAutomationPostProgresses([progress])
         let loaded = try await repository.loadOverview()
         let loadedProgress = try XCTUnwrap(loaded.automationPostProgresses.first)
         let loadedStep = try XCTUnwrap(loadedProgress.steps.first { $0.id == AutomationPostProgressStepID.generateImages })
@@ -2034,6 +2468,7 @@ final class FlickTests: XCTestCase {
         state.publishingJobs = [job]
         state.publishedPosts = [post]
         try await repository.saveOverview(state)
+        try await repository.saveAutomationPostProgresses([progress])
 
         let model = FlickAppModel(repository: repository, configuration: .current)
         await model.refresh()
@@ -3344,6 +3779,33 @@ final class FlickTests: XCTestCase {
         let reconciledAccount = try XCTUnwrap(model.overview.accounts.first)
         XCTAssertEqual(reconciledAccount, account)
         XCTAssertFalse(model.canPublish(reconciledAccount, on: .tiktok))
+    }
+
+    func testCanPublishDoesNotSynchronouslyReadTheTokenStore() {
+        let secretStore = CountingSecretStore()
+        let account = LoginKitAccountMapper.connectedAccount(
+            from: LoginKitAuthorizedUser(
+                platform: .tiktok,
+                openID: "real-open-id",
+                displayName: "@realaccount",
+                avatarURL: nil,
+                scopes: ["user.info.basic", "video.publish"]
+            )
+        )
+        let client = TikTokLoginKitClient(
+            accountStore: LoginKitAccountStore(store: secretStore),
+            tokenStore: LoginKitTokenStore(store: secretStore)
+        )
+        let model = FlickAppModel(
+            repository: InMemoryFlickRepository(state: FlickEmptyState.make()),
+            configuration: makeTestAppConfiguration(),
+            tiktokLoginKitClient: client
+        )
+        model.overview.accounts = [account]
+
+        XCTAssertFalse(model.canPublish(account, on: .tiktok))
+        XCTAssertEqual(secretStore.singleReadCount, 0)
+        XCTAssertEqual(secretStore.batchReadCount, 0)
     }
 
     func testLoginKitTokenReconciliationPreservesRefreshFailureUntilNewTokenBundle() throws {
@@ -5971,6 +6433,14 @@ private func managedObjectCount(entityName: String, in context: NSManagedObjectC
     return try context.count(for: request)
 }
 
+private func persistentHistoryTransactionCount(in context: NSManagedObjectContext) throws -> Int {
+    let token: NSPersistentHistoryToken? = nil
+    let request = NSPersistentHistoryChangeRequest.fetchHistory(after: token)
+    request.resultType = NSPersistentHistoryResultType.transactionsOnly
+    let result = try XCTUnwrap(context.execute(request) as? NSPersistentHistoryResult)
+    return (result.result as? [NSPersistentHistoryTransaction])?.count ?? 0
+}
+
 private final class FakeMediaStorage: MediaStorageProviding {
     private(set) var uploadedPaths: [String] = []
     private(set) var uploadedContentTypes: [String] = []
@@ -6043,6 +6513,8 @@ private final class FakeTemplateAnalysisStorage: TemplateAnalysisStorageProvidin
 @MainActor
 private final class InMemoryFlickRepository: FlickRepository {
     var state: FlickOverviewState
+    private(set) var saveOverviewCallCount = 0
+    private(set) var saveCreateStateCallCount = 0
 
     init(state: FlickOverviewState) {
         self.state = state
@@ -6052,8 +6524,70 @@ private final class InMemoryFlickRepository: FlickRepository {
         state
     }
 
-    func saveOverview(_ state: FlickOverviewState) async throws {
+    func saveOverview(
+        _ state: FlickOverviewState,
+        deletions: [OverviewDeletion]
+    ) async throws {
+        saveOverviewCallCount += 1
         self.state = state
+        apply(deletions)
+    }
+
+    func saveCreateState(
+        drafts: [SlideshowDraft],
+        templates: [CreativeTemplate],
+        assets: [MediaAsset],
+        deletions: [OverviewDeletion]
+    ) async throws {
+        saveCreateStateCallCount += 1
+        merge(drafts, into: &state.drafts)
+        merge(templates, into: &state.templates)
+        merge(assets, into: &state.assets)
+        apply(deletions)
+    }
+
+    private func apply(_ deletions: [OverviewDeletion]) {
+        for deletion in deletions {
+            switch deletion.kind {
+            case .connectedAccount:
+                state.accounts.removeAll { $0.id == deletion.id }
+            case .product:
+                state.products.removeAll { $0.id == deletion.id }
+            case .creationModel:
+                state.creationModels.removeAll { $0.id == deletion.id }
+            case .asset:
+                state.assets.removeAll { $0.id == deletion.id }
+            case .template:
+                state.templates.removeAll { $0.id == deletion.id }
+            case .draft:
+                state.drafts.removeAll { $0.id == deletion.id }
+            case .slide:
+                for draftIndex in state.drafts.indices {
+                    state.drafts[draftIndex].slides.removeAll { $0.id == deletion.id }
+                }
+            case .automation:
+                state.automations.removeAll { $0.id == deletion.id }
+            case .automationPostProgress:
+                state.automationPostProgresses.removeAll { $0.id == deletion.id }
+            case .publishingJob:
+                state.publishingJobs.removeAll { $0.id == deletion.id }
+            case .publishedPost:
+                state.publishedPosts.removeAll { $0.id == deletion.id }
+            }
+        }
+    }
+
+    private func merge<Element: Identifiable>(_ records: [Element], into existing: inout [Element])
+    where Element.ID == UUID {
+        var indexByID = Dictionary(uniqueKeysWithValues: existing.indices.map { (existing[$0].id, $0) })
+        for record in records {
+            if let index = indexByID[record.id] {
+                existing[index] = record
+            } else {
+                indexByID[record.id] = existing.count
+                existing.append(record)
+            }
+        }
     }
 
     func saveMacRunnerHeartbeat(_ heartbeat: MacRunnerHeartbeat) async throws {
@@ -6129,6 +6663,73 @@ private final class MemorySecretStore: SecretStoring {
 
     func delete(_ key: String) throws {
         values[key] = nil
+    }
+}
+
+private final class CountingSecretStore: SecretStoring {
+    private(set) var singleReadCount = 0
+    private(set) var batchReadCount = 0
+
+    func data(for key: String) throws -> Data? {
+        singleReadCount += 1
+        return nil
+    }
+
+    func data(for keys: [String]) throws -> [String: Data] {
+        batchReadCount += 1
+        return [:]
+    }
+
+    func save(_ data: Data, for key: String) throws {
+        _ = data
+        _ = key
+    }
+
+    func delete(_ key: String) throws {
+        _ = key
+    }
+}
+
+private nonisolated final class ConcurrentRecordingSecretStore: SecretStoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: Data] = [:]
+    private var synchronousReads = 0
+    private var concurrentReads = 0
+
+    var synchronousReadCount: Int {
+        lock.withLock { synchronousReads }
+    }
+
+    var concurrentReadCount: Int {
+        lock.withLock { concurrentReads }
+    }
+
+    func data(for key: String) throws -> Data? {
+        lock.withLock {
+            synchronousReads += 1
+            return values[key]
+        }
+    }
+
+    func save(_ data: Data, for key: String) throws {
+        lock.withLock {
+            values[key] = data
+        }
+    }
+
+    func delete(_ key: String) throws {
+        lock.withLock {
+            values[key] = nil
+        }
+    }
+
+    @concurrent
+    func dataAsync(for key: String) async throws -> Data? {
+        dispatchPrecondition(condition: .notOnQueue(.main))
+        return lock.withLock {
+            concurrentReads += 1
+            return values[key]
+        }
     }
 }
 

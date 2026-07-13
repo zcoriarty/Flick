@@ -7,104 +7,261 @@ import CloudKit
 import CoreData
 import Foundation
 
-@MainActor
-final class CoreDataFlickRepository: FlickRepository {
+nonisolated private struct OverviewRecordKey: Hashable, Sendable {
+    var kind: OverviewRecordKind
+    var id: UUID
+}
+
+private typealias DeletionTombstones = [OverviewRecordKey: Date]
+
+nonisolated final class CoreDataFlickRepository: FlickRepository, @unchecked Sendable {
     private let context: NSManagedObjectContext
     private let cloudAvailability: () async -> Bool
+    private let resetsContextBeforeOperations: Bool
 
     init(
         context: NSManagedObjectContext,
-        cloudAvailability: @escaping () async -> Bool = CoreDataFlickRepository.defaultCloudAvailability
+        cloudAvailability: @escaping () async -> Bool = CoreDataFlickRepository.defaultCloudAvailability,
+        resetsContextBeforeOperations: Bool = false
     ) {
         self.context = context
         self.cloudAvailability = cloudAvailability
+        self.resetsContextBeforeOperations = resetsContextBeforeOperations
     }
 
+    @MainActor
+    convenience init(
+        container: NSPersistentContainer,
+        cloudAvailability: @escaping () async -> Bool = CoreDataFlickRepository.defaultCloudAvailability
+    ) {
+        let context = container.newBackgroundContext()
+        context.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+        context.transactionAuthor = PersistentHistoryChangeMonitor.appTransactionAuthor
+        context.automaticallyMergesChangesFromParent = true
+        self.init(
+            context: context,
+            cloudAvailability: cloudAvailability,
+            resetsContextBeforeOperations: true
+        )
+    }
+
+    @MainActor
     func loadOverview() async throws -> FlickOverviewState {
-        var state = FlickEmptyState.make()
-        state.accounts = try fetchConnectedAccounts()
-        state.products = try fetchProducts()
-        state.creationModels = try fetchCreationModels()
-        state.assets = try fetchAssets()
-        state.templates = try fetchTemplates()
-        state.drafts = try fetchDrafts(slidesByDraftID: try fetchSlidesByDraftID())
-        state.automations = try fetchAutomations()
-        state.automationPostProgresses = try fetchAutomationPostProgresses()
-        state.macRunnerHeartbeat = try fetchMacRunnerHeartbeat()
-        state.publishingJobs = try fetchPublishingJobs()
-        state.publishedPosts = try fetchPublishedPosts()
-        state.refreshDerivedState()
-        state.dashboard.connectedAccounts = state.accounts
+        var state = try await context.perform { [self] in
+            resetContextIfNeeded()
+            return try loadOverviewFromStore()
+        }
         state.dashboard.syncHealth.iCloudAvailable = await cloudAvailability()
         return state
     }
 
-    func saveOverview(_ state: FlickOverviewState) async throws {
-        try syncOverview(state)
-        try saveIfNeeded()
+    private func loadOverviewFromStore() throws -> FlickOverviewState {
+        let tombstones = try fetchDeletionTombstones()
+        var state = FlickEmptyState.make()
+        state.accounts = try fetchConnectedAccounts().filter {
+            isVisible(id: $0.id, updatedAt: $0.updatedAt, kind: .connectedAccount, tombstones: tombstones)
+        }
+        state.products = try fetchProducts().filter {
+            isVisible(id: $0.id, updatedAt: $0.updatedAt, kind: .product, tombstones: tombstones)
+        }
+        state.creationModels = try fetchCreationModels().filter {
+            isVisible(id: $0.id, updatedAt: $0.updatedAt, kind: .creationModel, tombstones: tombstones)
+        }
+        state.assets = try fetchAssets().filter {
+            isVisible(id: $0.id, updatedAt: $0.updatedAt, kind: .asset, tombstones: tombstones)
+        }
+        state.templates = try fetchTemplates().filter {
+            isVisible(id: $0.id, updatedAt: $0.updatedAt, kind: .template, tombstones: tombstones)
+        }
+        let slidesByDraftID = try fetchSlidesByDraftID(tombstones: tombstones)
+        state.drafts = try fetchDrafts(slidesByDraftID: slidesByDraftID).filter {
+            isVisible(id: $0.id, updatedAt: $0.updatedAt, kind: .draft, tombstones: tombstones)
+        }
+        state.automations = try fetchAutomations().filter {
+            isVisible(id: $0.id, updatedAt: $0.updatedAt, kind: .automation, tombstones: tombstones)
+        }
+        state.automationPostProgresses = try fetchAutomationPostProgresses().filter {
+            isVisible(id: $0.id, updatedAt: $0.updatedAt, kind: .automationPostProgress, tombstones: tombstones)
+        }
+        state.macRunnerHeartbeat = try fetchMacRunnerHeartbeat()
+        state.publishingJobs = try fetchPublishingJobs().filter {
+            isVisible(id: $0.id, updatedAt: $0.updatedAt, kind: .publishingJob, tombstones: tombstones)
+        }
+        state.publishedPosts = try fetchPublishedPosts().filter {
+            isVisible(id: $0.id, updatedAt: $0.updatedAt, kind: .publishedPost, tombstones: tombstones)
+        }
+        state.refreshDerivedState()
+        state.dashboard.connectedAccounts = state.accounts
+        return state
     }
 
+    @MainActor
     func saveOverview(
         _ state: FlickOverviewState,
-        deletingAutomationIDs: Set<UUID>
+        deletions: [OverviewDeletion]
     ) async throws {
-        try syncOverview(state)
-        try deleteAutomations(ids: deletingAutomationIDs)
-        try saveIfNeeded()
+        try await context.perform { [self] in
+            resetContextIfNeeded()
+            let deletions = deletions.deduplicatedByLatestDeletion()
+            let tombstones = try persistDeletionTombstones(deletions)
+            try syncOverview(state, tombstones: tombstones)
+            if deletions.contains(where: { $0.kind == .automationPostProgress }) {
+                try mergeAutomationPostProgresses(
+                    state.automationPostProgresses,
+                    tombstones: tombstones
+                )
+            }
+            try applyPhysicalDeletions(deletions, tombstones: tombstones)
+            try saveIfNeeded()
+        }
     }
 
-    private func syncOverview(_ state: FlickOverviewState) throws {
-        try syncConnectedAccounts(state.accounts)
-        try syncProducts(state.products)
-        try syncCreationModels(state.creationModels)
-        try syncAssets(state.assets)
-        try syncTemplates(state.templates)
-        try syncDrafts(state.drafts)
-        try syncSlides(in: state.drafts)
-        try syncAutomations(state.automations)
-        try syncAutomationPostProgresses(state.automationPostProgresses)
-        try syncPublishingJobs(state.publishingJobs)
-        try syncPublishedPosts(state.publishedPosts)
+    @MainActor
+    func saveCreateState(
+        drafts: [SlideshowDraft],
+        templates: [CreativeTemplate],
+        assets: [MediaAsset],
+        deletions: [OverviewDeletion]
+    ) async throws {
+        try await context.perform { [self] in
+            resetContextIfNeeded()
+            let deletions = deletions.deduplicatedByLatestDeletion()
+            let tombstones = try persistDeletionTombstones(deletions)
+            try syncAssets(assets, tombstones: tombstones)
+            try syncTemplates(templates, tombstones: tombstones)
+            try syncDrafts(drafts, tombstones: tombstones)
+            try syncSlides(in: drafts, tombstones: tombstones)
+            if deletions.contains(where: { $0.kind == .automationPostProgress }) {
+                try mergeAutomationPostProgresses([], tombstones: tombstones)
+            }
+            try applyPhysicalDeletions(deletions, tombstones: tombstones)
+            try saveIfNeeded()
+        }
     }
 
+    private func syncOverview(
+        _ state: FlickOverviewState,
+        tombstones: DeletionTombstones
+    ) throws {
+        try syncConnectedAccounts(state.accounts, tombstones: tombstones)
+        try syncProducts(state.products, tombstones: tombstones)
+        try syncCreationModels(state.creationModels, tombstones: tombstones)
+        try syncAssets(state.assets, tombstones: tombstones)
+        try syncTemplates(state.templates, tombstones: tombstones)
+        try syncDrafts(state.drafts, tombstones: tombstones)
+        try syncSlides(in: state.drafts, tombstones: tombstones)
+        try syncAutomations(state.automations, tombstones: tombstones)
+        try syncPublishingJobs(state.publishingJobs, tombstones: tombstones)
+        try syncPublishedPosts(state.publishedPosts, tombstones: tombstones)
+    }
+
+    @MainActor
     func saveMacRunnerHeartbeat(_ heartbeat: MacRunnerHeartbeat) async throws {
-        try syncMacRunnerHeartbeat(heartbeat)
-        try saveIfNeeded()
+        try await context.perform { [self] in
+            resetContextIfNeeded()
+            try syncMacRunnerHeartbeat(heartbeat)
+            try saveIfNeeded()
+        }
     }
 
+    @MainActor
     func saveAutomationPostProgresses(_ progresses: [AutomationPostProgress]) async throws {
-        try syncAutomationPostProgresses(progresses)
-        try saveIfNeeded()
+        try await context.perform { [self] in
+            resetContextIfNeeded()
+            try mergeAutomationPostProgresses(
+                progresses,
+                tombstones: try fetchDeletionTombstones()
+            )
+            try saveIfNeeded()
+        }
     }
 
+    @MainActor
     func upsertConnectedAccount(_ account: ConnectedAccount) async throws {
-        let object = try fetchConnectedAccount(id: account.id) ?? insertConnectedAccountObject()
-        apply(account, to: object)
-        try saveIfNeeded()
+        try await context.perform { [self] in
+            resetContextIfNeeded()
+            let tombstones = try fetchDeletionTombstones()
+            guard isVisible(
+                id: account.id,
+                updatedAt: account.updatedAt,
+                kind: .connectedAccount,
+                tombstones: tombstones
+            ) else { return }
+            let existingObject = try fetchConnectedAccount(id: account.id)
+            if let existingObject,
+               updatedAt(for: existingObject, key: ConnectedAccountKey.updatedAt) >= account.updatedAt {
+                return
+            }
+            let object = existingObject ?? insertConnectedAccountObject()
+            apply(account, to: object)
+            try saveIfNeeded()
+        }
     }
 
+    @MainActor
     func deleteConnectedAccount(id: UUID) async throws {
-        guard let object = try fetchConnectedAccount(id: id) else { return }
-        context.delete(object)
-        try saveIfNeeded()
+        try await context.perform { [self] in
+            resetContextIfNeeded()
+            let deletion = OverviewDeletion(kind: .connectedAccount, id: id, deletedAt: Date())
+            let tombstones = try persistDeletionTombstones([deletion])
+            try applyPhysicalDeletions([deletion], tombstones: tombstones)
+            try saveIfNeeded()
+        }
     }
 
+    @MainActor
     func upsertProduct(_ product: FlickProduct) async throws {
-        let object = try fetchProduct(id: product.id) ?? insertProductObject()
-        apply(product, to: object)
-        try saveIfNeeded()
+        try await context.perform { [self] in
+            resetContextIfNeeded()
+            let tombstones = try fetchDeletionTombstones()
+            guard isVisible(
+                id: product.id,
+                updatedAt: product.updatedAt,
+                kind: .product,
+                tombstones: tombstones
+            ) else { return }
+            let existingObject = try fetchProduct(id: product.id)
+            if let existingObject,
+               updatedAt(for: existingObject, key: ProductKey.updatedAt) >= product.updatedAt {
+                return
+            }
+            let object = existingObject ?? insertProductObject()
+            apply(product, to: object)
+            try saveIfNeeded()
+        }
     }
 
+    @MainActor
     func upsertAsset(_ asset: MediaAsset) async throws {
-        let object = try fetchAsset(id: asset.id) ?? insertAssetObject()
-        apply(asset, to: object)
-        try saveIfNeeded()
+        try await context.perform { [self] in
+            resetContextIfNeeded()
+            let tombstones = try fetchDeletionTombstones()
+            guard isVisible(
+                id: asset.id,
+                updatedAt: asset.updatedAt,
+                kind: .asset,
+                tombstones: tombstones
+            ) else { return }
+            let existingObject = try fetchAsset(id: asset.id)
+            if let existingObject,
+               updatedAt(for: existingObject, key: AssetKey.updatedAt) >= asset.updatedAt {
+                return
+            }
+            let object = existingObject ?? insertAssetObject()
+            apply(asset, to: object)
+            try saveIfNeeded()
+        }
     }
 
+    @MainActor
     func deleteAsset(id: UUID) async throws {
-        guard let object = try fetchAsset(id: id) else { return }
-        context.delete(object)
-        try saveIfNeeded()
+        try await context.perform { [self] in
+            resetContextIfNeeded()
+            let deletion = OverviewDeletion(kind: .asset, id: id, deletedAt: Date())
+            let tombstones = try persistDeletionTombstones([deletion])
+            try applyPhysicalDeletions([deletion], tombstones: tombstones)
+            try saveIfNeeded()
+        }
     }
 
     private func existingObjectsByID(
@@ -152,144 +309,424 @@ final class CoreDataFlickRepository: FlickRepository {
         object.value(forKey: key) as? Date ?? .distantPast
     }
 
-    private func syncConnectedAccounts(_ accounts: [ConnectedAccount]) throws {
-        let accounts = accounts.deduplicatedByLatestUpdate()
-        let existingAccounts = try context.fetch(connectedAccountFetchRequest())
+    private enum ExistingObjectFetchScope {
+        case all
+        case ids(Set<UUID>)
+    }
+
+    private func fetchExistingObjects(
+        using request: NSFetchRequest<NSManagedObject>,
+        idKey: String,
+        scope: ExistingObjectFetchScope
+    ) throws -> [NSManagedObject] {
+        switch scope {
+        case .all:
+            return try context.fetch(request)
+        case let .ids(ids):
+            guard !ids.isEmpty else { return [] }
+
+            let ids = Array(ids)
+            let batchSize = 400
+            var objects: [NSManagedObject] = []
+            objects.reserveCapacity(ids.count)
+
+            for start in stride(from: 0, to: ids.count, by: batchSize) {
+                let end = min(start + batchSize, ids.count)
+                let batch = ids[start..<end].map { $0 as NSUUID }
+                request.predicate = NSPredicate(format: "%K IN %@", idKey, batch as NSArray)
+                objects.append(contentsOf: try context.fetch(request))
+            }
+            return objects
+        }
+    }
+
+    private func isVisible(
+        id: UUID,
+        updatedAt: Date,
+        kind: OverviewRecordKind,
+        tombstones: DeletionTombstones
+    ) -> Bool {
+        guard let deletedAt = tombstones[OverviewRecordKey(kind: kind, id: id)] else {
+            return true
+        }
+        return updatedAt > deletedAt
+    }
+
+    private func fetchDeletionTombstones() throws -> DeletionTombstones {
+        let request = auditEventFetchRequest()
+        request.predicate = NSPredicate(
+            format: "%K BEGINSWITH %@",
+            AuditEventKey.eventType,
+            AuditEventKey.deletionEventTypePrefix
+        )
+
+        return try context.fetch(request).reduce(into: DeletionTombstones()) { result, object in
+            guard let deletion = deletionTombstone(from: object) else { return }
+            let key = OverviewRecordKey(kind: deletion.kind, id: deletion.id)
+            result[key] = max(result[key] ?? .distantPast, deletion.deletedAt)
+        }
+    }
+
+    private func persistDeletionTombstones(
+        _ deletions: [OverviewDeletion]
+    ) throws -> DeletionTombstones {
+        var tombstones = try fetchDeletionTombstones()
+
+        for deletion in deletions.deduplicatedByLatestDeletion() {
+            let key = OverviewRecordKey(kind: deletion.kind, id: deletion.id)
+            let effectiveDeletion = OverviewDeletion(
+                kind: deletion.kind,
+                id: deletion.id,
+                deletedAt: max(tombstones[key] ?? .distantPast, deletion.deletedAt)
+            )
+            tombstones[key] = effectiveDeletion.deletedAt
+            try upsertDeletionTombstone(effectiveDeletion)
+        }
+
+        return tombstones
+    }
+
+    private func upsertDeletionTombstone(_ deletion: OverviewDeletion) throws {
+        let eventType = AuditEventKey.deletionEventType(for: deletion.kind)
+        let request = auditEventFetchRequest()
+        request.predicate = NSPredicate(
+            format: "%K == %@ AND %K == %@",
+            AuditEventKey.eventType,
+            eventType,
+            AuditEventKey.id,
+            deletion.id as NSUUID
+        )
+        request.sortDescriptors = [
+            NSSortDescriptor(key: AuditEventKey.createdAt, ascending: false)
+        ]
+
+        let objects = try context.fetch(request)
+        let object = objects.first ?? insertAuditEventObject()
+        objects.dropFirst().forEach { context.delete($0) }
+
+        let storedDeletedAt = object.value(forKey: AuditEventKey.createdAt) as? Date ?? .distantPast
+        let effectiveDeletion = OverviewDeletion(
+            kind: deletion.kind,
+            id: deletion.id,
+            deletedAt: max(storedDeletedAt, deletion.deletedAt)
+        )
+        object.setValueIfChanged(effectiveDeletion.id, forKey: AuditEventKey.id)
+        object.setValueIfChanged(eventType, forKey: AuditEventKey.eventType)
+        object.setValueIfChanged(effectiveDeletion.deletedAt, forKey: AuditEventKey.createdAt)
+        object.setValueIfChanged(
+            "Deleted \(effectiveDeletion.kind.rawValue) \(effectiveDeletion.id.uuidString)",
+            forKey: AuditEventKey.summary
+        )
+        object.setValueIfChanged(effectiveDeletion, asJSONForKey: AuditEventKey.metadataJSON)
+    }
+
+    private func deletionTombstone(from object: NSManagedObject) -> OverviewDeletion? {
+        guard
+            let eventType = object.value(forKey: AuditEventKey.eventType) as? String,
+            eventType.hasPrefix(AuditEventKey.deletionEventTypePrefix),
+            let kind = OverviewRecordKind(
+                rawValue: String(eventType.dropFirst(AuditEventKey.deletionEventTypePrefix.count))
+            )
+        else {
+            return nil
+        }
+
+        let metadata = object.decodedJSON(OverviewDeletion.self, forKey: AuditEventKey.metadataJSON)
+        guard let id = object.value(forKey: AuditEventKey.id) as? UUID ?? metadata?.id else {
+            return nil
+        }
+        let createdAt = object.value(forKey: AuditEventKey.createdAt) as? Date ?? .distantPast
+        return OverviewDeletion(
+            kind: kind,
+            id: id,
+            deletedAt: max(createdAt, metadata?.deletedAt ?? .distantPast)
+        )
+    }
+
+    private func applyPhysicalDeletions(
+        _ deletions: [OverviewDeletion],
+        tombstones: DeletionTombstones
+    ) throws {
+        for deletion in deletions.deduplicatedByLatestDeletion() {
+            let key = OverviewRecordKey(kind: deletion.kind, id: deletion.id)
+            let deletedAt = tombstones[key] ?? deletion.deletedAt
+
+            switch deletion.kind {
+            case .connectedAccount:
+                try deleteStoredRecord(
+                    id: deletion.id,
+                    deletedAt: deletedAt,
+                    request: connectedAccountFetchRequest(),
+                    idKey: ConnectedAccountKey.id,
+                    updatedAtKey: ConnectedAccountKey.updatedAt
+                )
+            case .product:
+                try deleteStoredRecord(
+                    id: deletion.id,
+                    deletedAt: deletedAt,
+                    request: productFetchRequest(),
+                    idKey: ProductKey.id,
+                    updatedAtKey: ProductKey.updatedAt
+                )
+            case .creationModel:
+                try deleteStoredRecord(
+                    id: deletion.id,
+                    deletedAt: deletedAt,
+                    request: creationModelFetchRequest(),
+                    idKey: CreationModelKey.id,
+                    updatedAtKey: CreationModelKey.updatedAt
+                )
+            case .asset:
+                try deleteStoredRecord(
+                    id: deletion.id,
+                    deletedAt: deletedAt,
+                    request: assetFetchRequest(),
+                    idKey: AssetKey.id,
+                    updatedAtKey: AssetKey.updatedAt
+                )
+            case .template:
+                try deleteStoredRecord(
+                    id: deletion.id,
+                    deletedAt: deletedAt,
+                    request: templateFetchRequest(),
+                    idKey: TemplateKey.id,
+                    updatedAtKey: TemplateKey.updatedAt
+                )
+            case .draft:
+                try deleteStoredRecord(
+                    id: deletion.id,
+                    deletedAt: deletedAt,
+                    request: draftFetchRequest(),
+                    idKey: DraftKey.id,
+                    updatedAtKey: DraftKey.updatedAt
+                )
+            case .slide:
+                try deleteStoredRecord(
+                    id: deletion.id,
+                    deletedAt: deletedAt,
+                    request: slideFetchRequest(),
+                    idKey: SlideKey.id,
+                    updatedAtKey: SlideKey.updatedAt
+                )
+            case .automation:
+                try deleteStoredRecord(
+                    id: deletion.id,
+                    deletedAt: deletedAt,
+                    request: automationFetchRequest(),
+                    idKey: AutomationKey.id,
+                    updatedAtKey: AutomationKey.updatedAt
+                )
+            case .automationPostProgress:
+                break
+            case .publishingJob:
+                try deleteStoredRecord(
+                    id: deletion.id,
+                    deletedAt: deletedAt,
+                    request: publishingJobFetchRequest(),
+                    idKey: PublishingJobKey.id,
+                    updatedAtKey: PublishingJobKey.updatedAt
+                )
+            case .publishedPost:
+                try deleteStoredRecord(
+                    id: deletion.id,
+                    deletedAt: deletedAt,
+                    request: publishedPostFetchRequest(),
+                    idKey: PublishedPostKey.id,
+                    updatedAtKey: PublishedPostKey.updatedAt
+                )
+            }
+        }
+    }
+
+    private func deleteStoredRecord(
+        id: UUID,
+        deletedAt: Date,
+        request: NSFetchRequest<NSManagedObject>,
+        idKey: String,
+        updatedAtKey: String
+    ) throws {
+        let objects = try fetchExistingObjects(
+            using: request,
+            idKey: idKey,
+            scope: .ids([id])
+        )
+        for object in objects where updatedAt(for: object, key: updatedAtKey) <= deletedAt {
+            context.delete(object)
+        }
+    }
+
+    private func syncRecords<Record: CoreDataSyncRecordIdentity>(
+        _ records: [Record],
+        kind: OverviewRecordKind,
+        request: NSFetchRequest<NSManagedObject>,
+        idKey: String,
+        updatedAtKey: String,
+        tombstones: DeletionTombstones,
+        insert: () -> NSManagedObject,
+        apply: (Record, NSManagedObject) -> Void
+    ) throws {
+        let records = records
+            .deduplicatedByLatestUpdate()
+            .filter {
+                isVisible(
+                    id: $0.id,
+                    updatedAt: $0.updatedAt,
+                    kind: kind,
+                    tombstones: tombstones
+                )
+            }
+        let recordIDs = Set(records.map(\.id))
+        let existingObjects = try fetchExistingObjects(
+            using: request,
+            idKey: idKey,
+            scope: .ids(recordIDs)
+        )
         var existingByID = existingObjectsByID(
-            from: existingAccounts,
+            from: existingObjects,
+            idKey: idKey,
+            updatedAtKey: updatedAtKey
+        )
+
+        for record in records {
+            let existingObject = existingByID.removeValue(forKey: record.id)
+            if let existingObject,
+               updatedAt(for: existingObject, key: updatedAtKey) >= record.updatedAt {
+                continue
+            }
+            apply(record, existingObject ?? insert())
+        }
+    }
+
+    private func syncConnectedAccounts(
+        _ accounts: [ConnectedAccount],
+        tombstones: DeletionTombstones
+    ) throws {
+        try syncRecords(
+            accounts,
+            kind: .connectedAccount,
+            request: connectedAccountFetchRequest(),
             idKey: ConnectedAccountKey.id,
-            updatedAtKey: ConnectedAccountKey.updatedAt
+            updatedAtKey: ConnectedAccountKey.updatedAt,
+            tombstones: tombstones,
+            insert: insertConnectedAccountObject,
+            apply: apply
         )
-        let stateIDs = Set(accounts.map(\.id))
-
-        for account in accounts {
-            let object = existingByID.removeValue(forKey: account.id) ?? insertConnectedAccountObject()
-            apply(account, to: object)
-        }
-
-        for (id, object) in existingByID where !stateIDs.contains(id) {
-            context.delete(object)
-        }
     }
 
-    private func syncProducts(_ products: [FlickProduct]) throws {
-        let products = products.deduplicatedByLatestUpdate()
-        let existingProducts = try context.fetch(productFetchRequest())
-        var existingByID = existingObjectsByID(
-            from: existingProducts,
+    private func syncProducts(
+        _ products: [FlickProduct],
+        tombstones: DeletionTombstones
+    ) throws {
+        try syncRecords(
+            products,
+            kind: .product,
+            request: productFetchRequest(),
             idKey: ProductKey.id,
-            updatedAtKey: ProductKey.updatedAt
+            updatedAtKey: ProductKey.updatedAt,
+            tombstones: tombstones,
+            insert: insertProductObject,
+            apply: apply
         )
-        let stateIDs = Set(products.map(\.id))
-
-        for product in products {
-            let object = existingByID.removeValue(forKey: product.id) ?? insertProductObject()
-            apply(product, to: object)
-        }
-
-        for (id, object) in existingByID where !stateIDs.contains(id) {
-            context.delete(object)
-        }
     }
 
-    private func syncCreationModels(_ creationModels: [FlickCreationModel]) throws {
-        let creationModels = creationModels.deduplicatedByLatestUpdate()
-        let existingModels = try context.fetch(creationModelFetchRequest())
-        var existingByID = existingObjectsByID(
-            from: existingModels,
+    private func syncCreationModels(
+        _ creationModels: [FlickCreationModel],
+        tombstones: DeletionTombstones
+    ) throws {
+        try syncRecords(
+            creationModels,
+            kind: .creationModel,
+            request: creationModelFetchRequest(),
             idKey: CreationModelKey.id,
-            updatedAtKey: CreationModelKey.updatedAt
+            updatedAtKey: CreationModelKey.updatedAt,
+            tombstones: tombstones,
+            insert: insertCreationModelObject,
+            apply: apply
         )
-        let stateIDs = Set(creationModels.map(\.id))
-
-        for creationModel in creationModels {
-            let object = existingByID.removeValue(forKey: creationModel.id) ?? insertCreationModelObject()
-            apply(creationModel, to: object)
-        }
-
-        for (id, object) in existingByID where !stateIDs.contains(id) {
-            context.delete(object)
-        }
     }
 
-    private func syncAssets(_ assets: [MediaAsset]) throws {
-        let assets = assets.deduplicatedByLatestUpdate()
-        let existingAssets = try context.fetch(assetFetchRequest())
-        var existingByID = existingObjectsByID(
-            from: existingAssets,
+    private func syncAssets(
+        _ assets: [MediaAsset],
+        tombstones: DeletionTombstones
+    ) throws {
+        try syncRecords(
+            assets,
+            kind: .asset,
+            request: assetFetchRequest(),
             idKey: AssetKey.id,
-            updatedAtKey: AssetKey.updatedAt
+            updatedAtKey: AssetKey.updatedAt,
+            tombstones: tombstones,
+            insert: insertAssetObject,
+            apply: apply
         )
-        let stateIDs = Set(assets.map(\.id))
-
-        for asset in assets {
-            let object = existingByID.removeValue(forKey: asset.id) ?? insertAssetObject()
-            apply(asset, to: object)
-        }
-
-        for (id, object) in existingByID where !stateIDs.contains(id) {
-            context.delete(object)
-        }
     }
 
-    private func syncTemplates(_ templates: [CreativeTemplate]) throws {
-        let templates = templates.deduplicatedByLatestUpdate()
-        let existingTemplates = try context.fetch(templateFetchRequest())
-        var existingByID = existingObjectsByID(
-            from: existingTemplates,
+    private func syncTemplates(
+        _ templates: [CreativeTemplate],
+        tombstones: DeletionTombstones
+    ) throws {
+        try syncRecords(
+            templates,
+            kind: .template,
+            request: templateFetchRequest(),
             idKey: TemplateKey.id,
-            updatedAtKey: TemplateKey.updatedAt
+            updatedAtKey: TemplateKey.updatedAt,
+            tombstones: tombstones,
+            insert: insertTemplateObject,
+            apply: apply
         )
-        let stateIDs = Set(templates.map(\.id))
-
-        for template in templates {
-            let object = existingByID.removeValue(forKey: template.id) ?? insertTemplateObject()
-            apply(template, to: object)
-        }
-
-        for (id, object) in existingByID where !stateIDs.contains(id) {
-            context.delete(object)
-        }
     }
 
-    private func syncDrafts(_ drafts: [SlideshowDraft]) throws {
-        let drafts = drafts.deduplicatedByLatestUpdate()
-        let existingDrafts = try context.fetch(draftFetchRequest())
-        var existingByID = existingObjectsByID(
-            from: existingDrafts,
+    private func syncDrafts(
+        _ drafts: [SlideshowDraft],
+        tombstones: DeletionTombstones
+    ) throws {
+        try syncRecords(
+            drafts,
+            kind: .draft,
+            request: draftFetchRequest(),
             idKey: DraftKey.id,
-            updatedAtKey: DraftKey.updatedAt
+            updatedAtKey: DraftKey.updatedAt,
+            tombstones: tombstones,
+            insert: insertDraftObject,
+            apply: apply
         )
-        let stateIDs = Set(drafts.map(\.id))
-
-        for draft in drafts {
-            let object = existingByID.removeValue(forKey: draft.id) ?? insertDraftObject()
-            apply(draft, to: object)
-        }
-
-        for (id, object) in existingByID where !stateIDs.contains(id) {
-            context.delete(object)
-        }
     }
 
-    private func syncSlides(in drafts: [SlideshowDraft]) throws {
-        let drafts = drafts.deduplicatedByLatestUpdate()
-        let existingSlides = try context.fetch(slideFetchRequest())
+    private func syncSlides(
+        in drafts: [SlideshowDraft],
+        tombstones: DeletionTombstones
+    ) throws {
+        let visibleDrafts = drafts.filter {
+            isVisible(id: $0.id, updatedAt: $0.updatedAt, kind: .draft, tombstones: tombstones)
+        }
+        let draftSlides = newestUniqueDraftSlides(in: visibleDrafts).filter {
+            isVisible(
+                id: $0.slide.id,
+                updatedAt: $0.slide.updatedAt,
+                kind: .slide,
+                tombstones: tombstones
+            )
+        }
+        let slideIDs = Set(draftSlides.map(\.slide.id))
+        let existingSlides = try fetchExistingObjects(
+            using: slideFetchRequest(),
+            idKey: SlideKey.id,
+            scope: .ids(slideIDs)
+        )
         var existingByID = existingObjectsByID(
             from: existingSlides,
             idKey: SlideKey.id,
             updatedAtKey: SlideKey.updatedAt
         )
-        let draftSlides = newestUniqueDraftSlides(in: drafts)
-        let stateIDs = Set(draftSlides.map(\.slide.id))
 
         for (draftID, slide) in draftSlides {
-            let object = existingByID.removeValue(forKey: slide.id) ?? insertSlideObject()
-            apply(slide, draftID: draftID, to: object)
-        }
-
-        for (id, object) in existingByID where !stateIDs.contains(id) {
-            context.delete(object)
+            let existingObject = existingByID.removeValue(forKey: slide.id)
+            if let existingObject,
+               updatedAt(for: existingObject, key: SlideKey.updatedAt) >= slide.updatedAt {
+                continue
+            }
+            apply(slide, draftID: draftID, to: existingObject ?? insertSlideObject())
         }
     }
 
@@ -313,51 +750,63 @@ final class CoreDataFlickRepository: FlickRepository {
         return draftSlides
     }
 
-    private func syncAutomations(_ automations: [ContentAutomation]) throws {
-        let automations = automations.deduplicatedByLatestUpdate()
-        let existingAutomations = try context.fetch(automationFetchRequest())
-        var existingByID = existingObjectsByID(
-            from: existingAutomations,
+    private func syncAutomations(
+        _ automations: [ContentAutomation],
+        tombstones: DeletionTombstones
+    ) throws {
+        try syncRecords(
+            automations,
+            kind: .automation,
+            request: automationFetchRequest(),
             idKey: AutomationKey.id,
-            updatedAtKey: AutomationKey.updatedAt
+            updatedAtKey: AutomationKey.updatedAt,
+            tombstones: tombstones,
+            insert: insertAutomationObject,
+            apply: apply
         )
-        for automation in automations {
-            let object = existingByID.removeValue(forKey: automation.id) ?? insertAutomationObject()
-            apply(automation, to: object)
-        }
     }
 
-    private func deleteAutomations(ids: Set<UUID>) throws {
-        guard !ids.isEmpty else { return }
-
-        let request = automationFetchRequest()
-        request.predicate = NSPredicate(format: "%K IN %@", AutomationKey.id, ids as NSSet)
-        for object in try context.fetch(request) {
-            context.delete(object)
-        }
-    }
-
-    private func syncPublishingJobs(_ jobs: [PublishingJob]) throws {
-        let jobs = jobs.deduplicatedByLatestUpdate()
-        let existingJobs = try context.fetch(publishingJobFetchRequest())
-        var existingByID = existingObjectsByID(
-            from: existingJobs,
+    private func syncPublishingJobs(
+        _ jobs: [PublishingJob],
+        tombstones: DeletionTombstones
+    ) throws {
+        try syncRecords(
+            jobs,
+            kind: .publishingJob,
+            request: publishingJobFetchRequest(),
             idKey: PublishingJobKey.id,
-            updatedAtKey: PublishingJobKey.updatedAt
+            updatedAtKey: PublishingJobKey.updatedAt,
+            tombstones: tombstones,
+            insert: insertPublishingJobObject,
+            apply: apply
         )
-        let stateIDs = Set(jobs.map(\.id))
-
-        for job in jobs {
-            let object = existingByID.removeValue(forKey: job.id) ?? insertPublishingJobObject()
-            apply(job, to: object)
-        }
-
-        for (id, object) in existingByID where !stateIDs.contains(id) {
-            context.delete(object)
-        }
     }
 
-    private func syncAutomationPostProgresses(_ progresses: [AutomationPostProgress]) throws {
+    private func mergeAutomationPostProgresses(
+        _ progresses: [AutomationPostProgress],
+        tombstones: DeletionTombstones
+    ) throws {
+        let existing = try fetchAutomationPostProgresses().filter {
+            isVisible(
+                id: $0.id,
+                updatedAt: $0.updatedAt,
+                kind: .automationPostProgress,
+                tombstones: tombstones
+            )
+        }
+        let incoming = progresses.deduplicatedByLatestUpdate().filter {
+            isVisible(
+                id: $0.id,
+                updatedAt: $0.updatedAt,
+                kind: .automationPostProgress,
+                tombstones: tombstones
+            )
+        }
+        let merged = existing.mergingLatestUpdates(incoming)
+        try syncAutomationPostProgressesBlob(merged)
+    }
+
+    private func syncAutomationPostProgressesBlob(_ progresses: [AutomationPostProgress]) throws {
         let objects = try fetchWorkflowStateObjects(key: WorkflowStateValueKey.automationPostProgresses)
 
         if progresses.isEmpty {
@@ -367,10 +816,21 @@ final class CoreDataFlickRepository: FlickRepository {
 
         let object = objects.first ?? insertWorkflowStateObject()
         objects.dropFirst().forEach { context.delete($0) }
-        object.setValue(object.value(forKey: WorkflowStateKey.id) as? UUID ?? UUID(), forKey: WorkflowStateKey.id)
-        object.setValue(WorkflowStateValueKey.automationPostProgresses, forKey: WorkflowStateKey.key)
-        object.setValue(Date(), forKey: WorkflowStateKey.updatedAt)
-        object.setValue(progresses, asJSONForKey: WorkflowStateKey.valueJSON)
+        var changed = object.setValueIfChanged(
+            object.value(forKey: WorkflowStateKey.id) as? UUID ?? UUID(),
+            forKey: WorkflowStateKey.id
+        )
+        changed = object.setValueIfChanged(
+            WorkflowStateValueKey.automationPostProgresses,
+            forKey: WorkflowStateKey.key
+        ) || changed
+        changed = object.setValueIfChanged(
+            progresses,
+            asJSONForKey: WorkflowStateKey.valueJSON
+        ) || changed
+        if changed {
+            object.setValue(Date(), forKey: WorkflowStateKey.updatedAt)
+        }
     }
 
     private func syncMacRunnerHeartbeat(_ heartbeat: MacRunnerHeartbeat) throws {
@@ -383,30 +843,37 @@ final class CoreDataFlickRepository: FlickRepository {
 
         let object = objects.first ?? insertWorkflowStateObject()
         objects.dropFirst().forEach { context.delete($0) }
-        object.setValue(object.value(forKey: WorkflowStateKey.id) as? UUID ?? UUID(), forKey: WorkflowStateKey.id)
-        object.setValue(WorkflowStateValueKey.macRunnerHeartbeat, forKey: WorkflowStateKey.key)
-        object.setValue(Date(), forKey: WorkflowStateKey.updatedAt)
-        object.setValue(heartbeat, asJSONForKey: WorkflowStateKey.valueJSON)
+        var changed = object.setValueIfChanged(
+            object.value(forKey: WorkflowStateKey.id) as? UUID ?? UUID(),
+            forKey: WorkflowStateKey.id
+        )
+        changed = object.setValueIfChanged(
+            WorkflowStateValueKey.macRunnerHeartbeat,
+            forKey: WorkflowStateKey.key
+        ) || changed
+        changed = object.setValueIfChanged(
+            heartbeat,
+            asJSONForKey: WorkflowStateKey.valueJSON
+        ) || changed
+        if changed {
+            object.setValue(Date(), forKey: WorkflowStateKey.updatedAt)
+        }
     }
 
-    private func syncPublishedPosts(_ posts: [PublishedPost]) throws {
-        let posts = posts.deduplicatedByLatestUpdate()
-        let existingPosts = try context.fetch(publishedPostFetchRequest())
-        var existingByID = existingObjectsByID(
-            from: existingPosts,
+    private func syncPublishedPosts(
+        _ posts: [PublishedPost],
+        tombstones: DeletionTombstones
+    ) throws {
+        try syncRecords(
+            posts,
+            kind: .publishedPost,
+            request: publishedPostFetchRequest(),
             idKey: PublishedPostKey.id,
-            updatedAtKey: PublishedPostKey.updatedAt
+            updatedAtKey: PublishedPostKey.updatedAt,
+            tombstones: tombstones,
+            insert: insertPublishedPostObject,
+            apply: apply
         )
-        let stateIDs = Set(posts.map(\.id))
-
-        for post in posts {
-            let object = existingByID.removeValue(forKey: post.id) ?? insertPublishedPostObject()
-            apply(post, to: object)
-        }
-
-        for (id, object) in existingByID where !stateIDs.contains(id) {
-            context.delete(object)
-        }
     }
 
     private func fetchAssets() throws -> [MediaAsset] {
@@ -469,7 +936,9 @@ final class CoreDataFlickRepository: FlickRepository {
         }
     }
 
-    private func fetchSlidesByDraftID() throws -> [UUID: [Slide]] {
+    private func fetchSlidesByDraftID(
+        tombstones: DeletionTombstones
+    ) throws -> [UUID: [Slide]] {
         let request = slideFetchRequest()
         request.sortDescriptors = [
             NSSortDescriptor(key: SlideKey.index, ascending: true)
@@ -477,7 +946,13 @@ final class CoreDataFlickRepository: FlickRepository {
         return try context.fetch(request).reduce(into: [UUID: [Slide]]()) { result, object in
             guard
                 let draftID = object.value(forKey: SlideKey.draftID) as? UUID,
-                let slide = Slide(managedObject: object)
+                let slide = Slide(managedObject: object),
+                isVisible(
+                    id: slide.id,
+                    updatedAt: slide.updatedAt,
+                    kind: .slide,
+                    tombstones: tombstones
+                )
             else {
                 return
             }
@@ -494,11 +969,11 @@ final class CoreDataFlickRepository: FlickRepository {
     }
 
     private func fetchAutomationPostProgresses() throws -> [AutomationPostProgress] {
-        guard let object = try fetchWorkflowStateObjects(key: WorkflowStateValueKey.automationPostProgresses).first else {
-            return []
-        }
-
-        return object.decodedJSON([AutomationPostProgress].self, forKey: WorkflowStateKey.valueJSON) ?? []
+        try fetchWorkflowStateObjects(key: WorkflowStateValueKey.automationPostProgresses)
+            .flatMap {
+                $0.decodedJSON([AutomationPostProgress].self, forKey: WorkflowStateKey.valueJSON) ?? []
+            }
+            .deduplicatedByLatestUpdate()
     }
 
     private func fetchMacRunnerHeartbeat() throws -> MacRunnerHeartbeat {
@@ -587,6 +1062,10 @@ final class CoreDataFlickRepository: FlickRepository {
         NSFetchRequest<NSManagedObject>(entityName: "CDWorkflowState")
     }
 
+    private func auditEventFetchRequest() -> NSFetchRequest<NSManagedObject> {
+        NSFetchRequest<NSManagedObject>(entityName: "CDAuditEvent")
+    }
+
     private func fetchWorkflowStateObjects(key: String) throws -> [NSManagedObject] {
         let request = workflowStateFetchRequest()
         request.predicate = NSPredicate(format: "%K == %@", WorkflowStateKey.key, key)
@@ -636,185 +1115,194 @@ final class CoreDataFlickRepository: FlickRepository {
         NSEntityDescription.insertNewObject(forEntityName: "CDWorkflowState", into: context)
     }
 
+    private func insertAuditEventObject() -> NSManagedObject {
+        NSEntityDescription.insertNewObject(forEntityName: "CDAuditEvent", into: context)
+    }
+
     private func insertConnectedAccountObject() -> NSManagedObject {
         NSEntityDescription.insertNewObject(forEntityName: "CDConnectedAccount", into: context)
     }
 
     private func apply(_ account: ConnectedAccount, to object: NSManagedObject) {
-        object.setValue(account.id, forKey: ConnectedAccountKey.id)
-        object.setValue(account.platform.rawValue, forKey: ConnectedAccountKey.platform)
-        object.setValue(account.displayName, forKey: ConnectedAccountKey.displayName)
-        object.setValue(account.platformUserID, forKey: ConnectedAccountKey.platformUserID)
-        object.setValue(account.avatarURL, forKey: ConnectedAccountKey.avatarURL)
-        object.setValue(account.scopes, asJSONForKey: ConnectedAccountKey.scopesJSON)
-        object.setValue(account.status.rawValue, forKey: ConnectedAccountKey.status)
-        object.setValue(account.authorizationSource.rawValue, forKey: ConnectedAccountKey.authorizationSource)
-        object.setValue(account.tokenStatus.rawValue, forKey: ConnectedAccountKey.tokenStatus)
-        object.setValue(account.isPublishingEnabled, forKey: ConnectedAccountKey.isPublishingEnabled)
-        object.setValue(account.defaultPrivacyLevel, forKey: ConnectedAccountKey.defaultPrivacyLevel)
-        object.setValue(account.lastValidatedAt, forKey: ConnectedAccountKey.lastValidatedAt)
-        object.setValue(account.createdAt, forKey: ConnectedAccountKey.createdAt)
-        object.setValue(account.updatedAt, forKey: ConnectedAccountKey.updatedAt)
+        object.setValueIfChanged(account.id, forKey: ConnectedAccountKey.id)
+        object.setValueIfChanged(account.platform.rawValue, forKey: ConnectedAccountKey.platform)
+        object.setValueIfChanged(account.displayName, forKey: ConnectedAccountKey.displayName)
+        object.setValueIfChanged(account.platformUserID, forKey: ConnectedAccountKey.platformUserID)
+        object.setValueIfChanged(account.avatarURL, forKey: ConnectedAccountKey.avatarURL)
+        object.setValueIfChanged(account.scopes, asJSONForKey: ConnectedAccountKey.scopesJSON)
+        object.setValueIfChanged(account.status.rawValue, forKey: ConnectedAccountKey.status)
+        object.setValueIfChanged(account.authorizationSource.rawValue, forKey: ConnectedAccountKey.authorizationSource)
+        object.setValueIfChanged(account.tokenStatus.rawValue, forKey: ConnectedAccountKey.tokenStatus)
+        object.setValueIfChanged(account.isPublishingEnabled, forKey: ConnectedAccountKey.isPublishingEnabled)
+        object.setValueIfChanged(account.defaultPrivacyLevel, forKey: ConnectedAccountKey.defaultPrivacyLevel)
+        object.setValueIfChanged(account.lastValidatedAt, forKey: ConnectedAccountKey.lastValidatedAt)
+        object.setValueIfChanged(account.createdAt, forKey: ConnectedAccountKey.createdAt)
+        object.setValueIfChanged(account.updatedAt, forKey: ConnectedAccountKey.updatedAt)
     }
 
     private func apply(_ asset: MediaAsset, to object: NSManagedObject) {
-        object.setValue(asset.id, forKey: AssetKey.id)
-        object.setValue(asset.mediaType.rawValue, forKey: AssetKey.mediaType)
-        object.setValue(asset.source.rawValue, forKey: AssetKey.source)
-        object.setValue(asset.localFilePath, forKey: AssetKey.localFilePath)
-        object.setValue(asset.storageBucket, forKey: AssetKey.storageBucket)
-        object.setValue(asset.storagePath, forKey: AssetKey.storagePath)
-        object.setValue(asset.publicURL, forKey: AssetKey.publicURL)
-        object.setValue(asset.signedURLExpiration, forKey: AssetKey.signedURLExpiration)
-        object.setValue(asset.width, forKey: AssetKey.width)
-        object.setValue(asset.height, forKey: AssetKey.height)
-        object.setValue(asset.duration, forKey: AssetKey.duration)
-        object.setValue(asset.fileSize, forKey: AssetKey.fileSize)
-        object.setValue(asset.checksum, forKey: AssetKey.checksum)
-        object.setValue(asset.trendTags.map(\.id.uuidString), asJSONForKey: AssetKey.trendTagIDsJSON)
-        object.setValue(asset.productIDs.map(\.uuidString), asJSONForKey: AssetKey.productIDsJSON)
-        object.setValue(asset.createdAt, forKey: AssetKey.createdAt)
-        object.setValue(asset.updatedAt, forKey: AssetKey.updatedAt)
+        object.setValueIfChanged(asset.id, forKey: AssetKey.id)
+        object.setValueIfChanged(asset.mediaType.rawValue, forKey: AssetKey.mediaType)
+        object.setValueIfChanged(asset.source.rawValue, forKey: AssetKey.source)
+        object.setValueIfChanged(asset.localFilePath, forKey: AssetKey.localFilePath)
+        object.setValueIfChanged(asset.storageBucket, forKey: AssetKey.storageBucket)
+        object.setValueIfChanged(asset.storagePath, forKey: AssetKey.storagePath)
+        object.setValueIfChanged(asset.publicURL, forKey: AssetKey.publicURL)
+        object.setValueIfChanged(asset.signedURLExpiration, forKey: AssetKey.signedURLExpiration)
+        object.setValueIfChanged(asset.width, forKey: AssetKey.width)
+        object.setValueIfChanged(asset.height, forKey: AssetKey.height)
+        object.setValueIfChanged(asset.duration, forKey: AssetKey.duration)
+        object.setValueIfChanged(asset.fileSize, forKey: AssetKey.fileSize)
+        object.setValueIfChanged(asset.checksum, forKey: AssetKey.checksum)
+        object.setValueIfChanged(asset.trendTags.map(\.id.uuidString), asJSONForKey: AssetKey.trendTagIDsJSON)
+        object.setValueIfChanged(asset.productIDs.map(\.uuidString), asJSONForKey: AssetKey.productIDsJSON)
+        object.setValueIfChanged(asset.createdAt, forKey: AssetKey.createdAt)
+        object.setValueIfChanged(asset.updatedAt, forKey: AssetKey.updatedAt)
     }
 
     private func apply(_ product: FlickProduct, to object: NSManagedObject) {
-        object.setValue(product.id, forKey: ProductKey.id)
-        object.setValue(product.name, forKey: ProductKey.name)
-        object.setValue(product.summary, forKey: ProductKey.summary)
-        object.setValue(product.createdAt, forKey: ProductKey.createdAt)
-        object.setValue(product.updatedAt, forKey: ProductKey.updatedAt)
+        object.setValueIfChanged(product.id, forKey: ProductKey.id)
+        object.setValueIfChanged(product.name, forKey: ProductKey.name)
+        object.setValueIfChanged(product.summary, forKey: ProductKey.summary)
+        object.setValueIfChanged(product.createdAt, forKey: ProductKey.createdAt)
+        object.setValueIfChanged(product.updatedAt, forKey: ProductKey.updatedAt)
     }
 
     private func apply(_ creationModel: FlickCreationModel, to object: NSManagedObject) {
-        object.setValue(creationModel.id, forKey: CreationModelKey.id)
-        object.setValue(creationModel.name, forKey: CreationModelKey.name)
-        object.setValue(creationModel.metadata, asJSONForKey: CreationModelKey.metadataJSON)
-        object.setValue(creationModel.createdAt, forKey: CreationModelKey.createdAt)
-        object.setValue(creationModel.updatedAt, forKey: CreationModelKey.updatedAt)
+        object.setValueIfChanged(creationModel.id, forKey: CreationModelKey.id)
+        object.setValueIfChanged(creationModel.name, forKey: CreationModelKey.name)
+        object.setValueIfChanged(creationModel.metadata, asJSONForKey: CreationModelKey.metadataJSON)
+        object.setValueIfChanged(creationModel.createdAt, forKey: CreationModelKey.createdAt)
+        object.setValueIfChanged(creationModel.updatedAt, forKey: CreationModelKey.updatedAt)
     }
 
     private func apply(_ template: CreativeTemplate, to object: NSManagedObject) {
-        object.setValue(template.id, forKey: TemplateKey.id)
-        object.setValue(template.name, forKey: TemplateKey.name)
-        object.setValue(template.description, forKey: TemplateKey.summary)
-        object.setValue(template.platform.rawValue, forKey: TemplateKey.platform)
-        object.setValue(template.slideCount, forKey: TemplateKey.slideCount)
-        object.setValue(template.analysisSchemaVersion, forKey: TemplateKey.analysisSchemaVersion)
-        object.setValue(template.sourceTemplateFingerprint, forKey: TemplateKey.sourceTemplateFingerprint)
-        object.setValue(template.sourceTemplateID, forKey: TemplateKey.sourceTemplateID)
-        object.setValue(template.styleJSON, forKey: TemplateKey.styleJSON)
-        object.setValue(template.defaultTextRules, forKey: TemplateKey.defaultTextRules)
-        object.setValue(template.tags.map(\.id.uuidString), asJSONForKey: TemplateKey.tagIDsJSON)
-        object.setValue(template.createdAt, forKey: TemplateKey.createdAt)
-        object.setValue(template.updatedAt, forKey: TemplateKey.updatedAt)
+        object.setValueIfChanged(template.id, forKey: TemplateKey.id)
+        object.setValueIfChanged(template.name, forKey: TemplateKey.name)
+        object.setValueIfChanged(template.description, forKey: TemplateKey.summary)
+        object.setValueIfChanged(template.platform.rawValue, forKey: TemplateKey.platform)
+        object.setValueIfChanged(template.slideCount, forKey: TemplateKey.slideCount)
+        object.setValueIfChanged(template.analysisSchemaVersion, forKey: TemplateKey.analysisSchemaVersion)
+        object.setValueIfChanged(template.sourceTemplateFingerprint, forKey: TemplateKey.sourceTemplateFingerprint)
+        object.setValueIfChanged(template.sourceTemplateID, forKey: TemplateKey.sourceTemplateID)
+        object.setValueIfChanged(template.styleJSON, forKey: TemplateKey.styleJSON)
+        object.setValueIfChanged(template.defaultTextRules, forKey: TemplateKey.defaultTextRules)
+        object.setValueIfChanged(template.tags.map(\.id.uuidString), asJSONForKey: TemplateKey.tagIDsJSON)
+        object.setValueIfChanged(template.createdAt, forKey: TemplateKey.createdAt)
+        object.setValueIfChanged(template.updatedAt, forKey: TemplateKey.updatedAt)
     }
 
     private func apply(_ draft: SlideshowDraft, to object: NSManagedObject) {
-        object.setValue(draft.id, forKey: DraftKey.id)
-        object.setValue(draft.automationID, forKey: DraftKey.automationID)
-        object.setValue(draft.title, forKey: DraftKey.title)
-        object.setValue(draft.templateID, forKey: DraftKey.templateID)
-        object.setValue(draft.creationModel?.id, forKey: DraftKey.creationModelID)
-        object.setValue(draft.creationModel, asJSONForKey: DraftKey.creationModelJSON)
-        object.setValue(draft.imageVibe.rawValue, forKey: DraftKey.imageVibe)
-        object.setValue(draft.brief, forKey: DraftKey.brief)
-        object.setValue(draft.topic, forKey: DraftKey.topic)
-        object.setValue(draft.audience, forKey: DraftKey.audience)
-        object.setValue(draft.goal, forKey: DraftKey.goal)
-        object.setValue(draft.tone, forKey: DraftKey.tone)
-        object.setValue(draft.narrativeArc, asJSONForKey: DraftKey.narrativeArcJSON)
-        object.setValue(draft.globalVisualMotif, forKey: DraftKey.globalVisualMotif)
-        object.setValue(draft.planSummary, forKey: DraftKey.planSummary)
-        object.setValue(draft.slides.sorted { $0.index < $1.index }.map(\.id.uuidString), asJSONForKey: DraftKey.slideIDsJSON)
-        object.setValue(draft.caption, forKey: DraftKey.caption)
-        object.setValue(draft.hashtags, asJSONForKey: DraftKey.hashtagsJSON)
-        object.setValue(draft.targetPlatforms.map(\.rawValue), asJSONForKey: DraftKey.targetPlatformsJSON)
-        object.setValue(draft.accountSelections, asJSONForKey: DraftKey.accountSelectionsJSON)
-        object.setValue(draft.tikTokSettings, asJSONForKey: DraftKey.tikTokSettingsJSON)
-        object.setValue(draft.youtubeSettings, asJSONForKey: DraftKey.youtubeSettingsJSON)
-        object.setValue(draft.selectedSongs, asJSONForKey: DraftKey.selectedSongsJSON)
-        object.setValue(draft.status.rawValue, forKey: DraftKey.status)
-        object.setValue(draft.exportedImageAssetIDs.map(\.uuidString), asJSONForKey: DraftKey.exportedImageAssetIDsJSON)
-        object.setValue(draft.createdAt, forKey: DraftKey.createdAt)
-        object.setValue(draft.updatedAt, forKey: DraftKey.updatedAt)
+        object.setValueIfChanged(draft.id, forKey: DraftKey.id)
+        object.setValueIfChanged(draft.automationID, forKey: DraftKey.automationID)
+        object.setValueIfChanged(draft.title, forKey: DraftKey.title)
+        object.setValueIfChanged(draft.templateID, forKey: DraftKey.templateID)
+        object.setValueIfChanged(draft.creationModel?.id, forKey: DraftKey.creationModelID)
+        object.setValueIfChanged(draft.creationModel, asJSONForKey: DraftKey.creationModelJSON)
+        object.setValueIfChanged(draft.imageVibe.rawValue, forKey: DraftKey.imageVibe)
+        object.setValueIfChanged(draft.brief, forKey: DraftKey.brief)
+        object.setValueIfChanged(draft.topic, forKey: DraftKey.topic)
+        object.setValueIfChanged(draft.audience, forKey: DraftKey.audience)
+        object.setValueIfChanged(draft.goal, forKey: DraftKey.goal)
+        object.setValueIfChanged(draft.tone, forKey: DraftKey.tone)
+        object.setValueIfChanged(draft.narrativeArc, asJSONForKey: DraftKey.narrativeArcJSON)
+        object.setValueIfChanged(draft.globalVisualMotif, forKey: DraftKey.globalVisualMotif)
+        object.setValueIfChanged(draft.planSummary, forKey: DraftKey.planSummary)
+        object.setValueIfChanged(draft.slides.sorted { $0.index < $1.index }.map(\.id.uuidString), asJSONForKey: DraftKey.slideIDsJSON)
+        object.setValueIfChanged(draft.caption, forKey: DraftKey.caption)
+        object.setValueIfChanged(draft.hashtags, asJSONForKey: DraftKey.hashtagsJSON)
+        object.setValueIfChanged(draft.targetPlatforms.map(\.rawValue), asJSONForKey: DraftKey.targetPlatformsJSON)
+        object.setValueIfChanged(draft.accountSelections, asJSONForKey: DraftKey.accountSelectionsJSON)
+        object.setValueIfChanged(draft.tikTokSettings, asJSONForKey: DraftKey.tikTokSettingsJSON)
+        object.setValueIfChanged(draft.youtubeSettings, asJSONForKey: DraftKey.youtubeSettingsJSON)
+        object.setValueIfChanged(draft.selectedSongs, asJSONForKey: DraftKey.selectedSongsJSON)
+        object.setValueIfChanged(draft.status.rawValue, forKey: DraftKey.status)
+        object.setValueIfChanged(draft.exportedImageAssetIDs.map(\.uuidString), asJSONForKey: DraftKey.exportedImageAssetIDsJSON)
+        object.setValueIfChanged(draft.createdAt, forKey: DraftKey.createdAt)
+        object.setValueIfChanged(draft.updatedAt, forKey: DraftKey.updatedAt)
     }
 
     private func apply(_ slide: Slide, draftID: UUID, to object: NSManagedObject) {
-        object.setValue(slide.id, forKey: SlideKey.id)
-        object.setValue(draftID, forKey: SlideKey.draftID)
-        object.setValue(slide.index, forKey: SlideKey.index)
-        object.setValue(slide.imageAssetID, forKey: SlideKey.imageAssetID)
-        object.setValue(slide.prompt, forKey: SlideKey.prompt)
-        object.setValue(slide.text, forKey: SlideKey.text)
-        object.setValue(slide.textPosition.rawValue, forKey: SlideKey.textPosition)
-        object.setValue(slide.textStyle, asJSONForKey: SlideKey.textStyleJSON)
-        object.setValue(slide.selectedVisualSummary, forKey: SlideKey.selectedVisualSummary)
-        object.setValue(slide.generationStatus.rawValue, forKey: SlideKey.generationStatus)
-        object.setValue(slide.generationErrorMessage, forKey: SlideKey.generationErrorMessage)
-        object.setValue(slide.promptVersion, forKey: SlideKey.promptVersion)
-        object.setValue(slide.createdAt, forKey: SlideKey.createdAt)
-        object.setValue(slide.updatedAt, forKey: SlideKey.updatedAt)
+        object.setValueIfChanged(slide.id, forKey: SlideKey.id)
+        object.setValueIfChanged(draftID, forKey: SlideKey.draftID)
+        object.setValueIfChanged(slide.index, forKey: SlideKey.index)
+        object.setValueIfChanged(slide.imageAssetID, forKey: SlideKey.imageAssetID)
+        object.setValueIfChanged(slide.prompt, forKey: SlideKey.prompt)
+        object.setValueIfChanged(slide.text, forKey: SlideKey.text)
+        object.setValueIfChanged(slide.textPosition.rawValue, forKey: SlideKey.textPosition)
+        object.setValueIfChanged(slide.textStyle, asJSONForKey: SlideKey.textStyleJSON)
+        object.setValueIfChanged(slide.selectedVisualSummary, forKey: SlideKey.selectedVisualSummary)
+        object.setValueIfChanged(slide.generationStatus.rawValue, forKey: SlideKey.generationStatus)
+        object.setValueIfChanged(slide.generationErrorMessage, forKey: SlideKey.generationErrorMessage)
+        object.setValueIfChanged(slide.promptVersion, forKey: SlideKey.promptVersion)
+        object.setValueIfChanged(slide.createdAt, forKey: SlideKey.createdAt)
+        object.setValueIfChanged(slide.updatedAt, forKey: SlideKey.updatedAt)
     }
 
     private func apply(_ automation: ContentAutomation, to object: NSManagedObject) {
-        object.setValue(automation.id, forKey: AutomationKey.id)
-        object.setValue(automation.name, forKey: AutomationKey.name)
-        object.setValue(automation.templateIDs, asJSONForKey: AutomationKey.templateIDsJSON)
-        object.setValue(automation.templateNicheIDs, asJSONForKey: AutomationKey.templateNicheIDsJSON)
-        object.setValue(automation.productID, forKey: AutomationKey.productID)
-        object.setValue(automation.productImageAssetIDs.map(\.uuidString), asJSONForKey: AutomationKey.productImageAssetIDsJSON)
-        object.setValue(automation.creationModel?.id, forKey: AutomationKey.creationModelID)
-        object.setValue(automation.creationModel, asJSONForKey: AutomationKey.creationModelJSON)
-        object.setValue(automation.imageVibe.rawValue, forKey: AutomationKey.imageVibe)
-        object.setValue(automation.schedule, asJSONForKey: AutomationKey.scheduleJSON)
-        object.setValue(automation.tikTokSettings, asJSONForKey: AutomationKey.tikTokSettingsJSON)
-        object.setValue(automation.youtubeSettings, asJSONForKey: AutomationKey.youtubeSettingsJSON)
-        object.setValue(automation.targetPlatforms.map(\.rawValue), asJSONForKey: AutomationKey.targetPlatformsJSON)
-        object.setValue(automation.accountSelections, asJSONForKey: AutomationKey.accountSelectionsJSON)
-        object.setValue(automation.status.rawValue, forKey: AutomationKey.status)
-        object.setValue(automation.nextScheduledAt, forKey: AutomationKey.nextScheduledAt)
-        object.setValue(automation.lastRunAt, forKey: AutomationKey.lastRunAt)
-        object.setValue(automation.lastErrorMessage, forKey: AutomationKey.lastErrorMessage)
-        object.setValue(automation.consecutiveFailureCount, forKey: AutomationKey.consecutiveFailureCount)
-        object.setValue(automation.createdAt, forKey: AutomationKey.createdAt)
-        object.setValue(automation.updatedAt, forKey: AutomationKey.updatedAt)
+        object.setValueIfChanged(automation.id, forKey: AutomationKey.id)
+        object.setValueIfChanged(automation.name, forKey: AutomationKey.name)
+        object.setValueIfChanged(automation.templateIDs, asJSONForKey: AutomationKey.templateIDsJSON)
+        object.setValueIfChanged(automation.templateNicheIDs, asJSONForKey: AutomationKey.templateNicheIDsJSON)
+        object.setValueIfChanged(automation.productID, forKey: AutomationKey.productID)
+        object.setValueIfChanged(automation.productImageAssetIDs.map(\.uuidString), asJSONForKey: AutomationKey.productImageAssetIDsJSON)
+        object.setValueIfChanged(automation.creationModel?.id, forKey: AutomationKey.creationModelID)
+        object.setValueIfChanged(automation.creationModel, asJSONForKey: AutomationKey.creationModelJSON)
+        object.setValueIfChanged(automation.imageVibe.rawValue, forKey: AutomationKey.imageVibe)
+        object.setValueIfChanged(automation.schedule, asJSONForKey: AutomationKey.scheduleJSON)
+        object.setValueIfChanged(automation.tikTokSettings, asJSONForKey: AutomationKey.tikTokSettingsJSON)
+        object.setValueIfChanged(automation.youtubeSettings, asJSONForKey: AutomationKey.youtubeSettingsJSON)
+        object.setValueIfChanged(automation.targetPlatforms.map(\.rawValue), asJSONForKey: AutomationKey.targetPlatformsJSON)
+        object.setValueIfChanged(automation.accountSelections, asJSONForKey: AutomationKey.accountSelectionsJSON)
+        object.setValueIfChanged(automation.status.rawValue, forKey: AutomationKey.status)
+        object.setValueIfChanged(automation.nextScheduledAt, forKey: AutomationKey.nextScheduledAt)
+        object.setValueIfChanged(automation.lastRunAt, forKey: AutomationKey.lastRunAt)
+        object.setValueIfChanged(automation.lastErrorMessage, forKey: AutomationKey.lastErrorMessage)
+        object.setValueIfChanged(automation.consecutiveFailureCount, forKey: AutomationKey.consecutiveFailureCount)
+        object.setValueIfChanged(automation.createdAt, forKey: AutomationKey.createdAt)
+        object.setValueIfChanged(automation.updatedAt, forKey: AutomationKey.updatedAt)
     }
 
     private func apply(_ job: PublishingJob, to object: NSManagedObject) {
-        object.setValue(job.id, forKey: PublishingJobKey.id)
-        object.setValue(job.platform.rawValue, forKey: PublishingJobKey.platform)
-        object.setValue(job.accountID, forKey: PublishingJobKey.accountID)
-        object.setValue(job.automationID, forKey: PublishingJobKey.automationID)
-        object.setValue(job.draftID, forKey: PublishingJobKey.draftID)
-        object.setValue(job.status.rawValue, forKey: PublishingJobKey.status)
-        object.setValue(job.publishMode.rawValue, forKey: PublishingJobKey.publishMode)
-        object.setValue(job.attemptCount, forKey: PublishingJobKey.attemptCount)
-        object.setValue(job.lastAttemptAt, forKey: PublishingJobKey.lastAttemptAt)
-        object.setValue(job.lastError, asJSONForKey: PublishingJobKey.lastErrorJSON)
-        object.setValue(job.platformPublishID, forKey: PublishingJobKey.platformPublishID)
-        object.setValue(job.createdAt, forKey: PublishingJobKey.createdAt)
-        object.setValue(job.updatedAt, forKey: PublishingJobKey.updatedAt)
+        object.setValueIfChanged(job.id, forKey: PublishingJobKey.id)
+        object.setValueIfChanged(job.platform.rawValue, forKey: PublishingJobKey.platform)
+        object.setValueIfChanged(job.accountID, forKey: PublishingJobKey.accountID)
+        object.setValueIfChanged(job.automationID, forKey: PublishingJobKey.automationID)
+        object.setValueIfChanged(job.draftID, forKey: PublishingJobKey.draftID)
+        object.setValueIfChanged(job.status.rawValue, forKey: PublishingJobKey.status)
+        object.setValueIfChanged(job.publishMode.rawValue, forKey: PublishingJobKey.publishMode)
+        object.setValueIfChanged(job.attemptCount, forKey: PublishingJobKey.attemptCount)
+        object.setValueIfChanged(job.lastAttemptAt, forKey: PublishingJobKey.lastAttemptAt)
+        object.setValueIfChanged(job.lastError, asJSONForKey: PublishingJobKey.lastErrorJSON)
+        object.setValueIfChanged(job.platformPublishID, forKey: PublishingJobKey.platformPublishID)
+        object.setValueIfChanged(job.createdAt, forKey: PublishingJobKey.createdAt)
+        object.setValueIfChanged(job.updatedAt, forKey: PublishingJobKey.updatedAt)
     }
 
     private func apply(_ post: PublishedPost, to object: NSManagedObject) {
-        object.setValue(post.id, forKey: PublishedPostKey.id)
-        object.setValue(post.platform.rawValue, forKey: PublishedPostKey.platform)
-        object.setValue(post.accountID, forKey: PublishedPostKey.accountID)
-        object.setValue(post.automationID, forKey: PublishedPostKey.automationID)
-        object.setValue(post.platformPostID, forKey: PublishedPostKey.platformPostID)
-        object.setValue(post.platformURL, forKey: PublishedPostKey.platformURL)
-        object.setValue(post.publishedAt, forKey: PublishedPostKey.publishedAt)
-        object.setValue(post.draftID, forKey: PublishedPostKey.draftID)
-        object.setValue(post.templateID, forKey: PublishedPostKey.templateID)
-        object.setValue(post.trendTags.map(\.id.uuidString), asJSONForKey: PublishedPostKey.trendTagIDsJSON)
-        object.setValue(post.caption, forKey: PublishedPostKey.caption)
-        object.setValue(post.createdAt, forKey: PublishedPostKey.createdAt)
-        object.setValue(post.updatedAt, forKey: PublishedPostKey.updatedAt)
+        object.setValueIfChanged(post.id, forKey: PublishedPostKey.id)
+        object.setValueIfChanged(post.platform.rawValue, forKey: PublishedPostKey.platform)
+        object.setValueIfChanged(post.accountID, forKey: PublishedPostKey.accountID)
+        object.setValueIfChanged(post.automationID, forKey: PublishedPostKey.automationID)
+        object.setValueIfChanged(post.platformPostID, forKey: PublishedPostKey.platformPostID)
+        object.setValueIfChanged(post.platformURL, forKey: PublishedPostKey.platformURL)
+        object.setValueIfChanged(post.publishedAt, forKey: PublishedPostKey.publishedAt)
+        object.setValueIfChanged(post.draftID, forKey: PublishedPostKey.draftID)
+        object.setValueIfChanged(post.templateID, forKey: PublishedPostKey.templateID)
+        object.setValueIfChanged(post.trendTags.map(\.id.uuidString), asJSONForKey: PublishedPostKey.trendTagIDsJSON)
+        object.setValueIfChanged(post.caption, forKey: PublishedPostKey.caption)
+        object.setValueIfChanged(post.createdAt, forKey: PublishedPostKey.createdAt)
+        object.setValueIfChanged(post.updatedAt, forKey: PublishedPostKey.updatedAt)
     }
 
     private func saveIfNeeded() throws {
         guard context.hasChanges else { return }
         try context.save()
+    }
+
+    private func resetContextIfNeeded() {
+        guard resetsContextBeforeOperations else { return }
+        context.reset()
     }
 
     private static func defaultCloudAvailability() async -> Bool {
@@ -828,22 +1316,24 @@ final class CoreDataFlickRepository: FlickRepository {
     }
 }
 
-private protocol CoreDataSyncRecordIdentity {
+nonisolated private protocol CoreDataSyncRecordIdentity {
     var id: UUID { get }
     var updatedAt: Date { get }
 }
 
-extension ConnectedAccount: CoreDataSyncRecordIdentity {}
-extension FlickProduct: CoreDataSyncRecordIdentity {}
-extension FlickCreationModel: CoreDataSyncRecordIdentity {}
-extension MediaAsset: CoreDataSyncRecordIdentity {}
-extension CreativeTemplate: CoreDataSyncRecordIdentity {}
-extension SlideshowDraft: CoreDataSyncRecordIdentity {}
-extension ContentAutomation: CoreDataSyncRecordIdentity {}
-extension PublishingJob: CoreDataSyncRecordIdentity {}
-extension PublishedPost: CoreDataSyncRecordIdentity {}
+nonisolated extension ConnectedAccount: CoreDataSyncRecordIdentity {}
+nonisolated extension FlickProduct: CoreDataSyncRecordIdentity {}
+nonisolated extension FlickCreationModel: CoreDataSyncRecordIdentity {}
+nonisolated extension MediaAsset: CoreDataSyncRecordIdentity {}
+nonisolated extension CreativeTemplate: CoreDataSyncRecordIdentity {}
+nonisolated extension SlideshowDraft: CoreDataSyncRecordIdentity {}
+nonisolated extension Slide: CoreDataSyncRecordIdentity {}
+nonisolated extension ContentAutomation: CoreDataSyncRecordIdentity {}
+nonisolated extension AutomationPostProgress: CoreDataSyncRecordIdentity {}
+nonisolated extension PublishingJob: CoreDataSyncRecordIdentity {}
+nonisolated extension PublishedPost: CoreDataSyncRecordIdentity {}
 
-private extension Array where Element: CoreDataSyncRecordIdentity {
+nonisolated private extension Array where Element: CoreDataSyncRecordIdentity {
     func deduplicatedByLatestUpdate() -> [Element] {
         var indicesByID: [UUID: Int] = [:]
         var records: [Element] = []
@@ -861,9 +1351,48 @@ private extension Array where Element: CoreDataSyncRecordIdentity {
 
         return records
     }
+
+    func mergingLatestUpdates(_ records: [Element]) -> [Element] {
+        var merged = deduplicatedByLatestUpdate()
+        var indicesByID = Dictionary(uniqueKeysWithValues: merged.indices.map { (merged[$0].id, $0) })
+
+        for record in records.deduplicatedByLatestUpdate() {
+            if let index = indicesByID[record.id] {
+                if record.updatedAt > merged[index].updatedAt {
+                    merged[index] = record
+                }
+            } else {
+                indicesByID[record.id] = merged.count
+                merged.append(record)
+            }
+        }
+
+        return merged
+    }
 }
 
-private enum AssetKey {
+nonisolated private extension Array where Element == OverviewDeletion {
+    func deduplicatedByLatestDeletion() -> [OverviewDeletion] {
+        var indicesByKey: [OverviewRecordKey: Int] = [:]
+        var deletions: [OverviewDeletion] = []
+
+        for deletion in self {
+            let key = OverviewRecordKey(kind: deletion.kind, id: deletion.id)
+            if let index = indicesByKey[key] {
+                if deletion.deletedAt > deletions[index].deletedAt {
+                    deletions[index] = deletion
+                }
+            } else {
+                indicesByKey[key] = deletions.count
+                deletions.append(deletion)
+            }
+        }
+
+        return deletions
+    }
+}
+
+nonisolated private enum AssetKey {
     static let checksum = "checksum"
     static let createdAt = "createdAt"
     static let duration = "duration"
@@ -883,7 +1412,20 @@ private enum AssetKey {
     static let width = "width"
 }
 
-private enum ConnectedAccountKey {
+nonisolated private enum AuditEventKey {
+    static let createdAt = "createdAt"
+    static let eventType = "eventType"
+    static let id = "id"
+    static let metadataJSON = "metadataJSON"
+    static let summary = "summary"
+    static let deletionEventTypePrefix = "deletion-tombstone.v1."
+
+    static func deletionEventType(for kind: OverviewRecordKind) -> String {
+        deletionEventTypePrefix + kind.rawValue
+    }
+}
+
+nonisolated private enum ConnectedAccountKey {
     static let authorizationSource = "authorizationSource"
     static let avatarURL = "avatarURL"
     static let createdAt = "createdAt"
@@ -900,7 +1442,7 @@ private enum ConnectedAccountKey {
     static let updatedAt = "updatedAt"
 }
 
-private enum ProductKey {
+nonisolated private enum ProductKey {
     static let createdAt = "createdAt"
     static let id = "id"
     static let name = "name"
@@ -908,7 +1450,7 @@ private enum ProductKey {
     static let updatedAt = "updatedAt"
 }
 
-private enum CreationModelKey {
+nonisolated private enum CreationModelKey {
     static let createdAt = "createdAt"
     static let id = "id"
     static let metadataJSON = "metadataJSON"
@@ -916,7 +1458,7 @@ private enum CreationModelKey {
     static let updatedAt = "updatedAt"
 }
 
-private enum TemplateKey {
+nonisolated private enum TemplateKey {
     static let createdAt = "createdAt"
     static let defaultTextRules = "defaultTextRules"
     static let id = "id"
@@ -932,7 +1474,7 @@ private enum TemplateKey {
     static let updatedAt = "updatedAt"
 }
 
-private enum DraftKey {
+nonisolated private enum DraftKey {
     static let accountSelectionsJSON = "accountSelectionsJSON"
     static let automationID = "automationID"
     static let brief = "brief"
@@ -962,7 +1504,7 @@ private enum DraftKey {
     static let updatedAt = "updatedAt"
 }
 
-private enum SlideKey {
+nonisolated private enum SlideKey {
     static let createdAt = "createdAt"
     static let draftID = "draftID"
     static let generationErrorMessage = "generationErrorMessage"
@@ -979,7 +1521,7 @@ private enum SlideKey {
     static let updatedAt = "updatedAt"
 }
 
-private enum AutomationKey {
+nonisolated private enum AutomationKey {
     static let accountSelectionsJSON = "accountSelectionsJSON"
     static let consecutiveFailureCount = "consecutiveFailureCount"
     static let creationModelID = "creationModelID"
@@ -1003,7 +1545,7 @@ private enum AutomationKey {
     static let updatedAt = "updatedAt"
 }
 
-private enum PublishingJobKey {
+nonisolated private enum PublishingJobKey {
     static let accountID = "accountID"
     static let attemptCount = "attemptCount"
     static let automationID = "automationID"
@@ -1019,7 +1561,7 @@ private enum PublishingJobKey {
     static let updatedAt = "updatedAt"
 }
 
-private enum PublishedPostKey {
+nonisolated private enum PublishedPostKey {
     static let accountID = "accountID"
     static let automationID = "automationID"
     static let caption = "caption"
@@ -1035,19 +1577,19 @@ private enum PublishedPostKey {
     static let updatedAt = "updatedAt"
 }
 
-private enum WorkflowStateKey {
+nonisolated private enum WorkflowStateKey {
     static let id = "id"
     static let key = "key"
     static let updatedAt = "updatedAt"
     static let valueJSON = "valueJSON"
 }
 
-private enum WorkflowStateValueKey {
+nonisolated private enum WorkflowStateValueKey {
     static let automationPostProgresses = "automation-post-progresses"
     static let macRunnerHeartbeat = "mac-runner-heartbeat"
 }
 
-private extension MediaAsset {
+nonisolated private extension MediaAsset {
     init?(managedObject: NSManagedObject) {
         guard
             let id = managedObject.value(forKey: AssetKey.id) as? UUID,
@@ -1083,7 +1625,7 @@ private extension MediaAsset {
     }
 }
 
-private extension FlickProduct {
+nonisolated private extension FlickProduct {
     init?(managedObject: NSManagedObject) {
         guard
             let id = managedObject.value(forKey: ProductKey.id) as? UUID,
@@ -1102,7 +1644,7 @@ private extension FlickProduct {
     }
 }
 
-private extension FlickCreationModel {
+nonisolated private extension FlickCreationModel {
     init?(managedObject: NSManagedObject) {
         guard
             let id = managedObject.value(forKey: CreationModelKey.id) as? UUID,
@@ -1121,7 +1663,7 @@ private extension FlickCreationModel {
     }
 }
 
-private extension ConnectedAccount {
+nonisolated private extension ConnectedAccount {
     init?(managedObject: NSManagedObject) {
         guard
             let id = managedObject.value(forKey: ConnectedAccountKey.id) as? UUID,
@@ -1158,7 +1700,7 @@ private extension ConnectedAccount {
     }
 }
 
-private extension CreativeTemplate {
+nonisolated private extension CreativeTemplate {
     init?(managedObject: NSManagedObject) {
         guard
             let id = managedObject.value(forKey: TemplateKey.id) as? UUID,
@@ -1188,7 +1730,7 @@ private extension CreativeTemplate {
     }
 }
 
-private extension SlideshowDraft {
+nonisolated private extension SlideshowDraft {
     init?(managedObject: NSManagedObject, slides: [Slide]) {
         guard
             let id = managedObject.value(forKey: DraftKey.id) as? UUID,
@@ -1241,7 +1783,7 @@ private extension SlideshowDraft {
     }
 }
 
-private extension Slide {
+nonisolated private extension Slide {
     init?(managedObject: NSManagedObject) {
         guard
             let id = managedObject.value(forKey: SlideKey.id) as? UUID,
@@ -1271,7 +1813,7 @@ private extension Slide {
     }
 }
 
-private extension ContentAutomation {
+nonisolated private extension ContentAutomation {
     init?(managedObject: NSManagedObject) {
         guard
             let id = managedObject.value(forKey: AutomationKey.id) as? UUID,
@@ -1319,7 +1861,7 @@ private extension ContentAutomation {
     }
 }
 
-private extension PublishingJob {
+nonisolated private extension PublishingJob {
     init?(managedObject: NSManagedObject) {
         guard
             let id = managedObject.value(forKey: PublishingJobKey.id) as? UUID,
@@ -1353,7 +1895,7 @@ private extension PublishingJob {
     }
 }
 
-private extension PublishedPost {
+nonisolated private extension PublishedPost {
     init?(managedObject: NSManagedObject) {
         guard
             let id = managedObject.value(forKey: PublishedPostKey.id) as? UUID,
@@ -1384,7 +1926,40 @@ private extension PublishedPost {
     }
 }
 
-private extension NSManagedObject {
+nonisolated private extension NSManagedObject {
+    @discardableResult
+    func setValueIfChanged(_ value: Any?, forKey key: String) -> Bool {
+        let currentValue = self.value(forKey: key)
+
+        switch (currentValue, value) {
+        case (nil, nil):
+            return false
+        case let (current as NSObject, proposed as NSObject) where current.isEqual(proposed):
+            return false
+        default:
+            setValue(value, forKey: key)
+            return true
+        }
+    }
+
+    @discardableResult
+    func setValueIfChanged<T: Encodable>(_ value: T, asJSONForKey key: String) -> Bool {
+        guard
+            let data = try? JSONEncoder.flick.encode(value),
+            let json = String(data: data, encoding: .utf8)
+        else {
+            return false
+        }
+
+        if let currentJSON = self.value(forKey: key) as? String,
+           (currentJSON == json || Self.jsonObjectsAreEqual(currentJSON, json)) {
+            return false
+        }
+
+        setValue(json, forKey: key)
+        return true
+    }
+
     func uuidValue(forKey key: String) -> UUID? {
         value(forKey: key) as? UUID
     }
@@ -1405,18 +1980,6 @@ private extension NSManagedObject {
         (value(forKey: key) as? NSNumber)?.doubleValue
     }
 
-    func setValue<T: Encodable>(_ value: T, asJSONForKey key: String) {
-        guard
-            let data = try? JSONEncoder.flick.encode(value),
-            let json = String(data: data, encoding: .utf8)
-        else {
-            setValue(nil, forKey: key)
-            return
-        }
-
-        setValue(json, forKey: key)
-    }
-
     func decodedJSON<T: Decodable>(_ type: T.Type, forKey key: String) -> T? {
         _ = type
         guard
@@ -1426,5 +1989,20 @@ private extension NSManagedObject {
             return nil
         }
         return try? JSONDecoder.flick.decode(T.self, from: data)
+    }
+
+    private static func jsonObjectsAreEqual(_ lhs: String, _ rhs: String) -> Bool {
+        guard
+            let lhsData = lhs.data(using: .utf8),
+            let rhsData = rhs.data(using: .utf8),
+            let lhsObject = try? JSONSerialization.jsonObject(with: lhsData, options: [.fragmentsAllowed]),
+            let rhsObject = try? JSONSerialization.jsonObject(with: rhsData, options: [.fragmentsAllowed]),
+            let lhsObject = lhsObject as? NSObject,
+            let rhsObject = rhsObject as? NSObject
+        else {
+            return lhs == rhs
+        }
+
+        return lhsObject.isEqual(rhsObject)
     }
 }

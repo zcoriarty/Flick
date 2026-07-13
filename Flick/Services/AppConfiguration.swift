@@ -16,21 +16,44 @@ struct AppConfiguration: Hashable {
     var secureStoredCredentialKeys: Set<String>
 
     static var current: AppConfiguration {
-        let credentialVault = CredentialVault()
-        let values = credentialVault.loadValues()
+        let values = ProcessInfo.processInfo.flickIsRunningXCTest
+            ? [:]
+            : CredentialVault().loadValues()
+        return AppConfiguration(credentialValues: values)
+    }
+
+    init(credentialValues values: [String: String]) {
         let secureStoredCredentialKeys = Set(values.keys)
-        return AppConfiguration(
-            r2: R2StorageConfiguration(values: values),
-            tiktok: TikTokConfiguration(values: values),
-            youtube: YouTubeConfiguration(values: values),
-            openAI: OpenAIConfiguration(values: values),
-            meta: MetaConfiguration(values: values),
-            storagePaths: R2StoragePaths(),
-            renderDirectory: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
+        r2 = R2StorageConfiguration(values: values)
+        tiktok = TikTokConfiguration(values: values)
+        youtube = YouTubeConfiguration(values: values)
+        openAI = OpenAIConfiguration(values: values)
+        meta = MetaConfiguration(values: values)
+        storagePaths = R2StoragePaths()
+        renderDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
                 .appending(path: "Flick/Renders", directoryHint: .isDirectory)
-                ?? URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "Flick/Renders", directoryHint: .isDirectory),
-            secureStoredCredentialKeys: secureStoredCredentialKeys
-        )
+            ?? URL(fileURLWithPath: NSTemporaryDirectory()).appending(path: "Flick/Renders", directoryHint: .isDirectory)
+        self.secureStoredCredentialKeys = secureStoredCredentialKeys
+    }
+
+    init(
+        r2: R2StorageConfiguration,
+        tiktok: TikTokConfiguration,
+        youtube: YouTubeConfiguration,
+        openAI: OpenAIConfiguration,
+        meta: MetaConfiguration,
+        storagePaths: R2StoragePaths,
+        renderDirectory: URL,
+        secureStoredCredentialKeys: Set<String>
+    ) {
+        self.r2 = r2
+        self.tiktok = tiktok
+        self.youtube = youtube
+        self.openAI = openAI
+        self.meta = meta
+        self.storagePaths = storagePaths
+        self.renderDirectory = renderDirectory
+        self.secureStoredCredentialKeys = secureStoredCredentialKeys
     }
 
     var credentialStatuses: [CredentialStatus] {
@@ -170,7 +193,7 @@ struct R2StoragePaths: Hashable {
     }
 }
 
-struct CredentialDefinition: Identifiable, Hashable {
+nonisolated struct CredentialDefinition: Identifiable, Hashable {
     var id: String { key }
     var key: String
     var name: String

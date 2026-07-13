@@ -96,6 +96,64 @@ private enum ExistingTikTokSubmissionRecovery: Equatable {
     }
 }
 
+nonisolated private struct PublishingAccountReadiness: Hashable, Sendable {
+    var scopes: Set<String>
+    var validUntil: Date
+}
+
+nonisolated private struct PublishingAccountTokenLookup: Sendable {
+    var accountID: UUID
+    var platform: String
+    var platformUserID: String
+    var accountScopes: [String]
+}
+
+nonisolated private enum PublishingReadinessLoader {
+    static func load(
+        _ lookups: [PublishingAccountTokenLookup],
+        now: Date
+    ) -> [UUID: PublishingAccountReadiness] {
+        var readinessByAccountID: [UUID: PublishingAccountReadiness] = [:]
+        let loginKitStore = KeychainSecretStore(synchronizesAcrossDevices: true)
+        let youtubeStore = KeychainSecretStore(synchronizesAcrossDevices: false)
+
+        for lookup in lookups {
+            let key: String
+            let store: KeychainSecretStore
+            switch lookup.platform {
+            case SocialPlatform.tiktok.rawValue:
+                key = "login_kit_tokens.v1.\(lookup.platform).\(lookup.platformUserID)"
+                store = loginKitStore
+            case SocialPlatform.youtubeShorts.rawValue:
+                key = "youtube_oauth_tokens.v1.\(lookup.platform).\(lookup.platformUserID)"
+                store = youtubeStore
+            default:
+                continue
+            }
+
+            guard
+                let data = try? store.data(for: key),
+                let bundle = try? JSONDecoder.flick.decode(LoginKitTokenBundle.self, from: data),
+                bundle.refreshTokenExpiresAt > now
+            else {
+                continue
+            }
+
+            readinessByAccountID[lookup.accountID] = PublishingAccountReadiness(
+                scopes: Set(bundle.scopes.isEmpty ? lookup.accountScopes : bundle.scopes),
+                validUntil: bundle.refreshTokenExpiresAt
+            )
+        }
+
+        return readinessByAccountID
+    }
+}
+
+nonisolated struct CreateStateRecordRevision: Hashable, Sendable {
+    var id: UUID
+    var updatedAt: Date
+}
+
 @MainActor
 @Observable
 final class FlickAppModel {
@@ -120,23 +178,36 @@ final class FlickAppModel {
     var manualPublishProgress: ManualPublishProgress?
     var pendingShareImport: ShareImportSession?
     var shareImportErrorMessage: String?
+    private var publishingReadinessByAccountID: [UUID: PublishingAccountReadiness] = [:]
 
     @ObservationIgnored private let repository: FlickRepository
-    @ObservationIgnored private let credentialVault = CredentialVault()
+    @ObservationIgnored private var credentialValues: [String: String]
+    @ObservationIgnored private var hasLoadedCredentialConfiguration = false
+    @ObservationIgnored private var credentialConfigurationTask: Task<Void, Never>?
+    @ObservationIgnored private var publishingReadinessTask: Task<Void, Never>?
+    @ObservationIgnored private var isPublishingReadinessRefreshPending = false
     @ObservationIgnored private let loginKitAccountStore = LoginKitAccountStore()
     @ObservationIgnored private let tiktokLoginKitClient: TikTokLoginKitClient
     @ObservationIgnored private let youtubeOAuthClient: YouTubeOAuthClient
     @ObservationIgnored private let localMediaLibrary = LocalMediaLibrary(directoryName: "ProductMedia")
     @ObservationIgnored private let generatedImageLibrary = LocalMediaLibrary(directoryName: "GeneratedImages")
     @ObservationIgnored private let templateImportMediaLibrary = LocalMediaLibrary(directoryName: "TemplateImports")
-    @ObservationIgnored private let shareImportService = ShareImportService()
     @ObservationIgnored private let publishedPostNotificationPublisher: any PublishedPostNotificationPublishing
+    @ObservationIgnored private let persistentHistoryMonitor: (any PersistentHistoryChangeMonitoring)?
     @ObservationIgnored private let openAIClientFactory: @MainActor ([String: String]) -> OpenAIClient
     @ObservationIgnored private let mediaStorageFactory: @MainActor ([String: String]) -> any MediaStorageProviding
     @ObservationIgnored private let templateAnalysisStorageFactory: @MainActor ([String: String]) -> any TemplateAnalysisStorageProviding
     @ObservationIgnored private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.orion.Flick", category: "Publishing")
     @ObservationIgnored private var isRefreshing = false
     @ObservationIgnored private var isRefreshPending = false
+    @ObservationIgnored private var createStatePersistenceTask: Task<Void, Never>?
+    @ObservationIgnored private var createStatePersistenceGeneration = 0
+    @ObservationIgnored private var isPersistingCreateState = false
+    @ObservationIgnored private var isCreateStatePersistenceRequestedWhileSaving = false
+    @ObservationIgnored private var createStatePersistenceWaiters: [CheckedContinuation<Bool, Never>] = []
+    @ObservationIgnored private var persistedCreateDraftsByID: [UUID: SlideshowDraft] = [:]
+    @ObservationIgnored private var persistedCreateTemplatesByID: [UUID: CreativeTemplate] = [:]
+    @ObservationIgnored private var pendingDeletedCreateSlides: [UUID: Date] = [:]
     @ObservationIgnored private var tikTokStatusRefreshCooldownsByJobID: [UUID: Date] = [:]
     @ObservationIgnored private var tikTokStatusRefreshCooldownsByAccountID: [UUID: Date] = [:]
     @ObservationIgnored private var tikTokNextPublishAllowedAtByAccountID: [UUID: Date] = [:]
@@ -149,7 +220,9 @@ final class FlickAppModel {
     init(
         repository: FlickRepository,
         configuration: AppConfiguration,
+        credentialValues: [String: String] = [:],
         publishedPostNotificationPublisher: (any PublishedPostNotificationPublishing)? = nil,
+        persistentHistoryMonitor: (any PersistentHistoryChangeMonitoring)? = nil,
         tiktokLoginKitClient: TikTokLoginKitClient? = nil,
         youtubeOAuthClient: YouTubeOAuthClient? = nil,
         openAIClientFactory: @escaping @MainActor ([String: String]) -> OpenAIClient = { OpenAIClient(credentials: $0) },
@@ -158,7 +231,9 @@ final class FlickAppModel {
     ) {
         self.repository = repository
         self.configuration = configuration
+        self.credentialValues = credentialValues
         self.publishedPostNotificationPublisher = publishedPostNotificationPublisher ?? CloudKitPublishedPostNotificationPublisher.live
+        self.persistentHistoryMonitor = persistentHistoryMonitor
         self.tiktokLoginKitClient = tiktokLoginKitClient ?? TikTokLoginKitClient()
         self.youtubeOAuthClient = youtubeOAuthClient ?? YouTubeOAuthClient()
         self.openAIClientFactory = openAIClientFactory
@@ -170,14 +245,111 @@ final class FlickAppModel {
     }
 
     static func live() -> FlickAppModel {
-        FlickAppModel(repository: EmptyFlickRepository(), configuration: .current)
+        FlickAppModel(
+            repository: EmptyFlickRepository(),
+            configuration: AppConfiguration(credentialValues: [:])
+        )
     }
 
     static func live(persistenceController: PersistenceController) -> FlickAppModel {
         FlickAppModel(
-            repository: CoreDataFlickRepository(context: persistenceController.container.viewContext),
-            configuration: .current
+            repository: CoreDataFlickRepository(container: persistenceController.container),
+            configuration: AppConfiguration(credentialValues: [:]),
+            persistentHistoryMonitor: PersistentHistoryChangeMonitor(container: persistenceController.container)
         )
+    }
+
+    func loadCredentialConfiguration() async {
+        guard !hasLoadedCredentialConfiguration else { return }
+        hasLoadedCredentialConfiguration = true
+
+        guard !ProcessInfo.processInfo.flickIsRunningXCTest else {
+            credentialValues = [:]
+            reloadCredentialConfiguration()
+            return
+        }
+
+        let values = await Task.detached(priority: .userInitiated) {
+            CredentialVault().loadValues()
+        }.value
+        credentialValues = values
+        reloadCredentialConfiguration()
+    }
+
+    func startCredentialConfigurationLoad() {
+        guard credentialConfigurationTask == nil else { return }
+
+        credentialConfigurationTask = Task { [weak self] in
+            guard let self else { return }
+            await self.loadCredentialConfiguration()
+            self.credentialConfigurationTask = nil
+        }
+    }
+
+    private func schedulePublishingReadinessRefresh(now: Date = Date()) {
+        guard !ProcessInfo.processInfo.flickIsRunningXCTest else {
+            publishingReadinessByAccountID = [:]
+            return
+        }
+
+        guard publishingReadinessTask == nil else {
+            isPublishingReadinessRefreshPending = true
+            return
+        }
+
+        let lookups = overview.accounts.compactMap { account -> PublishingAccountTokenLookup? in
+            guard account.platform == .tiktok || account.platform == .youtubeShorts else { return nil }
+            return PublishingAccountTokenLookup(
+                accountID: account.id,
+                platform: account.platform.rawValue,
+                platformUserID: account.platformUserID,
+                accountScopes: account.scopes
+            )
+        }
+
+        publishingReadinessTask = Task { [weak self] in
+            let readiness = await Task.detached(priority: .utility) {
+                PublishingReadinessLoader.load(lookups, now: now)
+            }.value
+            guard let self else { return }
+
+            let currentAccountIDs = Set(self.overview.accounts.map(\.id))
+            self.publishingReadinessByAccountID = readiness.filter { currentAccountIDs.contains($0.key) }
+            self.publishingReadinessTask = nil
+
+            if self.isPublishingReadinessRefreshPending {
+                self.isPublishingReadinessRefreshPending = false
+                self.schedulePublishingReadinessRefresh()
+            }
+        }
+    }
+
+    func refreshPublishingReadinessFromTokenStores(now: Date = Date()) async {
+        var readinessByAccountID: [UUID: PublishingAccountReadiness] = [:]
+
+        for account in overview.accounts {
+            let bundle: LoginKitTokenBundle?
+            do {
+                switch account.platform {
+                case .tiktok:
+                    bundle = try await tiktokLoginKitClient.tokenStore.tokenBundleAsync(for: account)
+                case .youtubeShorts:
+                    bundle = try await youtubeOAuthClient.tokenStore.tokenBundleAsync(for: account)
+                case .instagram, .threads, .x:
+                    continue
+                }
+            } catch {
+                continue
+            }
+
+            guard let bundle, bundle.refreshTokenExpiresAt > now else { continue }
+            readinessByAccountID[account.id] = PublishingAccountReadiness(
+                scopes: Set(bundle.scopes.isEmpty ? account.scopes : bundle.scopes),
+                validUntil: bundle.refreshTokenExpiresAt
+            )
+        }
+
+        publishingReadinessByAccountID = readinessByAccountID
     }
 
     var canManageAccounts: Bool {
@@ -223,7 +395,41 @@ final class FlickAppModel {
         return createDrafts.first { $0.id == activeCreateDraftID }
     }
 
+    var createDraftPersistenceRevisions: [CreateStateRecordRevision] {
+        overview.drafts.map { CreateStateRecordRevision(id: $0.id, updatedAt: $0.updatedAt) }
+    }
+
+    func replaceCreateDraft(id draftID: UUID, with newValue: SlideshowDraft) {
+        guard
+            let draftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }),
+            overview.drafts[draftIndex] != newValue
+        else {
+            return
+        }
+
+        var updatedDraft = newValue
+        updatedDraft.id = draftID
+        updatedDraft.updatedAt = Date()
+        overview.drafts[draftIndex] = updatedDraft
+        scheduleCreateStatePersistence()
+    }
+
+    func updateCreateTemplateStyle(id templateID: UUID, styleJSON: String) {
+        guard
+            let templateIndex = overview.templates.firstIndex(where: { $0.id == templateID }),
+            overview.templates[templateIndex].styleJSON != styleJSON
+        else {
+            return
+        }
+
+        overview.templates[templateIndex].styleJSON = styleJSON
+        overview.templates[templateIndex].updatedAt = Date()
+        scheduleCreateStatePersistence()
+    }
+
     func refresh() async {
+        guard await flushScheduledCreateStatePersistence() else { return }
+
         guard !isRefreshing else {
             isRefreshPending = true
             return
@@ -241,13 +447,21 @@ final class FlickAppModel {
     }
 
     private func performRefresh() async {
-
         do {
-            overview = try await repository.loadOverview()
-            configuration = .current
+            let createStateGenerationAtLoadStart = createStatePersistenceGeneration
+            let loadedOverview = try await repository.loadOverview()
+            guard createStateGenerationAtLoadStart == createStatePersistenceGeneration else {
+                if await persistCreateState() {
+                    isRefreshPending = true
+                }
+                return
+            }
+
+            overview = loadedOverview
             let didNormalizeOverviewRecords = normalizeDuplicateOverviewRecords()
+            capturePersistedCreateState()
+            schedulePublishingReadinessRefresh()
             let didReconcileMediaURLs = reconcileStoredMediaPublicURLs()
-            let didReconcileLoginKitTokens = reconcileLoginKitAccountTokenStatus()
             let didRefreshAccountAuthorizations = await refreshRecoverableAccountAuthorizations()
             let didReconcileAutomationProductImages = reconcileAutomationProductImageSelections()
             applyConnectedAccounts()
@@ -257,11 +471,11 @@ final class FlickAppModel {
             let didUpdateTikTokStatuses = await refreshTikTokPublishStatuses()
             let didReconcilePublishedPosts = reconcilePublishedPostsFromCompletedJobs()
             clearActiveCreateDraftIfUnavailable()
-            let didPruneProgresses = pruneAutomationPostProgresses()
+            let prunedProgresses = pruneAutomationPostProgresses()
+            let didPruneProgresses = !prunedProgresses.isEmpty
             let didReconcileCompletedSlideImages = reconcileCompletedSlideImages()
             if didNormalizeOverviewRecords
                 || didReconcileMediaURLs
-                || didReconcileLoginKitTokens
                 || didRefreshAccountAuthorizations
                 || didReconcileCompletedSlideImages
                 || didUpdateTikTokStatuses
@@ -270,7 +484,12 @@ final class FlickAppModel {
                 || didPruneProgresses
             {
                 overview.refreshDerivedState()
-                try await repository.saveOverview(overview)
+                try await repository.saveOverview(
+                    overview,
+                    deletions: prunedProgresses.map {
+                        OverviewDeletion(kind: .automationPostProgress, id: $0.id, deletedAt: $0.updatedAt)
+                    }
+                )
                 await publishNotificationsForNewPosts(since: publishedPostIDsBeforeDerivedUpdates)
             }
             lastErrorMessage = nil
@@ -279,12 +498,42 @@ final class FlickAppModel {
         }
     }
 
-    func refreshOnCloudKitStoreChanges() async {
+    func refreshOnCloudKitStoreChanges(debounceInterval: Duration = .milliseconds(400)) async {
         let notifications = NotificationCenter.default.notifications(named: .NSPersistentStoreRemoteChange)
+        var pendingRefreshTask: Task<Void, Never>?
+        defer {
+            pendingRefreshTask?.cancel()
+        }
 
         for await _ in notifications {
-            await refresh()
+            pendingRefreshTask?.cancel()
+            pendingRefreshTask = Task { [weak self] in
+                do {
+                    try await Task.sleep(for: debounceInterval)
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled, let self else { return }
+                await self.refreshForRelevantPersistentHistoryChanges()
+            }
         }
+    }
+
+    private func refreshForRelevantPersistentHistoryChanges() async {
+        let shouldRefresh: Bool
+        if let persistentHistoryMonitor {
+            do {
+                shouldRefresh = try await persistentHistoryMonitor.hasRelevantChanges()
+            } catch {
+                logger.error("Persistent history processing failed; falling back to a full refresh. error=\(error.localizedDescription, privacy: .public)")
+                shouldRefresh = true
+            }
+        } else {
+            shouldRefresh = true
+        }
+
+        guard shouldRefresh else { return }
+        await refresh()
     }
 
     func selectCreateDraft(id: UUID) {
@@ -323,9 +572,27 @@ final class FlickAppModel {
             activeCreateDraftID = nil
         }
         removeDraftOwnedMediaAssets(referencedBy: [deletedDraft])
+        let retainedAssetIDs = Set(overview.assets.map(\.id))
+        let deletions = [
+            OverviewDeletion(
+                kind: .draft,
+                id: deletedDraft.id,
+                deletedAt: createDraftDeletionCutoff(for: deletedDraft)
+            )
+        ]
+            + deletedDraft.slides.map {
+                OverviewDeletion(
+                    kind: .slide,
+                    id: $0.id,
+                    deletedAt: createSlideDeletionCutoff(for: $0, draftID: deletedDraft.id)
+                )
+            }
+            + previousOverview.assets
+                .filter { !retainedAssetIDs.contains($0.id) }
+                .map { OverviewDeletion(kind: .asset, id: $0.id, deletedAt: $0.updatedAt) }
 
         do {
-            try await repository.saveOverview(overview)
+            try await repository.saveOverview(overview, deletions: deletions)
             lastErrorMessage = nil
         } catch {
             overview = previousOverview
@@ -450,6 +717,10 @@ final class FlickAppModel {
             }
         }
 
+        if didChange {
+            schedulePublishingReadinessRefresh(now: now)
+        }
+
         return didChange
     }
 
@@ -501,6 +772,7 @@ final class FlickAppModel {
 
         do {
             try await repository.upsertConnectedAccount(syncedAccount)
+            schedulePublishingReadinessRefresh()
             lastErrorMessage = nil
         } catch {
             overview.accounts = previousAccounts
@@ -529,21 +801,23 @@ final class FlickAppModel {
         guard let accountIndex = overview.accounts.firstIndex(where: { $0.id == accountID }) else { return }
 
         let removedAccount = overview.accounts.remove(at: accountIndex)
+        publishingReadinessByAccountID[accountID] = nil
         applyConnectedAccounts()
 
         do {
             try await repository.deleteConnectedAccount(id: accountID)
             if removedAccount.authorizationSource == .loginKit {
-                try? loginKitAccountStore.deleteAccount(id: accountID)
-                try? tiktokLoginKitClient.tokenStore.deleteTokenBundle(for: removedAccount)
+                try? await loginKitAccountStore.deleteAccountAsync(id: accountID)
+                try? await tiktokLoginKitClient.tokenStore.deleteTokenBundleAsync(for: removedAccount)
             }
             if removedAccount.authorizationSource == .nativeOAuth {
-                try? youtubeOAuthClient.tokenStore.deleteTokenBundle(for: removedAccount)
+                try? await youtubeOAuthClient.tokenStore.deleteTokenBundleAsync(for: removedAccount)
             }
             lastErrorMessage = nil
         } catch {
             overview.accounts.insert(removedAccount, at: min(accountIndex, overview.accounts.count))
             applyConnectedAccounts()
+            schedulePublishingReadinessRefresh()
             throw error
         }
     }
@@ -648,6 +922,7 @@ final class FlickAppModel {
         overview.drafts.insert(draft, at: 0)
         activeCreateDraftID = draft.id
         selectedSection = .create
+        scheduleCreateStatePersistence()
     }
 
     func canHandleShareImportURL(_ url: URL) -> Bool {
@@ -664,10 +939,13 @@ final class FlickAppModel {
     }
 
     func loadPendingShareImportIfNeeded() async {
-        guard pendingShareImport == nil else { return }
+        guard pendingShareImport == nil, !ProcessInfo.processInfo.flickIsRunningXCTest else { return }
 
         do {
-            if let session = try shareImportService.loadMostRecentImport() {
+            let session = try await Task.detached(priority: .utility) {
+                try ShareImportService().loadMostRecentImport()
+            }.value
+            if let session {
                 pendingShareImport = session
                 selectedSection = .create
                 shareImportErrorMessage = nil
@@ -677,11 +955,14 @@ final class FlickAppModel {
         }
     }
 
-    func discardPendingShareImport() {
+    func discardPendingShareImport() async {
         guard let pendingShareImport else { return }
 
         do {
-            try shareImportService.discardImport(id: pendingShareImport.id)
+            let importID = pendingShareImport.id
+            try await Task.detached(priority: .utility) {
+                try ShareImportService().discardImport(id: importID)
+            }.value
             self.pendingShareImport = nil
             shareImportErrorMessage = nil
         } catch {
@@ -701,7 +982,10 @@ final class FlickAppModel {
                 title: title,
                 niche: niche
             )
-            try? shareImportService.discardImport(id: pendingShareImport.id)
+            let importID = pendingShareImport.id
+            try? await Task.detached(priority: .utility) {
+                try ShareImportService().discardImport(id: importID)
+            }.value
             self.pendingShareImport = nil
             shareImportErrorMessage = nil
             return result
@@ -728,7 +1012,9 @@ final class FlickAppModel {
 
     private func loadShareImport(id importID: UUID) async {
         do {
-            pendingShareImport = try shareImportService.loadImport(id: importID)
+            pendingShareImport = try await Task.detached(priority: .utility) {
+                try ShareImportService().loadImport(id: importID)
+            }.value
             selectedSection = .create
             shareImportErrorMessage = nil
         } catch {
@@ -746,7 +1032,7 @@ final class FlickAppModel {
         let normalizedTitle = normalizedShareImportTitle(title)
         let templateID = UUID()
 
-        let storage = mediaStorageFactory(credentialVault.loadValues())
+        let storage = mediaStorageFactory(credentialValues)
         var assets: [MediaAsset] = []
         for image in session.images {
             let storedMedia = try templateImportMediaLibrary.store(fileURL: image.fileURL, contentType: image.contentType)
@@ -836,19 +1122,26 @@ final class FlickAppModel {
 
     func deleteLocalAnalysis(for template: ExampleSlideshowTemplate) async {
         let fingerprint = TemplateAnalysisCacheService.fingerprint(for: template)
-        let originalCount = overview.templates.count
-        overview.templates.removeAll {
+        let previousOverview = overview
+        let deletedTemplates = overview.templates.filter {
             $0.sourceTemplateID == template.id
                 && $0.sourceTemplateFingerprint == fingerprint
                 && $0.analysisSchemaVersion == TemplateAnalysisCacheService.schemaVersion
         }
+        overview.templates.removeAll { candidate in
+            deletedTemplates.contains { $0.id == candidate.id }
+        }
 
-        guard overview.templates.count != originalCount else { return }
+        guard !deletedTemplates.isEmpty else { return }
 
         do {
-            try await repository.saveOverview(overview)
+            try await repository.saveOverview(
+                overview,
+                deletions: deletedTemplates.map { OverviewDeletion(kind: .template, id: $0.id, deletedAt: $0.updatedAt) }
+            )
             lastErrorMessage = nil
         } catch {
+            overview = previousOverview
             lastErrorMessage = error.localizedDescription
         }
     }
@@ -936,13 +1229,16 @@ final class FlickAppModel {
     }
 
     func deleteCreationModel(id modelID: UUID) async throws {
-        guard overview.creationModels.contains(where: { $0.id == modelID }) else { return }
+        guard let deletedModel = overview.creationModels.first(where: { $0.id == modelID }) else { return }
 
         let previousOverview = overview
         overview.creationModels.removeAll { $0.id == modelID }
 
         do {
-            try await repository.saveOverview(overview)
+            try await repository.saveOverview(
+                overview,
+                deletions: [OverviewDeletion(kind: .creationModel, id: modelID, deletedAt: deletedModel.updatedAt)]
+            )
             lastErrorMessage = nil
         } catch {
             overview = previousOverview
@@ -951,7 +1247,7 @@ final class FlickAppModel {
     }
 
     func deleteProduct(id productID: UUID) async throws {
-        guard overview.products.contains(where: { $0.id == productID }) else { return }
+        guard let deletedProduct = overview.products.first(where: { $0.id == productID }) else { return }
 
         let previousOverview = overview
         let now = Date()
@@ -970,9 +1266,14 @@ final class FlickAppModel {
         if reconcileAutomationProductImageSelections(now: now) {
             overview.refreshDerivedState()
         }
+        let retainedAssetIDs = Set(overview.assets.map(\.id))
+        let deletions = [OverviewDeletion(kind: .product, id: productID, deletedAt: deletedProduct.updatedAt)]
+            + previousOverview.assets
+                .filter { !retainedAssetIDs.contains($0.id) }
+                .map { OverviewDeletion(kind: .asset, id: $0.id, deletedAt: $0.updatedAt) }
 
         do {
-            try await repository.saveOverview(overview)
+            try await repository.saveOverview(overview, deletions: deletions)
             lastErrorMessage = nil
         } catch {
             overview = previousOverview
@@ -1002,7 +1303,7 @@ final class FlickAppModel {
             fileURL: storedMedia.fileURL
         )
         let data = try Data(contentsOf: storedMedia.fileURL)
-        let storage = mediaStorageFactory(credentialVault.loadValues())
+        let storage = mediaStorageFactory(credentialValues)
         let remote = try await storage.uploadAsset(
             LocalMediaAsset(
                 data: data,
@@ -1104,7 +1405,10 @@ final class FlickAppModel {
         }
 
         do {
-            try await repository.saveOverview(overview)
+            try await repository.saveOverview(
+                overview,
+                deletions: [OverviewDeletion(kind: .asset, id: asset.id, deletedAt: asset.updatedAt)]
+            )
             lastErrorMessage = nil
         } catch {
             overview = previousOverview
@@ -1193,14 +1497,174 @@ final class FlickAppModel {
         return overview.products.map(\.id).filter { productIDs.contains($0) }
     }
 
-    func persistCreateState() async {
+    func scheduleCreateStatePersistence(debounceInterval: Duration = .milliseconds(600)) {
+        createStatePersistenceTask?.cancel()
+        createStatePersistenceGeneration += 1
+        let generation = createStatePersistenceGeneration
+
+        createStatePersistenceTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: debounceInterval)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, let self else { return }
+            _ = await self.persistCreateStateNow()
+            if self.createStatePersistenceGeneration == generation {
+                self.createStatePersistenceTask = nil
+            }
+        }
+    }
+
+    @discardableResult
+    func persistCreateState() async -> Bool {
+        createStatePersistenceTask?.cancel()
+        createStatePersistenceTask = nil
+        createStatePersistenceGeneration += 1
+        return await persistCreateStateNow()
+    }
+
+    @discardableResult
+    func flushScheduledCreateStatePersistence() async -> Bool {
+        guard createStatePersistenceTask != nil || isPersistingCreateState else { return true }
+        return await persistCreateState()
+    }
+
+    private func persistCreateStateNow() async -> Bool {
+        if isPersistingCreateState {
+            isCreateStatePersistenceRequestedWhileSaving = true
+            return await withCheckedContinuation { continuation in
+                createStatePersistenceWaiters.append(continuation)
+            }
+        }
+
+        isPersistingCreateState = true
+        var didSucceed = true
+        repeat {
+            isCreateStatePersistenceRequestedWhileSaving = false
+            didSucceed = await persistCreateStateSnapshot()
+        } while didSucceed && isCreateStatePersistenceRequestedWhileSaving
+        isPersistingCreateState = false
+
+        let waiters = createStatePersistenceWaiters
+        createStatePersistenceWaiters.removeAll()
+        waiters.forEach { $0.resume(returning: didSucceed) }
+        return didSucceed
+    }
+
+    private func persistCreateStateSnapshot() async -> Bool {
+        let now = Date()
+        let draftsToSave = changedCreateDrafts(stampingUpdatesAt: now)
+        let templatesToSave = changedCreateTemplates(stampingUpdatesAt: now)
+        let slideDeletions = pendingDeletedCreateSlides.map { slideID, deletedAt in
+            OverviewDeletion(kind: .slide, id: slideID, deletedAt: deletedAt)
+        }
+        guard !draftsToSave.isEmpty || !templatesToSave.isEmpty || !slideDeletions.isEmpty else {
+            return true
+        }
+
+        let referencedAssetIDs = draftsToSave.reduce(into: Set<UUID>()) { ids, draft in
+            ids.formUnion(draft.referencedAssetIDs)
+        }
+        let assetsToSave = overview.assets.filter { referencedAssetIDs.contains($0.id) }
+
         do {
             overview.refreshDerivedState()
-            try await repository.saveOverview(overview)
+            try await repository.saveCreateState(
+                drafts: draftsToSave,
+                templates: templatesToSave,
+                assets: assetsToSave,
+                deletions: slideDeletions
+            )
+            for draft in draftsToSave {
+                persistedCreateDraftsByID[draft.id] = draft
+            }
+            for template in templatesToSave {
+                persistedCreateTemplatesByID[template.id] = template
+            }
+            for deletion in slideDeletions {
+                pendingDeletedCreateSlides[deletion.id] = nil
+            }
             lastErrorMessage = nil
+            return true
         } catch {
             lastErrorMessage = error.localizedDescription
+            scheduleCreateStatePersistence(debounceInterval: .seconds(2))
+            return false
         }
+    }
+
+    private func changedCreateDrafts(stampingUpdatesAt now: Date) -> [SlideshowDraft] {
+        for draftIndex in overview.drafts.indices {
+            let currentDraft = overview.drafts[draftIndex]
+            guard let persistedDraft = persistedCreateDraftsByID[currentDraft.id] else { continue }
+
+            let persistedSlidesByID = Dictionary(uniqueKeysWithValues: persistedDraft.slides.map { ($0.id, $0) })
+            var didChangeSlide = false
+            for slideIndex in overview.drafts[draftIndex].slides.indices {
+                let slide = overview.drafts[draftIndex].slides[slideIndex]
+                guard let persistedSlide = persistedSlidesByID[slide.id] else {
+                    didChangeSlide = true
+                    continue
+                }
+
+                var comparableSlide = slide
+                comparableSlide.updatedAt = persistedSlide.updatedAt
+                if comparableSlide != persistedSlide {
+                    overview.drafts[draftIndex].slides[slideIndex].updatedAt = now
+                    didChangeSlide = true
+                }
+            }
+
+            var comparableDraft = overview.drafts[draftIndex]
+            comparableDraft.updatedAt = persistedDraft.updatedAt
+            for slideIndex in comparableDraft.slides.indices {
+                if let persistedSlide = persistedSlidesByID[comparableDraft.slides[slideIndex].id] {
+                    comparableDraft.slides[slideIndex].updatedAt = persistedSlide.updatedAt
+                }
+            }
+            if comparableDraft != persistedDraft || didChangeSlide {
+                overview.drafts[draftIndex].updatedAt = now
+            }
+        }
+
+        return overview.drafts.filter { persistedCreateDraftsByID[$0.id] != $0 }
+    }
+
+    private func changedCreateTemplates(stampingUpdatesAt now: Date) -> [CreativeTemplate] {
+        for templateIndex in overview.templates.indices {
+            let template = overview.templates[templateIndex]
+            guard let persistedTemplate = persistedCreateTemplatesByID[template.id] else { continue }
+            var comparableTemplate = template
+            comparableTemplate.updatedAt = persistedTemplate.updatedAt
+            if comparableTemplate != persistedTemplate {
+                overview.templates[templateIndex].updatedAt = now
+            }
+        }
+
+        return overview.templates.filter { persistedCreateTemplatesByID[$0.id] != $0 }
+    }
+
+    private func capturePersistedCreateState() {
+        persistedCreateDraftsByID = Dictionary(uniqueKeysWithValues: overview.drafts.map { ($0.id, $0) })
+        persistedCreateTemplatesByID = Dictionary(uniqueKeysWithValues: overview.templates.map { ($0.id, $0) })
+        pendingDeletedCreateSlides.removeAll()
+    }
+
+    private func createDraftDeletionCutoff(for draft: SlideshowDraft) -> Date {
+        max(draft.updatedAt, persistedCreateDraftsByID[draft.id]?.updatedAt ?? .distantPast)
+    }
+
+    private func createSlideDeletionCutoff(for slide: Slide, draftID: UUID) -> Date {
+        let persistedUpdatedAt = persistedCreateDraftsByID[draftID]?
+            .slides
+            .first(where: { $0.id == slide.id })?
+            .updatedAt
+        return max(slide.updatedAt, persistedUpdatedAt ?? .distantPast)
+    }
+
+    private func nextRecordUpdateTimestamp(after previousTimestamp: Date, now: Date) -> Date {
+        max(now, previousTimestamp.addingTimeInterval(0.001))
     }
 
     func upsertAutomation(_ automation: ContentAutomation) async -> Bool {
@@ -1238,11 +1702,20 @@ final class FlickAppModel {
     }
 
     func deleteAutomation(id automationID: UUID) async {
-        guard overview.automations.contains(where: { $0.id == automationID }) else { return }
+        guard let deletedAutomation = overview.automations.first(where: { $0.id == automationID }) else { return }
 
         let previousOverview = overview
         let deletedDraftIDs = automationOwnedDraftIDs(for: automationID)
         let deletedDrafts = overview.drafts.filter { deletedDraftIDs.contains($0.id) }
+        let deletedProgresses = overview.automationPostProgresses.filter { progress in
+            progress.automationID == automationID || progress.draftID.map(deletedDraftIDs.contains) == true
+        }
+        let deletedJobs = overview.publishingJobs.filter { job in
+            job.automationID == automationID || deletedDraftIDs.contains(job.draftID)
+        }
+        let deletedPosts = overview.publishedPosts.filter { post in
+            post.automationID == automationID || deletedDraftIDs.contains(post.draftID)
+        }
         overview.automations.removeAll { $0.id == automationID }
         overview.automationPostProgresses.removeAll { progress in
             progress.automationID == automationID || progress.draftID.map(deletedDraftIDs.contains) == true
@@ -1256,12 +1729,34 @@ final class FlickAppModel {
         overview.drafts.removeAll { deletedDraftIDs.contains($0.id) }
         removeDraftOwnedMediaAssets(referencedBy: deletedDrafts)
         overview.refreshDerivedState()
+        let retainedAssetIDs = Set(overview.assets.map(\.id))
+        let deletedAssets = previousOverview.assets.filter { !retainedAssetIDs.contains($0.id) }
+        let deletions = [
+            OverviewDeletion(kind: .automation, id: deletedAutomation.id, deletedAt: deletedAutomation.updatedAt)
+        ]
+            + deletedProgresses.map { OverviewDeletion(kind: .automationPostProgress, id: $0.id, deletedAt: $0.updatedAt) }
+            + deletedJobs.map { OverviewDeletion(kind: .publishingJob, id: $0.id, deletedAt: $0.updatedAt) }
+            + deletedPosts.map { OverviewDeletion(kind: .publishedPost, id: $0.id, deletedAt: $0.updatedAt) }
+            + deletedDrafts.map {
+                OverviewDeletion(
+                    kind: .draft,
+                    id: $0.id,
+                    deletedAt: createDraftDeletionCutoff(for: $0)
+                )
+            }
+            + deletedDrafts.flatMap { draft in
+                draft.slides.map {
+                    OverviewDeletion(
+                        kind: .slide,
+                        id: $0.id,
+                        deletedAt: createSlideDeletionCutoff(for: $0, draftID: draft.id)
+                    )
+                }
+            }
+            + deletedAssets.map { OverviewDeletion(kind: .asset, id: $0.id, deletedAt: $0.updatedAt) }
 
         do {
-            try await repository.saveOverview(
-                overview,
-                deletingAutomationIDs: [automationID]
-            )
+            try await repository.saveOverview(overview, deletions: deletions)
             lastErrorMessage = nil
         } catch {
             overview = previousOverview
@@ -1680,7 +2175,6 @@ final class FlickAppModel {
                 beginManualPublishProgress(for: draft, platforms: [.tiktok])
             }
             startPublishStep(ManualPublishProgressStepID.validate, detail: "Checking account, media, and TikTok options.")
-            reconcileLoginKitAccountTokenStatus()
             guard let selectedAccount = selectedAccount(for: .tiktok, in: draft.accountSelections) else {
                 throw ManualPublishError.missingTikTokAccount
             }
@@ -1853,7 +2347,6 @@ final class FlickAppModel {
             }
 
             startPublishStep(ManualPublishProgressStepID.validate, detail: "Checking selected accounts and platform settings.")
-            reconcileLoginKitAccountTokenStatus()
             let tikTokAccountIDs = tikTokSettings == nil ? [] : draft.accountSelections.accountIDs(for: .tiktok)
             let youtubeAccountIDs = youtubeSettings == nil ? [] : draft.accountSelections.accountIDs(for: .youtubeShorts)
             guard !tikTokAccountIDs.isEmpty || !youtubeAccountIDs.isEmpty else {
@@ -2442,7 +2935,7 @@ final class FlickAppModel {
         let availableSourceCount = slides.filter { slideHasAvailableCreateImage($0, assetsByID: sourceAssetsByID) }.count
         logPublish("Retry checkpoint generatedVisuals=\(availableSourceCount)/\(slides.count) draftID=\(draft.id.uuidString)")
 
-        let storage = mediaStorageFactory(credentialVault.loadValues())
+        let storage = mediaStorageFactory(credentialValues)
         let originalExportedIDs = draft.exportedImageAssetIDs
         var recoveredAssetIDs: [UUID] = []
         var recoveredImageURLs: [URL] = []
@@ -2668,6 +3161,11 @@ final class FlickAppModel {
 
     func deleteSlide(_ slideID: UUID, in draftID: UUID) {
         guard let draftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) else { return }
+        guard let slide = overview.drafts[draftIndex].slides.first(where: { $0.id == slideID }) else { return }
+        pendingDeletedCreateSlides[slideID] = max(
+            pendingDeletedCreateSlides[slideID] ?? .distantPast,
+            createSlideDeletionCutoff(for: slide, draftID: draftID)
+        )
         overview.drafts[draftIndex].slides.removeAll { $0.id == slideID }
         reindexSlides(in: draftIndex)
     }
@@ -2695,13 +3193,16 @@ final class FlickAppModel {
     }
 
     func secureCredentialValues() -> [String: String] {
-        credentialVault.loadValues()
+        credentialValues
     }
 
     @discardableResult
-    func storeCredentialValue(_ value: String, for key: String) -> Bool {
+    func storeCredentialValue(_ value: String, for key: String) async -> Bool {
         do {
-            try credentialVault.storeValue(value, for: key)
+            try await Task.detached(priority: .userInitiated) {
+                try CredentialVault().storeValue(value, for: key)
+            }.value
+            credentialValues[key] = value.trimmingCharacters(in: .whitespacesAndNewlines)
             reloadCredentialConfiguration()
             credentialMessage = "Updated \(CredentialDefinition.definition(for: key)?.name ?? key)."
             lastErrorMessage = nil
@@ -2714,9 +3215,12 @@ final class FlickAppModel {
     }
 
     @discardableResult
-    func deleteStoredCredential(for key: String) -> Bool {
+    func deleteStoredCredential(for key: String) async -> Bool {
         do {
-            try credentialVault.deleteValue(for: key)
+            try await Task.detached(priority: .userInitiated) {
+                try CredentialVault().deleteValue(for: key)
+            }.value
+            credentialValues[key] = nil
             reloadCredentialConfiguration()
             credentialMessage = "Deleted \(CredentialDefinition.definition(for: key)?.name ?? key)."
             lastErrorMessage = nil
@@ -2729,9 +3233,12 @@ final class FlickAppModel {
     }
 
     @discardableResult
-    func clearStoredCredentials() -> Bool {
+    func clearStoredCredentials() async -> Bool {
         do {
-            try credentialVault.clearStoredCredentials()
+            try await Task.detached(priority: .userInitiated) {
+                try CredentialVault().clearStoredCredentials()
+            }.value
+            credentialValues.removeAll()
             reloadCredentialConfiguration()
             credentialMessage = "Cleared stored credentials."
             lastErrorMessage = nil
@@ -2757,7 +3264,7 @@ final class FlickAppModel {
         }
 
         do {
-            let result = try await R2StorageService().runSmokeTest(
+            let result = try await R2StorageService(credentials: credentialValues).runSmokeTest(
                 requiredPrefixes: configuration.storagePaths.all
             )
             r2SmokeTestResult = result
@@ -2815,7 +3322,7 @@ final class FlickAppModel {
     @discardableResult
     func reconcileStoredMediaPublicURLs(now: Date = Date()) -> Bool {
         guard let bucket = configuration.r2.bucket else { return false }
-        let storage = mediaStorageFactory(credentialVault.loadValues())
+        let storage = mediaStorageFactory(credentialValues)
         var didChange = false
 
         for index in overview.assets.indices {
@@ -2854,14 +3361,17 @@ final class FlickAppModel {
             do {
                 bundle = try tiktokLoginKitClient.tokenStore.tokenBundle(for: account)
             } catch {
+                publishingReadinessByAccountID[account.id] = nil
                 continue
             }
 
             guard let bundle else {
+                publishingReadinessByAccountID[account.id] = nil
                 continue
             }
 
             if bundle.refreshTokenExpiresAt <= now {
+                publishingReadinessByAccountID[account.id] = nil
                 didChange = markTikTokAccountTokenUnavailable(
                     accountID: account.id,
                     tokenStatus: .expired,
@@ -2871,6 +3381,7 @@ final class FlickAppModel {
             }
 
             if account.tokenStatus == .refreshFailed, bundle.updatedAt <= account.updatedAt {
+                publishingReadinessByAccountID[account.id] = nil
                 didChange = markTikTokAccountTokenUnavailable(
                     accountID: account.id,
                     tokenStatus: .refreshFailed,
@@ -2881,6 +3392,10 @@ final class FlickAppModel {
 
             var updatedAccount = account
             let effectiveScopes = bundle.scopes.isEmpty ? account.scopes : bundle.scopes
+            publishingReadinessByAccountID[account.id] = PublishingAccountReadiness(
+                scopes: Set(effectiveScopes),
+                validUntil: bundle.refreshTokenExpiresAt
+            )
             updatedAccount.scopes = effectiveScopes
             updatedAccount.tokenStatus = bundle.accessTokenExpiresAt <= now.addingTimeInterval(60) ? .expiresSoon : .valid
             updatedAccount.status = effectiveScopes.contains("user.info.basic") ? .connected : .missingScope
@@ -2986,6 +3501,7 @@ final class FlickAppModel {
         account.isPublishingEnabled = false
         account.updatedAt = now
         overview.accounts[index] = account
+        publishingReadinessByAccountID[accountID] = nil
         applyConnectedAccounts()
         return true
     }
@@ -3019,37 +3535,16 @@ final class FlickAppModel {
     func canPublish(_ account: ConnectedAccount, on platform: SocialPlatform) -> Bool {
         switch platform {
         case .tiktok:
-            guard
-                account.platform == .tiktok,
-                account.authorizationSource == .loginKit,
-                account.tokenStatus != .refreshFailed,
-                account.tokenStatus != .expired
-            else {
-                return false
-            }
-            guard let bundle = try? tiktokLoginKitClient.tokenStore.tokenBundle(for: account) else {
-                return false
-            }
-            let now = Date()
-            let effectiveScopes = bundle.scopes.isEmpty ? account.scopes : bundle.scopes
-            return bundle.refreshTokenExpiresAt > now
-                && effectiveScopes.contains("user.info.basic")
-                && effectiveScopes.contains { $0 == "video.publish" || $0 == "video.upload" }
+            guard account.canPublishToTikTok,
+                  let readiness = publishingReadinessByAccountID[account.id] else { return false }
+            return readiness.validUntil > Date()
+                && readiness.scopes.contains("user.info.basic")
+                && (readiness.scopes.contains("video.publish") || readiness.scopes.contains("video.upload"))
         case .youtubeShorts:
-            guard
-                account.platform == .youtubeShorts,
-                account.authorizationSource == .nativeOAuth,
-                account.status == .connected,
-                account.isPublishingEnabled
-            else {
-                return false
-            }
-            guard let bundle = try? youtubeOAuthClient.tokenStore.tokenBundle(for: account) else {
-                return false
-            }
-            let now = Date()
-            return bundle.refreshTokenExpiresAt > now
-                && bundle.scopes.contains(YouTubeConfiguration.uploadScope)
+            guard account.canPublishToYouTubeShorts,
+                  let readiness = publishingReadinessByAccountID[account.id] else { return false }
+            return readiness.validUntil > Date()
+                && readiness.scopes.contains(YouTubeConfiguration.uploadScope)
         case .instagram, .threads, .x:
             return account.platform == platform && account.isPublishingEnabled
         }
@@ -3108,6 +3603,10 @@ final class FlickAppModel {
         readyAccount.tokenStatus = bundle.accessTokenExpiresAt <= now.addingTimeInterval(60) ? .expiresSoon : .valid
         readyAccount.isPublishingEnabled = true
         readyAccount.lastValidatedAt = now
+        publishingReadinessByAccountID[account.id] = PublishingAccountReadiness(
+            scopes: Set(effectiveScopes),
+            validUntil: bundle.refreshTokenExpiresAt
+        )
 
         if readyAccount != account,
            let accountIndex = overview.accounts.firstIndex(where: { $0.id == account.id }) {
@@ -3171,7 +3670,7 @@ final class FlickAppModel {
     }
 
     private func reloadCredentialConfiguration() {
-        configuration = .current
+        configuration = AppConfiguration(credentialValues: credentialValues)
         applyCredentialHealth()
     }
 
@@ -3314,16 +3813,17 @@ private struct AutomationStepImageProgress {
 }
 
 private extension FlickAppModel {
-    func pruneAutomationPostProgresses(now: Date = Date()) -> Bool {
-        let originalCount = overview.automationPostProgresses.count
-        overview.automationPostProgresses.removeAll { progress in
+    func pruneAutomationPostProgresses(now: Date = Date()) -> [AutomationPostProgress] {
+        let prunedProgresses = overview.automationPostProgresses.filter { progress in
             if let finishedAt = progress.finishedAt {
                 return now.timeIntervalSince(finishedAt) > 10 * 60
             }
 
             return now.timeIntervalSince(progress.updatedAt) > 12 * 60 * 60
         }
-        return overview.automationPostProgresses.count != originalCount
+        let prunedIDs = Set(prunedProgresses.map(\.id))
+        overview.automationPostProgresses.removeAll { prunedIDs.contains($0.id) }
+        return prunedProgresses
     }
 
     func beginAutomationPostProgress(
@@ -3493,7 +3993,7 @@ private extension FlickAppModel {
     }
 
     func makeOpenAIClient() -> OpenAIClient {
-        openAIClientFactory(credentialVault.loadValues())
+        openAIClientFactory(credentialValues)
     }
 
     func createAISlideshowResult(
@@ -3571,7 +4071,7 @@ private extension FlickAppModel {
 
         let styleGuide = try await TemplateAnalysisCacheService(
             openAIClient: openAIClient,
-            storage: templateAnalysisStorageFactory(credentialVault.loadValues())
+            storage: templateAnalysisStorageFactory(credentialValues)
         )
         .resolveStyleGuide(for: template)
 
@@ -3609,8 +4109,6 @@ private extension FlickAppModel {
             guard automation.isReadyToSchedule else {
                 throw AutomationRunError.notReady
             }
-
-            reconcileLoginKitAccountTokenStatus()
 
             reloadCredentialConfiguration()
             await startAutomationPostProgressStep(
@@ -4233,7 +4731,7 @@ private extension FlickAppModel {
                 settings: settings,
                 fileExtension: generatedImage.fileExtension
             )
-            let storage = mediaStorageFactory(credentialVault.loadValues())
+            let storage = mediaStorageFactory(credentialValues)
             let remote = try await storage.uploadAsset(
                 LocalMediaAsset(
                     data: generatedImage.data,
@@ -4379,7 +4877,7 @@ private extension FlickAppModel {
                 slideID: renderedImage.slideID,
                 assetID: asset.id
             )
-            let storage = mediaStorageFactory(credentialVault.loadValues())
+            let storage = mediaStorageFactory(credentialValues)
             let remote = try await storage.uploadAsset(
                 LocalMediaAsset(
                     data: data,
@@ -5227,21 +5725,30 @@ private extension FlickAppModel {
                     if slide.generationStatus != .complete || slide.generationErrorMessage != nil {
                         overview.drafts[draftIndex].slides[slideIndex].generationStatus = .complete
                         overview.drafts[draftIndex].slides[slideIndex].generationErrorMessage = nil
-                        overview.drafts[draftIndex].slides[slideIndex].updatedAt = now
+                        overview.drafts[draftIndex].slides[slideIndex].updatedAt = nextRecordUpdateTimestamp(
+                            after: slide.updatedAt,
+                            now: now
+                        )
                         didChange = true
                         didChangeDraft = true
                     }
                 } else if slide.generationStatus == .generating || slide.generationStatus == .complete {
                     overview.drafts[draftIndex].slides[slideIndex].generationStatus = .notStarted
                     overview.drafts[draftIndex].slides[slideIndex].generationErrorMessage = nil
-                    overview.drafts[draftIndex].slides[slideIndex].updatedAt = now
+                    overview.drafts[draftIndex].slides[slideIndex].updatedAt = nextRecordUpdateTimestamp(
+                        after: slide.updatedAt,
+                        now: now
+                    )
                     didChange = true
                     didChangeDraft = true
                 }
             }
 
             if didChangeDraft {
-                overview.drafts[draftIndex].updatedAt = now
+                overview.drafts[draftIndex].updatedAt = nextRecordUpdateTimestamp(
+                    after: overview.drafts[draftIndex].updatedAt,
+                    now: now
+                )
             }
         }
 
@@ -5381,7 +5888,7 @@ private extension FlickAppModel {
         }
 
         let assetsByID = overview.assets.latestRecordsByID()
-        let storage = mediaStorageFactory(credentialVault.loadValues())
+        let storage = mediaStorageFactory(credentialValues)
         var imageURLs: [URL] = []
 
         for assetID in assetIDs {
@@ -5427,9 +5934,7 @@ private extension FlickAppModel {
             overview.drafts[draftIndex].slides[index].updatedAt = now
         }
         overview.drafts[draftIndex].updatedAt = now
-        Task {
-            await persistCreateState()
-        }
+        scheduleCreateStatePersistence()
     }
 
     func fileSize(at url: URL) -> Int64? {

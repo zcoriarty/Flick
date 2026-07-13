@@ -6,13 +6,48 @@
 import Foundation
 import Security
 
-protocol SecretStoring {
+nonisolated protocol SecretStoring {
     func data(for key: String) throws -> Data?
+    func data(for keys: [String]) throws -> [String: Data]
     func save(_ data: Data, for key: String) throws
     func delete(_ key: String) throws
+
+    func dataAsync(for key: String) async throws -> Data?
+    func dataAsync(for keys: [String]) async throws -> [String: Data]
+    func saveAsync(_ data: Data, for key: String) async throws
+    func deleteAsync(_ key: String) async throws
 }
 
-enum SecretStoreError: LocalizedError {
+nonisolated extension SecretStoring {
+    func data(for keys: [String]) throws -> [String: Data] {
+        try keys.reduce(into: [:]) { values, key in
+            if let value = try data(for: key) {
+                values[key] = value
+            }
+        }
+    }
+
+    /// Async compatibility entry points keep injected stores source-compatible.
+    /// `KeychainSecretStore` supplies `@concurrent` witnesses below so Security
+    /// framework calls never inherit a UI actor.
+    func dataAsync(for key: String) async throws -> Data? {
+        try data(for: key)
+    }
+
+    func dataAsync(for keys: [String]) async throws -> [String: Data] {
+        try data(for: keys)
+    }
+
+    func saveAsync(_ data: Data, for key: String) async throws {
+        try save(data, for: key)
+    }
+
+    func deleteAsync(_ key: String) async throws {
+        try delete(key)
+    }
+}
+
+nonisolated enum SecretStoreError: LocalizedError {
     case unhandledStatus(OSStatus)
 
     var errorDescription: String? {
@@ -23,7 +58,7 @@ enum SecretStoreError: LocalizedError {
     }
 }
 
-enum CredentialVaultError: LocalizedError {
+nonisolated enum CredentialVaultError: LocalizedError {
     case emptyValue(String)
     case unsupportedKey(String)
 
@@ -37,7 +72,7 @@ enum CredentialVaultError: LocalizedError {
     }
 }
 
-struct KeychainSecretStore: SecretStoring {
+nonisolated struct KeychainSecretStore: SecretStoring {
     var service = Bundle.main.bundleIdentifier ?? "com.orion.Flick"
     var synchronizesAcrossDevices = false
 
@@ -56,6 +91,41 @@ struct KeychainSecretStore: SecretStoring {
             throw SecretStoreError.unhandledStatus(status)
         }
         return item as? Data
+    }
+
+    func data(for keys: [String]) throws -> [String: Data] {
+        let requestedKeys = Set(keys)
+        guard !requestedKeys.isEmpty else { return [:] }
+
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecReturnAttributes as String: true,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitAll
+        ]
+        applySynchronizableReadPolicy(to: &query)
+
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound {
+            return [:]
+        }
+        guard status == errSecSuccess else {
+            throw SecretStoreError.unhandledStatus(status)
+        }
+
+        let items = result as? [[String: Any]] ?? []
+        return items.reduce(into: [:]) { values, item in
+            guard
+                let key = item[kSecAttrAccount as String] as? String,
+                requestedKeys.contains(key),
+                let data = item[kSecValueData as String] as? Data
+            else {
+                return
+            }
+            values[key] = data
+        }
     }
 
     func save(_ data: Data, for key: String) throws {
@@ -81,6 +151,26 @@ struct KeychainSecretStore: SecretStoring {
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw SecretStoreError.unhandledStatus(status)
         }
+    }
+
+    @concurrent
+    func dataAsync(for key: String) async throws -> Data? {
+        try data(for: key)
+    }
+
+    @concurrent
+    func dataAsync(for keys: [String]) async throws -> [String: Data] {
+        try data(for: keys)
+    }
+
+    @concurrent
+    func saveAsync(_ data: Data, for key: String) async throws {
+        try save(data, for: key)
+    }
+
+    @concurrent
+    func deleteAsync(_ key: String) async throws {
+        try delete(key)
     }
 
     private func update(_ data: Data, for key: String) throws {
@@ -113,7 +203,7 @@ struct KeychainSecretStore: SecretStoring {
     }
 }
 
-struct CredentialVault {
+nonisolated struct CredentialVault {
     static var supportedKeys: [String] {
         CredentialDefinition.supportedKeys
     }
@@ -125,10 +215,14 @@ struct CredentialVault {
     var store: SecretStoring = KeychainSecretStore()
 
     func loadValues() -> [String: String] {
-        Self.supportedKeys.reduce(into: [String: String]()) { values, key in
+        guard let storedData = try? store.data(for: Self.supportedKeys) else {
+            return [:]
+        }
+
+        return storedData.reduce(into: [String: String]()) { values, item in
+            let key = item.key
             guard
-                let data = try? store.data(for: key),
-                let value = String(data: data, encoding: .utf8),
+                let value = String(data: item.value, encoding: .utf8),
                 !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             else {
                 return

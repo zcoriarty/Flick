@@ -3,7 +3,7 @@
 //  Flick
 //
 
-enum TikTokPrivacyLevel: String, CaseIterable, Codable, Hashable {
+nonisolated enum TikTokPrivacyLevel: String, CaseIterable, Codable, Hashable {
     case publicToEveryone = "PUBLIC_TO_EVERYONE"
     case mutualFollowFriends = "MUTUAL_FOLLOW_FRIENDS"
     case followerOfCreator = "FOLLOWER_OF_CREATOR"

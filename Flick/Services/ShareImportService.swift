@@ -6,7 +6,7 @@
 import Foundation
 import UniformTypeIdentifiers
 
-enum ShareImportConfiguration {
+nonisolated enum ShareImportConfiguration {
     static let appGroupIdentifier = "group.com.orion.Flick"
     static let urlScheme = "flick"
     static let urlHost = "share-import"
@@ -14,7 +14,7 @@ enum ShareImportConfiguration {
     static let manifestFilename = "manifest.json"
 }
 
-enum LocalAutomationTemplateIdentifier {
+nonisolated enum LocalAutomationTemplateIdentifier {
     private static let prefix = "local-template:"
 
     static func id(for templateID: UUID) -> String {
@@ -27,38 +27,38 @@ enum LocalAutomationTemplateIdentifier {
     }
 }
 
-struct ShareImportManifest: Codable, Hashable {
+nonisolated struct ShareImportManifest: Codable, Hashable, Sendable {
     var id: UUID
     var createdAt: Date
     var items: [ShareImportManifestItem]
 }
 
-struct ShareImportManifestItem: Identifiable, Codable, Hashable {
+nonisolated struct ShareImportManifestItem: Identifiable, Codable, Hashable, Sendable {
     var id: UUID
     var filename: String
     var contentTypeIdentifier: String
     var originalSuggestedName: String?
 }
 
-struct ShareImportSession: Identifiable, Hashable {
+nonisolated struct ShareImportSession: Identifiable, Hashable, Sendable {
     var id: UUID
     var createdAt: Date
     var images: [ShareImportImage]
 }
 
-struct ShareImportImage: Identifiable, Hashable {
+nonisolated struct ShareImportImage: Identifiable, Hashable, Sendable {
     var id: UUID
     var fileURL: URL
     var contentType: UTType
     var fileSize: Int64?
 }
 
-struct ShareTemplateImportResult: Hashable {
+nonisolated struct ShareTemplateImportResult: Hashable, Sendable {
     var templateID: UUID
     var selectedTemplateID: String
 }
 
-enum ShareImportError: LocalizedError {
+nonisolated enum ShareImportError: LocalizedError {
     case appGroupUnavailable
     case missingImport(UUID)
     case emptyImport
@@ -78,7 +78,7 @@ enum ShareImportError: LocalizedError {
     }
 }
 
-struct ShareImportService {
+nonisolated struct ShareImportService {
     var appGroupIdentifier = ShareImportConfiguration.appGroupIdentifier
     var fileManager: FileManager = .default
 
@@ -180,7 +180,6 @@ struct ShareImportService {
             throw ShareImportError.appGroupUnavailable
         }
         let rootURL = containerURL.appendingPathComponent(ShareImportConfiguration.importsDirectoryName, isDirectory: true)
-        try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
         return rootURL
     }
 

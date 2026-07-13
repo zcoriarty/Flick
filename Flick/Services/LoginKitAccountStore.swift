@@ -6,13 +6,27 @@
 import CryptoKit
 import Foundation
 
-struct LoginKitAccountStore {
+nonisolated struct LoginKitAccountStore {
     private let key = "authorized_accounts.login_kit.v1"
     var store: SecretStoring = KeychainSecretStore(synchronizesAcrossDevices: true)
 
     func loadAccounts() -> [ConnectedAccount] {
         guard
             let data = try? store.data(for: key),
+            let accounts = try? JSONDecoder.flick.decode([ConnectedAccount].self, from: data)
+        else {
+            return []
+        }
+
+        return accounts
+            .filter { $0.authorizationSource == .loginKit }
+            .map(\.normalizedForCurrentLoginKitDefaults)
+            .sortedForPersistence
+    }
+
+    func loadAccountsAsync() async -> [ConnectedAccount] {
+        guard
+            let data = try? await store.dataAsync(for: key),
             let accounts = try? JSONDecoder.flick.decode([ConnectedAccount].self, from: data)
         else {
             return []
@@ -32,6 +46,14 @@ struct LoginKitAccountStore {
         try store.save(data, for: key)
     }
 
+    func saveAccountsAsync(_ accounts: [ConnectedAccount]) async throws {
+        let loginKitAccounts = accounts
+            .filter { $0.authorizationSource == .loginKit }
+            .sortedForPersistence
+        let data = try JSONEncoder.flick.encode(loginKitAccounts)
+        try await store.saveAsync(data, for: key)
+    }
+
     func upsert(_ account: ConnectedAccount) throws {
         guard account.authorizationSource == .loginKit else { return }
         var accounts = loadAccounts()
@@ -47,9 +69,14 @@ struct LoginKitAccountStore {
         let accounts = loadAccounts().filter { $0.id != accountID }
         try saveAccounts(accounts)
     }
+
+    func deleteAccountAsync(id accountID: UUID) async throws {
+        let accounts = await loadAccountsAsync().filter { $0.id != accountID }
+        try await saveAccountsAsync(accounts)
+    }
 }
 
-struct LoginKitTokenBundle: Codable, Hashable {
+nonisolated struct LoginKitTokenBundle: Codable, Hashable, Sendable {
     var platform: SocialPlatform
     var platformUserID: String
     var accessToken: String
@@ -61,7 +88,7 @@ struct LoginKitTokenBundle: Codable, Hashable {
     var updatedAt: Date
 }
 
-struct LoginKitTokenStore {
+nonisolated struct LoginKitTokenStore {
     private let prefix = "login_kit_tokens.v1"
     var store: SecretStoring = KeychainSecretStore(synchronizesAcrossDevices: true)
 
@@ -70,13 +97,27 @@ struct LoginKitTokenStore {
         try store.save(data, for: key(for: account))
     }
 
+    func saveAsync(_ bundle: LoginKitTokenBundle, for account: ConnectedAccount) async throws {
+        let data = try JSONEncoder.flick.encode(bundle)
+        try await store.saveAsync(data, for: key(for: account))
+    }
+
     func tokenBundle(for account: ConnectedAccount) throws -> LoginKitTokenBundle? {
         guard let data = try store.data(for: key(for: account)) else { return nil }
         return try JSONDecoder.flick.decode(LoginKitTokenBundle.self, from: data)
     }
 
+    func tokenBundleAsync(for account: ConnectedAccount) async throws -> LoginKitTokenBundle? {
+        guard let data = try await store.dataAsync(for: key(for: account)) else { return nil }
+        return try JSONDecoder.flick.decode(LoginKitTokenBundle.self, from: data)
+    }
+
     func deleteTokenBundle(for account: ConnectedAccount) throws {
         try store.delete(key(for: account))
+    }
+
+    func deleteTokenBundleAsync(for account: ConnectedAccount) async throws {
+        try await store.deleteAsync(key(for: account))
     }
 
     private func key(for account: ConnectedAccount) -> String {
@@ -127,7 +168,7 @@ enum LoginKitAccountMapper {
     }
 }
 
-extension JSONDecoder {
+nonisolated extension JSONDecoder {
     static var flick: JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -135,7 +176,7 @@ extension JSONDecoder {
     }
 }
 
-extension JSONEncoder {
+nonisolated extension JSONEncoder {
     static var flick: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -143,7 +184,7 @@ extension JSONEncoder {
     }
 }
 
-private extension Array where Element == ConnectedAccount {
+nonisolated private extension Array where Element == ConnectedAccount {
     var sortedForPersistence: [ConnectedAccount] {
         sorted {
             if $0.platform.rawValue == $1.platform.rawValue {
@@ -154,7 +195,7 @@ private extension Array where Element == ConnectedAccount {
     }
 }
 
-private extension ConnectedAccount {
+nonisolated private extension ConnectedAccount {
     var normalizedForCurrentLoginKitDefaults: ConnectedAccount {
         guard platform == .tiktok, defaultPrivacyLevel != TikTokPrivacyLevel.preferredDefault.rawValue else {
             return self

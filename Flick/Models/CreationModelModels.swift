@@ -5,7 +5,7 @@
 
 import Foundation
 
-struct FlickCreationModel: Identifiable, Codable, Hashable {
+nonisolated struct FlickCreationModel: Identifiable, Codable, Hashable {
     var id: UUID
     var name: String
     var metadata: CreationModelMetadata
@@ -52,7 +52,7 @@ struct FlickCreationModel: Identifiable, Codable, Hashable {
     }
 }
 
-struct SlideshowCreationModelReference: Identifiable, Codable, Hashable {
+nonisolated struct SlideshowCreationModelReference: Identifiable, Codable, Hashable {
     var id: UUID
     var name: String
     var aiMetadata: CreationModelAIMetadata
@@ -104,7 +104,7 @@ struct SlideshowCreationModelReference: Identifiable, Codable, Hashable {
     }
 }
 
-struct CreationModelAIMetadata: Codable, Hashable {
+nonisolated struct CreationModelAIMetadata: Codable, Hashable {
     var name: String
     var identity: CreationModelIdentity
     var ethnicity: CreationModelEthnicity
@@ -132,7 +132,7 @@ struct CreationModelAIMetadata: Codable, Hashable {
     }
 }
 
-private extension CreationModelAIMetadata {
+nonisolated private extension CreationModelAIMetadata {
     var normalizedForGeneration: CreationModelAIMetadata {
         var metadata = self
         metadata.skinDetails.moles = "None"
@@ -140,7 +140,7 @@ private extension CreationModelAIMetadata {
     }
 }
 
-struct CreationModelMetadata: Codable, Hashable {
+nonisolated struct CreationModelMetadata: Codable, Hashable {
     var identity = CreationModelIdentity()
     var ethnicity = CreationModelEthnicity()
     var skinDetails = CreationModelSkinDetails()
@@ -166,7 +166,7 @@ struct CreationModelMetadata: Codable, Hashable {
     }
 }
 
-extension CreationModelMetadata {
+nonisolated extension CreationModelMetadata {
     static func randomized() -> CreationModelMetadata {
         var metadata = CreationModelMetadata()
 
@@ -178,7 +178,7 @@ extension CreationModelMetadata {
     }
 }
 
-enum CreationModelPreset: String, CaseIterable, Identifiable, Hashable {
+nonisolated enum CreationModelPreset: String, CaseIterable, Identifiable, Hashable {
     case fromScratch
     case hotBlondeFitnessInfluencer
     case fitBlackGuy
@@ -348,7 +348,7 @@ enum CreationModelPreset: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-struct CreationModelIdentity: Codable, Hashable {
+nonisolated struct CreationModelIdentity: Codable, Hashable {
     var gender = ""
     var ageRange = ""
 
@@ -358,11 +358,11 @@ struct CreationModelIdentity: Codable, Hashable {
     }
 }
 
-struct CreationModelEthnicity: Codable, Hashable {
+nonisolated struct CreationModelEthnicity: Codable, Hashable {
     var ethnicity = ""
 }
 
-struct CreationModelSkinDetails: Codable, Hashable {
+nonisolated struct CreationModelSkinDetails: Codable, Hashable {
     var clarity = ""
     var freckles = ""
     var moles = "None"
@@ -376,11 +376,11 @@ struct CreationModelSkinDetails: Codable, Hashable {
     }
 }
 
-struct CreationModelFaceShape: Codable, Hashable {
+nonisolated struct CreationModelFaceShape: Codable, Hashable {
     var shape = ""
 }
 
-struct CreationModelFaceDetails: Codable, Hashable {
+nonisolated struct CreationModelFaceDetails: Codable, Hashable {
     var jawline = ""
     var cheekbones = ""
     var chin = ""
@@ -388,30 +388,30 @@ struct CreationModelFaceDetails: Codable, Hashable {
     var lips = ""
 }
 
-struct CreationModelHair: Codable, Hashable {
+nonisolated struct CreationModelHair: Codable, Hashable {
     var color = ""
     var style = ""
     var highlights = ""
 }
 
-struct CreationModelEyesAndBrows: Codable, Hashable {
+nonisolated struct CreationModelEyesAndBrows: Codable, Hashable {
     var shape = ""
     var color = ""
     var eyebrows = ""
 }
 
-struct CreationModelNoseAndEars: Codable, Hashable {
+nonisolated struct CreationModelNoseAndEars: Codable, Hashable {
     var nose = ""
     var ears = ""
 }
 
-struct CreationModelBody: Codable, Hashable {
+nonisolated struct CreationModelBody: Codable, Hashable {
     var build = ""
     var height = ""
     var shoulders = ""
 }
 
-struct CreationModelStyleAndAccessories: Codable, Hashable {
+nonisolated struct CreationModelStyleAndAccessories: Codable, Hashable {
     var aesthetic = ""
     var glasses = ""
     var jewelry = ""
@@ -450,7 +450,7 @@ struct CreationModelStyleAndAccessories: Codable, Hashable {
     }
 }
 
-enum CreationModelSection: String, CaseIterable, Identifiable, Codable, Hashable {
+nonisolated enum CreationModelSection: String, CaseIterable, Identifiable, Codable, Hashable {
     case identity
     case ethnicity
     case skinDetails
@@ -514,7 +514,7 @@ enum CreationModelSection: String, CaseIterable, Identifiable, Codable, Hashable
     }
 }
 
-enum CreationModelField: String, CaseIterable, Identifiable, Codable, Hashable {
+nonisolated enum CreationModelField: String, CaseIterable, Identifiable, Codable, Hashable {
     case gender
     case ageRange
     case ethnicity

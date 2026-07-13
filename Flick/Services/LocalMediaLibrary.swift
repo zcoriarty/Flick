@@ -90,7 +90,7 @@ struct LocalMediaLibrary {
     }
 }
 
-enum LocalMediaPathResolver {
+nonisolated enum LocalMediaPathResolver {
     static func readableFileURL(
         for storedPath: String?,
         source: AssetSource,
@@ -286,7 +286,7 @@ enum LocalMediaPathResolver {
     }
 }
 
-extension MediaAsset {
+nonisolated extension MediaAsset {
     var localFileURL: URL? {
         LocalMediaPathResolver.readableFileURL(for: localFilePath, source: source)
     }

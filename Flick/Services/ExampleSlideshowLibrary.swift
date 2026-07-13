@@ -175,11 +175,14 @@ enum ExampleSlideshowLibrary {
         index: ExampleSlideshowLibraryIndex,
         configuration: AppConfiguration
     ) async throws {
+        let credentials = await Task.detached(priority: .userInitiated) {
+            CredentialVault().loadValues()
+        }.value
         try await deleteTemplate(
             template,
             index: index,
             configuration: configuration,
-            storage: R2StorageService()
+            storage: R2StorageService(credentials: credentials)
         )
     }
 

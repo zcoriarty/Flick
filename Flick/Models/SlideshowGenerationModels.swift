@@ -5,7 +5,7 @@
 
 import Foundation
 
-struct TemplateStyleGuide: Codable, Hashable {
+nonisolated struct TemplateStyleGuide: Codable, Hashable {
     var styleName: String
     var visualTraits: [String]
     var colorPalette: [String]
@@ -98,7 +98,7 @@ struct TemplateStyleGuide: Codable, Hashable {
     }
 }
 
-struct TemplateSlideBlueprint: Codable, Hashable {
+nonisolated struct TemplateSlideBlueprint: Codable, Hashable {
     var slideNumber: Int
     var visibleText: String
     var copyRole: String
@@ -110,7 +110,7 @@ struct TemplateSlideBlueprint: Codable, Hashable {
     var isProductPlaceholder: Bool
 }
 
-struct PlannedSlideshow: Codable, Hashable {
+nonisolated struct PlannedSlideshow: Codable, Hashable {
     var title: String
     var tikTokTitle: String
     var topic: String
@@ -126,7 +126,7 @@ struct PlannedSlideshow: Codable, Hashable {
     var hashtags: [String]
 }
 
-struct PlannedSlide: Codable, Hashable {
+nonisolated struct PlannedSlide: Codable, Hashable {
     var index: Int
     var text: String
     var textPosition: TextPosition
@@ -135,17 +135,17 @@ struct PlannedSlide: Codable, Hashable {
     var usesProductImage: Bool
 }
 
-struct SlidePromptRewrite: Codable, Hashable {
+nonisolated struct SlidePromptRewrite: Codable, Hashable {
     var imagePrompt: String
     var selectedVisualSummary: String
 }
 
-struct SlideshowProductImage: Hashable {
+nonisolated struct SlideshowProductImage: Hashable {
     var product: FlickProduct
     var asset: MediaAsset
 }
 
-enum SlideshowImageVibe: String, CaseIterable, Codable, Identifiable, Hashable {
+nonisolated enum SlideshowImageVibe: String, CaseIterable, Codable, Identifiable, Hashable {
     nonisolated static let defaultValue: SlideshowImageVibe = .realisticCamera
 
     case none
@@ -333,7 +333,7 @@ enum SlideshowImageVibe: String, CaseIterable, Codable, Identifiable, Hashable {
     }
 }
 
-struct GeneratedSlideImage: Hashable {
+nonisolated struct GeneratedSlideImage: Hashable {
     var data: Data
     var contentType: String
     var fileExtension: String
@@ -341,7 +341,7 @@ struct GeneratedSlideImage: Hashable {
     var height: Int
 }
 
-struct SlideshowImageGenerationSettings: Hashable {
+nonisolated struct SlideshowImageGenerationSettings: Hashable {
     static let gptImage2MinimumPixels = 655_360
     static let gptImage2MaximumPixels = 8_294_400
     static let gptImage2MaximumEdgeLength = 3_840
@@ -399,7 +399,7 @@ struct SlideshowImageGenerationSettings: Hashable {
     }
 }
 
-extension TemplateStyleGuide {
+nonisolated extension TemplateStyleGuide {
     func productImageSlideNumbers(limitedTo slideCount: Int) -> [Int] {
         let explicitSlideNumbers = productImageSlideNumbers.filter { $0 <= slideCount }
         if !explicitSlideNumbers.isEmpty {
@@ -428,14 +428,14 @@ extension TemplateStyleGuide {
     }
 }
 
-extension CreativeTemplate {
+nonisolated extension CreativeTemplate {
     var decodedStyleGuide: TemplateStyleGuide? {
         guard let data = styleJSON.data(using: .utf8) else { return nil }
         return try? JSONDecoder.flick.decode(TemplateStyleGuide.self, from: data)
     }
 }
 
-extension TemplateStyleGuide {
+nonisolated extension TemplateStyleGuide {
     func encodedJSONString() -> String {
         guard
             let data = try? JSONEncoder.flick.encode(self),
@@ -447,7 +447,7 @@ extension TemplateStyleGuide {
     }
 }
 
-extension SlideGenerationStatus {
+nonisolated extension SlideGenerationStatus {
     var displayName: String {
         switch self {
         case .notStarted: "Not started"
@@ -458,7 +458,7 @@ extension SlideGenerationStatus {
     }
 }
 
-extension TextPosition {
+nonisolated extension TextPosition {
     var displayName: String {
         switch self {
         case .left: "Left"

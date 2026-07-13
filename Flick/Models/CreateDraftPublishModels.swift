@@ -5,7 +5,7 @@
 
 import Foundation
 
-struct DraftTikTokSettings: Codable, Hashable {
+nonisolated struct DraftTikTokSettings: Codable, Hashable {
     var title: String
     var postAsDraft: Bool
     var privacyLevel: TikTokPrivacyLevel?
@@ -39,7 +39,7 @@ struct DraftTikTokSettings: Codable, Hashable {
     }
 }
 
-enum YouTubePrivacyStatus: String, CaseIterable, Codable, Identifiable, Hashable {
+nonisolated enum YouTubePrivacyStatus: String, CaseIterable, Codable, Identifiable, Hashable {
     case `private`
     case unlisted
     case `public`
@@ -55,7 +55,7 @@ enum YouTubePrivacyStatus: String, CaseIterable, Codable, Identifiable, Hashable
     }
 }
 
-struct DraftYouTubeSettings: Codable, Hashable {
+nonisolated struct DraftYouTubeSettings: Codable, Hashable {
     var title: String
     var description: String
     var tags: [String]
@@ -86,7 +86,7 @@ struct DraftYouTubeSettings: Codable, Hashable {
     }
 }
 
-struct SelectedSong: Identifiable, Codable, Hashable {
+nonisolated struct SelectedSong: Identifiable, Codable, Hashable {
     var id: String
     var title: String
     var artist: String

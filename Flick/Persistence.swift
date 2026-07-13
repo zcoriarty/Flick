@@ -6,7 +6,7 @@
 import CoreData
 
 struct PersistenceController {
-    static let cloudKitContainerIdentifier = "iCloud.com.orion.Flick"
+    nonisolated static let cloudKitContainerIdentifier = "iCloud.com.orion.Flick"
     static let shared = PersistenceController(inMemory: ProcessInfo.processInfo.flickIsRunningXCTest)
 
     @MainActor
@@ -48,7 +48,7 @@ struct PersistenceController {
 }
 
 extension ProcessInfo {
-    var flickIsRunningXCTest: Bool {
+    nonisolated var flickIsRunningXCTest: Bool {
         environment["XCTestConfigurationFilePath"] != nil
             || environment["XCTestBundlePath"] != nil
             || environment["XCInjectBundleInto"] != nil

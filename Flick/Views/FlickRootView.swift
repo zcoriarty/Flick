@@ -72,6 +72,7 @@ struct FlickRootView: View {
         #endif
         .flickAppBackground()
         .task {
+            appModel.startCredentialConfigurationLoad()
             await appModel.refresh()
             await appModel.loadPendingShareImportIfNeeded()
         }
@@ -95,10 +96,13 @@ struct FlickRootView: View {
         }
         #endif
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
             Task {
-                await appModel.refresh()
-                await appModel.loadPendingShareImportIfNeeded()
+                if phase == .active {
+                    await appModel.refresh()
+                    await appModel.loadPendingShareImportIfNeeded()
+                } else {
+                    await appModel.flushScheduledCreateStatePersistence()
+                }
             }
         }
         .onOpenURL { url in

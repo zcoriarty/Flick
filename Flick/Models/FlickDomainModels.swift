@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum SocialPlatform: String, CaseIterable, Codable, Identifiable, Hashable {
+nonisolated enum SocialPlatform: String, CaseIterable, Codable, Identifiable, Hashable {
     case tiktok
     case youtubeShorts = "youtube_shorts"
     case instagram
@@ -27,7 +27,7 @@ enum SocialPlatform: String, CaseIterable, Codable, Identifiable, Hashable {
     }
 }
 
-enum AccountStatus: String, CaseIterable, Codable, Identifiable {
+nonisolated enum AccountStatus: String, CaseIterable, Codable, Identifiable {
     case connected
     case needsAuth
     case missingScope
@@ -38,7 +38,7 @@ enum AccountStatus: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
-enum OAuthTokenStatus: String, CaseIterable, Codable, Identifiable {
+nonisolated enum OAuthTokenStatus: String, CaseIterable, Codable, Identifiable {
     case valid
     case expiresSoon
     case refreshFailed
@@ -48,7 +48,7 @@ enum OAuthTokenStatus: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
-enum AccountAuthorizationSource: String, CaseIterable, Codable, Identifiable {
+nonisolated enum AccountAuthorizationSource: String, CaseIterable, Codable, Identifiable {
     case loginKit
     case nativeOAuth
     case manualImport
@@ -57,7 +57,7 @@ enum AccountAuthorizationSource: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
-enum TrendTagCategory: String, CaseIterable, Codable, Identifiable {
+nonisolated enum TrendTagCategory: String, CaseIterable, Codable, Identifiable {
     case hook
     case template
     case visualStyle
@@ -81,7 +81,7 @@ enum TrendTagCategory: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-enum AssetMediaType: String, CaseIterable, Codable, Identifiable {
+nonisolated enum AssetMediaType: String, CaseIterable, Codable, Identifiable {
     case image
     case video
     case thumbnail
@@ -89,7 +89,7 @@ enum AssetMediaType: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
-enum AssetSource: String, CaseIterable, Codable, Identifiable {
+nonisolated enum AssetSource: String, CaseIterable, Codable, Identifiable {
     case generated
     case uploaded
     case reference
@@ -98,7 +98,7 @@ enum AssetSource: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
-enum SlideshowDraftStatus: String, CaseIterable, Codable, Identifiable {
+nonisolated enum SlideshowDraftStatus: String, CaseIterable, Codable, Identifiable {
     case draft
     case needsReview
     case approved
@@ -109,7 +109,7 @@ enum SlideshowDraftStatus: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
-enum SlideGenerationStatus: String, CaseIterable, Codable, Identifiable {
+nonisolated enum SlideGenerationStatus: String, CaseIterable, Codable, Identifiable {
     case notStarted = "not_started"
     case generating
     case complete
@@ -118,7 +118,7 @@ enum SlideGenerationStatus: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
-enum TextPosition: String, CaseIterable, Codable, Identifiable {
+nonisolated enum TextPosition: String, CaseIterable, Codable, Identifiable {
     case left
     case right
     case top
@@ -129,7 +129,7 @@ enum TextPosition: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
-enum PublishMode: String, CaseIterable, Codable, Identifiable {
+nonisolated enum PublishMode: String, CaseIterable, Codable, Identifiable {
     case photoDirectPost
     case photoUploadForCompletion
     case videoDirectPost
@@ -138,7 +138,7 @@ enum PublishMode: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
-enum PublishingJobStatus: String, CaseIterable, Codable, Identifiable {
+nonisolated enum PublishingJobStatus: String, CaseIterable, Codable, Identifiable {
     case rendering
     case publishing
     case awaitingUserCompletion
@@ -157,7 +157,7 @@ enum PublishingJobStatus: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-enum PlatformErrorKind: String, CaseIterable, Codable, Identifiable {
+nonisolated enum PlatformErrorKind: String, CaseIterable, Codable, Identifiable {
     case authExpired
     case missingScope
     case rateLimit
@@ -180,7 +180,7 @@ enum PlatformErrorKind: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-struct ConnectedAccount: Identifiable, Codable, Hashable {
+nonisolated struct ConnectedAccount: Identifiable, Codable, Hashable {
     var id: UUID
     var platform: SocialPlatform
     var displayName: String
@@ -197,7 +197,7 @@ struct ConnectedAccount: Identifiable, Codable, Hashable {
     var updatedAt: Date
 }
 
-struct PlatformAccountSelection: Identifiable, Codable, Hashable {
+nonisolated struct PlatformAccountSelection: Identifiable, Codable, Hashable {
     var platform: SocialPlatform
     var accountID: UUID
 
@@ -206,7 +206,7 @@ struct PlatformAccountSelection: Identifiable, Codable, Hashable {
     }
 }
 
-extension Array where Element == PlatformAccountSelection {
+nonisolated extension Array where Element == PlatformAccountSelection {
     func accountID(for platform: SocialPlatform) -> UUID? {
         first { $0.platform == platform }?.accountID
     }
@@ -257,7 +257,7 @@ extension Array where Element == PlatformAccountSelection {
     }
 }
 
-extension ConnectedAccount {
+nonisolated extension ConnectedAccount {
     var canPublishToTikTok: Bool {
         platform == .tiktok
             && authorizationSource == .loginKit
@@ -279,7 +279,7 @@ extension ConnectedAccount {
     }
 }
 
-struct FlickProduct: Identifiable, Codable, Hashable {
+nonisolated struct FlickProduct: Identifiable, Codable, Hashable {
     var id: UUID
     var name: String
     var summary: String
@@ -287,7 +287,7 @@ struct FlickProduct: Identifiable, Codable, Hashable {
     var updatedAt: Date
 }
 
-struct TrendTag: Identifiable, Codable, Hashable {
+nonisolated struct TrendTag: Identifiable, Codable, Hashable {
     var id: UUID
     var name: String
     var category: TrendTagCategory
@@ -295,7 +295,7 @@ struct TrendTag: Identifiable, Codable, Hashable {
     var createdAt: Date
 }
 
-struct MediaAsset: Identifiable, Codable, Hashable {
+nonisolated struct MediaAsset: Identifiable, Codable, Hashable {
     var id: UUID
     var mediaType: AssetMediaType
     var source: AssetSource
@@ -397,7 +397,7 @@ struct MediaAsset: Identifiable, Codable, Hashable {
     }
 }
 
-struct SlideTextStyle: Codable, Hashable {
+nonisolated struct SlideTextStyle: Codable, Hashable {
     var fontName: String
     var weight: String
     var sizeScale: Double
@@ -437,7 +437,7 @@ struct SlideTextStyle: Codable, Hashable {
     }
 }
 
-struct Slide: Identifiable, Codable, Hashable {
+nonisolated struct Slide: Identifiable, Codable, Hashable {
     var id: UUID
     var index: Int
     var imageAssetID: UUID?
@@ -516,7 +516,7 @@ struct Slide: Identifiable, Codable, Hashable {
     }
 }
 
-struct CreativeTemplate: Identifiable, Codable, Hashable {
+nonisolated struct CreativeTemplate: Identifiable, Codable, Hashable {
     var id: UUID
     var name: String
     var description: String
@@ -532,7 +532,7 @@ struct CreativeTemplate: Identifiable, Codable, Hashable {
     var updatedAt: Date
 }
 
-struct SlideshowDraft: Identifiable, Codable, Hashable {
+nonisolated struct SlideshowDraft: Identifiable, Codable, Hashable {
     var id: UUID
     var automationID: UUID?
     var title: String
@@ -678,13 +678,13 @@ struct SlideshowDraft: Identifiable, Codable, Hashable {
     }
 }
 
-extension SlideshowDraft {
+nonisolated extension SlideshowDraft {
     var isAvailableInCreateDrafts: Bool {
         status != .published && status != .archived
     }
 }
 
-struct PublishingJob: Identifiable, Codable, Hashable {
+nonisolated struct PublishingJob: Identifiable, Codable, Hashable {
     var id: UUID
     var platform: SocialPlatform
     var accountID: UUID
@@ -700,7 +700,7 @@ struct PublishingJob: Identifiable, Codable, Hashable {
     var updatedAt: Date
 }
 
-enum PublishingPipelineStage: String, Codable, Hashable {
+nonisolated enum PublishingPipelineStage: String, Codable, Hashable {
     case prerequisites
     case authorization
     case platformStatus
@@ -726,7 +726,7 @@ enum PublishingPipelineStage: String, Codable, Hashable {
     }
 }
 
-struct PlatformFailure: Codable, Hashable {
+nonisolated struct PlatformFailure: Codable, Hashable {
     var kind: PlatformErrorKind
     var message: String
     var suggestedFix: String
@@ -738,7 +738,7 @@ struct PlatformFailure: Codable, Hashable {
     var failedAt: Date? = nil
 }
 
-struct PublishedPost: Identifiable, Codable, Hashable {
+nonisolated struct PublishedPost: Identifiable, Codable, Hashable {
     var id: UUID
     var platform: SocialPlatform
     var accountID: UUID
@@ -754,11 +754,11 @@ struct PublishedPost: Identifiable, Codable, Hashable {
     var updatedAt: Date
 }
 
-struct SyncHealth: Codable, Hashable {
+nonisolated struct SyncHealth: Codable, Hashable {
     var iCloudAvailable: Bool
 }
 
-struct APIHealthStatus: Identifiable, Codable, Hashable {
+nonisolated struct APIHealthStatus: Identifiable, Codable, Hashable {
     var id: String { serviceName }
     var serviceName: String
     var isConfigured: Bool
@@ -766,7 +766,7 @@ struct APIHealthStatus: Identifiable, Codable, Hashable {
     var lastCheckedAt: Date?
 }
 
-struct MacRunnerHeartbeat: Codable, Hashable {
+nonisolated struct MacRunnerHeartbeat: Codable, Hashable {
     static let staleAfter: TimeInterval = 3 * 60
 
     var lastSeenAt: Date?
@@ -782,7 +782,7 @@ struct MacRunnerHeartbeat: Codable, Hashable {
     }
 }
 
-struct DashboardSnapshot: Codable, Hashable {
+nonisolated struct DashboardSnapshot: Codable, Hashable {
     var failedJobCount: Int
     var activeAutomationCount: Int
     var nextAutomationPostAt: Date?
@@ -791,7 +791,7 @@ struct DashboardSnapshot: Codable, Hashable {
     var apiHealth: [APIHealthStatus]
 }
 
-struct FlickOverviewState: Codable, Hashable {
+nonisolated struct FlickOverviewState: Codable, Hashable {
     var accounts: [ConnectedAccount]
     var products: [FlickProduct]
     var creationModels: [FlickCreationModel]
@@ -806,14 +806,14 @@ struct FlickOverviewState: Codable, Hashable {
     var dashboard: DashboardSnapshot
 }
 
-private extension Array where Element: Hashable {
+nonisolated private extension Array where Element: Hashable {
     func uniqued() -> [Element] {
         var seen = Set<Element>()
         return filter { seen.insert($0).inserted }
     }
 }
 
-extension FlickOverviewState {
+nonisolated extension FlickOverviewState {
     mutating func refreshDerivedState() {
         dashboard.failedJobCount = publishingJobs.filter { $0.status == .failed }.count
         dashboard.activeAutomationCount = automations.filter { $0.status == .active }.count

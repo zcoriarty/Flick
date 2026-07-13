@@ -5,7 +5,7 @@
 
 import Foundation
 
-struct TikTokManualPublishSettings: Hashable {
+nonisolated struct TikTokManualPublishSettings: Hashable {
     var title: String
     var description: String
     var postAsDraft: Bool
@@ -46,7 +46,7 @@ struct TikTokManualPublishSettings: Hashable {
     }
 }
 
-private enum TikTokRequiredHashtags {
+nonisolated private enum TikTokRequiredHashtags {
     static let values = ["abcxyz", "fyp"]
 
     static func appendingMissing(to description: String) -> String {
@@ -63,7 +63,7 @@ private enum TikTokRequiredHashtags {
     }
 }
 
-private extension String {
+nonisolated private extension String {
     var tikTokHashtags: [String] {
         var tags: [String] = []
         var searchIndex = startIndex
@@ -86,7 +86,7 @@ private extension String {
     }
 }
 
-private extension Character {
+nonisolated private extension Character {
     var isTikTokHashtagCharacter: Bool {
         unicodeScalars.allSatisfy {
             CharacterSet.alphanumerics.contains($0) || $0 == "_"
@@ -94,7 +94,7 @@ private extension Character {
     }
 }
 
-struct YouTubeManualPublishSettings: Hashable {
+nonisolated struct YouTubeManualPublishSettings: Hashable {
     var title: String
     var description: String
     var tags: [String]
