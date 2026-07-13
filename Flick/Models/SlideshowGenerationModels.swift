@@ -148,6 +148,7 @@ struct SlideshowProductImage: Hashable {
 enum SlideshowImageVibe: String, CaseIterable, Codable, Identifiable, Hashable {
     nonisolated static let defaultValue: SlideshowImageVibe = .realisticCamera
 
+    case none
     case realisticCamera
     case phoneSnapshot
     case documentary
@@ -159,6 +160,7 @@ enum SlideshowImageVibe: String, CaseIterable, Codable, Identifiable, Hashable {
 
     var displayName: String {
         switch self {
+        case .none: "None"
         case .realisticCamera: "Real Camera"
         case .phoneSnapshot: "Phone Snapshot"
         case .documentary: "Documentary"
@@ -170,6 +172,8 @@ enum SlideshowImageVibe: String, CaseIterable, Codable, Identifiable, Hashable {
 
     var menuDetail: String {
         switch self {
+        case .none:
+            "Match the selected template"
         case .realisticCamera:
             "Natural human-camera realism"
         case .phoneSnapshot:
@@ -187,6 +191,7 @@ enum SlideshowImageVibe: String, CaseIterable, Codable, Identifiable, Hashable {
 
     var systemImage: String {
         switch self {
+        case .none: "circle.slash"
         case .realisticCamera: "camera"
         case .phoneSnapshot: "iphone"
         case .documentary: "camera.viewfinder"
@@ -197,6 +202,14 @@ enum SlideshowImageVibe: String, CaseIterable, Codable, Identifiable, Hashable {
     }
 
     var planningInstructions: String {
+        guard self != .none else {
+            return """
+            Image filter: None
+            Do not apply an additional image-vibe or photography filter.
+            Match the selected template style guide and slide blueprints as closely as possible for visual medium, lighting, palette, texture, composition, and overall finish.
+            """
+        }
+
         """
         Image vibe: \(displayName)
         \(generationContract)
@@ -207,6 +220,11 @@ enum SlideshowImageVibe: String, CaseIterable, Codable, Identifiable, Hashable {
 
     var generationContract: String {
         switch self {
+        case .none:
+            """
+            Do not apply an additional image-vibe or photography filter.
+            Prioritize fidelity to the selected template's visual medium, lighting, palette, texture, composition, and overall finish.
+            """
         case .realisticCamera:
             """
             Make the image look like a real photograph captured by a person with a physical camera.
@@ -237,6 +255,59 @@ enum SlideshowImageVibe: String, CaseIterable, Codable, Identifiable, Hashable {
             Make the image look like a real direct-flash candid photo.
             Use on-camera flash falloff, realistic hard shadows, slight red-eye or specular highlights only when plausible, ordinary background detail, and candid human-camera framing.
             """
+        }
+    }
+
+    var promptSectionTitle: String {
+        self == .none ? "Image filter" : "Image vibe"
+    }
+
+    var combinedGenerationContract: String {
+        guard self != .none else { return generationContract }
+        return """
+        \(generationContract)
+
+        \(Self.antiAIGlossContract)
+        """
+    }
+
+    var plannedPromptVisualRequirement: String {
+        if self == .none {
+            "Every generated image prompt must prioritize fidelity to the selected template style guide and matching slide blueprint without adding a separate image filter."
+        } else {
+            "Every generated image prompt must look like a real camera photograph made by a human, using the selected image vibe above."
+        }
+    }
+
+    var plannerVisualRequirement: String {
+        if self == .none {
+            "Generated slide visuals must match the selected template's visual medium and style as closely as possible without adding a photography or image-vibe filter."
+        } else {
+            "All generated slide visuals must look like real photographs captured by a human with a physical camera, not AI-generated artwork or glossy renders."
+        }
+    }
+
+    var rewriteVisualRequirement: String {
+        if self == .none {
+            "Do not add an image filter; preserve the selected template style guide's visual medium, lighting, palette, texture, composition, and finish."
+        } else {
+            "Preserve the selected image vibe and make the prompt read as human-taken camera photography, not glossy AI art."
+        }
+    }
+
+    var compositionStyleRequirement: String {
+        if self == .none {
+            "Match the template lighting, palette, visual medium, texture, spacing, and finish as closely as possible."
+        } else {
+            "Match the template lighting, palette, and spacing while preserving believable camera realism."
+        }
+    }
+
+    var staleStyleOverrideRequirement: String {
+        if self == .none {
+            "- Preserve earlier prompt text that describes the selected template's visual style or medium; do not replace it with a generic photography treatment."
+        } else {
+            "- If any earlier prompt text asks for glossy, hyperreal, CGI, rendered, illustrated, anime, cartoon, stock-photo-composite, or plastic-perfect visuals, ignore that stale style instruction and prioritize human-camera realism."
         }
     }
 

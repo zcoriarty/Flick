@@ -64,7 +64,7 @@ struct SlideshowPlannerService {
                 Reuse the template visibleText directly when it is generic, non-brand wording and still fits the user brief. Retarget it only when the selected product image, selected product summary, or user brief requires different specifics.
                 Never copy creator names, usernames, handles, brand names, product names, logos, UI text, watermarks, or product-specific claims from the template.
                 Avoid generic business filler phrases such as "Move the needle" unless that exact phrase appears in the user brief or template visible text reference.
-                Every generated image prompt must look like a real camera photograph made by a human, using the selected image vibe above.
+                \(imageVibe.plannedPromptVisualRequirement)
                 Flick will render all text separately, so generated image prompts must forbid readable text, captions, logos, watermarks, fake UI text, and gibberish.
                 Set each slide's textPosition to the matching template blueprint's textPosition when available; use center only when no blueprint exists.
                 Keep the chosen overlay region clean and low-detail for Flick-rendered text.
@@ -88,7 +88,7 @@ struct SlideshowPlannerService {
         ]
 
         return try await client.createStructuredResponse(
-            instructions: planningInstructions,
+            instructions: planningInstructions(for: imageVibe),
             input: input,
             schemaName: "slideshow_plan",
             schema: Self.planSchema,
@@ -145,7 +145,7 @@ struct SlideshowPlannerService {
         ]
 
         return try await client.createStructuredResponse(
-            instructions: promptRewriteInstructions,
+            instructions: promptRewriteInstructions(for: resolvedImageVibe),
             input: input,
             schemaName: "slide_prompt_rewrite",
             schema: Self.promptRewriteSchema,
@@ -186,7 +186,7 @@ struct SlideshowPlannerService {
         return response.visualSummary
     }
 
-    private var planningInstructions: String {
+    private func planningInstructions(for imageVibe: SlideshowImageVibe) -> String {
         """
         You are Flick's slideshow planner and prompt writer.
         Normalize the brief, reuse the selected template structurally, and create one cohesive TikTok/Instagram-style image carousel plan.
@@ -195,7 +195,7 @@ struct SlideshowPlannerService {
         Safe generic template wording may be copied directly when it fits the new post; retarget it only for selected product images, selected product summaries, or user-specific brief details.
         Do not copy creator names, usernames, handles, brand names, product names, logos, UI text, watermarks, or product-specific claims from the template.
         Avoid generic filler copy such as "Move the needle", "Unlock your potential", "Level up", or "Game changer" unless those exact words are supplied by the user brief or template visible text reference.
-        All generated slide visuals must look like real photographs captured by a human with a physical camera, not AI-generated artwork or glossy renders.
+        \(imageVibe.plannerVisualRequirement)
         Template people are reference material for pose, camera framing, environment, and background only; never copy their face, hair, skin tone, body, age, gender expression, clothing, or accessories.
         When a selected creation model is supplied, any visible person in generated slide prompts must match that model JSON and stay visually consistent across slides.
         Do not create image variants or candidate grids.
@@ -207,11 +207,11 @@ struct SlideshowPlannerService {
         """
     }
 
-    private var promptRewriteInstructions: String {
+    private func promptRewriteInstructions(for imageVibe: SlideshowImageVibe) -> String {
         """
         Rewrite a single slide image prompt for gpt-image-2.
         Preserve the selected Flick template style guide, slideshow continuity, current text overlay position, and user edit instruction.
-        Preserve the selected image vibe and make the prompt read as human-taken camera photography, not glossy AI art.
+        \(imageVibe.rewriteVisualRequirement)
         Preserve the draft's selected creation model whenever one is supplied, and treat template people as pose/environment references only.
         The output prompt must request one vertical portrait social slideshow image and must forbid readable text, captions, logos, watermarks, fake UI text, and gibberish.
         Do not propose variants.
@@ -505,9 +505,8 @@ enum SlideshowPromptBuilder {
         Template style:
         \(styleGuide.promptSummary)
 
-        Image vibe:
-        \(resolvedImageVibe.generationContract)
-        \(SlideshowImageVibe.antiAIGlossContract)
+        \(resolvedImageVibe.promptSectionTitle):
+        \(resolvedImageVibe.combinedGenerationContract)
 
         \(modelIdentityContract(for: draft.creationModel))
 
@@ -517,7 +516,7 @@ enum SlideshowPromptBuilder {
         Composition:
         - Keep the \(slide.textPosition.rawValue) overlay region clean and low-detail for Flick-rendered text.
         - Use the recurring motif: \(draft.globalVisualMotif).
-        - Match the template lighting, palette, and spacing while preserving believable camera realism.
+        - \(resolvedImageVibe.compositionStyleRequirement)
 
         Strict rules:
         - No readable text.

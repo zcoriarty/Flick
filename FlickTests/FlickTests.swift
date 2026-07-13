@@ -180,6 +180,67 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(repository.state.assets.map(\.id), [assetID])
     }
 
+    func testUpsertingPausedAutomationDoesNotRestoreNextCadenceDate() async {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let automation = makeContentAutomation(status: .paused, now: now)
+        let repository = InMemoryFlickRepository(state: FlickEmptyState.make())
+        let model = FlickAppModel(repository: repository, configuration: .current)
+
+        let didSave = await model.upsertAutomation(automation)
+
+        XCTAssertTrue(didSave)
+        XCTAssertEqual(model.overview.automations.first?.status, .paused)
+        XCTAssertNil(model.overview.automations.first?.nextScheduledAt)
+        XCTAssertNil(repository.state.automations.first?.nextScheduledAt)
+    }
+
+    func testUpdatingPausedAutomationRepairsStaleNextCadenceDate() async {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let automation = makeContentAutomation(
+            status: .paused,
+            nextScheduledAt: now.addingTimeInterval(60),
+            now: now
+        )
+        var state = FlickEmptyState.make()
+        state.automations = [automation]
+        let repository = InMemoryFlickRepository(state: state)
+        let model = FlickAppModel(repository: repository, configuration: .current)
+
+        await model.updateAutomationStatus(id: automation.id, status: .paused)
+
+        XCTAssertEqual(model.overview.automations.first?.status, .paused)
+        XCTAssertNil(model.overview.automations.first?.nextScheduledAt)
+        XCTAssertNil(repository.state.automations.first?.nextScheduledAt)
+    }
+
+    func testScheduledRunCompletionDoesNotReschedulePausedAutomation() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var automation = makeContentAutomation(status: .paused, now: now)
+
+        automation.recordScheduledRunSucceeded(at: now.addingTimeInterval(60))
+        XCTAssertNil(automation.nextScheduledAt)
+
+        automation.recordScheduledRunFailed(
+            at: now.addingTimeInterval(120),
+            errorMessage: "Test failure"
+        )
+        XCTAssertEqual(automation.status, .paused)
+        XCTAssertNil(automation.nextScheduledAt)
+    }
+
+    func testManualRunCompletionDoesNotRestorePausedCadenceDate() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var automation = makeContentAutomation(status: .paused, now: now)
+
+        automation.recordManualRunSucceeded(
+            at: now.addingTimeInterval(60),
+            preservingNextScheduledAt: now.addingTimeInterval(3_600)
+        )
+
+        XCTAssertEqual(automation.status, .paused)
+        XCTAssertNil(automation.nextScheduledAt)
+    }
+
     func testCoreDataSaveOverviewRemovesDuplicateProductAndAssetObjects() async throws {
         let older = Date(timeIntervalSince1970: 1_800_000_000)
         let newer = older.addingTimeInterval(60)
@@ -5413,6 +5474,27 @@ final class FlickTests: XCTestCase {
 
         XCTAssertEqual(requestCount, 1)
     }
+}
+
+private func makeContentAutomation(
+    id: UUID = UUID(),
+    status: ContentAutomationStatus = .active,
+    nextScheduledAt: Date? = nil,
+    now: Date = Date()
+) -> ContentAutomation {
+    ContentAutomation(
+        id: id,
+        name: "Test automation",
+        templateIDs: ["template-a"],
+        productID: nil,
+        productImageAssetIDs: [],
+        schedule: AutomationSchedule(),
+        tikTokSettings: DraftTikTokSettings(title: "Try Flick", privacyLevel: .publicToEveryone),
+        status: status,
+        nextScheduledAt: nextScheduledAt,
+        createdAt: now,
+        updatedAt: now
+    )
 }
 
 private func makePublishingJob(status: PublishingJobStatus = .rendering) -> PublishingJob {

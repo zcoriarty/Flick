@@ -1207,7 +1207,9 @@ final class FlickAppModel {
         var automation = automation
         let now = Date()
         automation.updatedAt = now
-        if automation.nextScheduledAt == nil {
+        if automation.status == .paused {
+            automation.nextScheduledAt = nil
+        } else if automation.nextScheduledAt == nil {
             automation.nextScheduledAt = automation.nextOccurrence(after: now)
         }
 
@@ -1290,7 +1292,14 @@ final class FlickAppModel {
 
     func updateAutomationStatus(id automationID: UUID, status: ContentAutomationStatus) async {
         guard let index = overview.automations.firstIndex(where: { $0.id == automationID }) else { return }
-        guard overview.automations[index].status != status else { return }
+        let automation = overview.automations[index]
+        let hasConsistentSchedule = switch status {
+        case .active:
+            automation.nextScheduledAt != nil
+        case .paused:
+            automation.nextScheduledAt == nil
+        }
+        guard automation.status != status || !hasConsistentSchedule else { return }
 
         let previousOverview = overview
         let now = Date()
@@ -1324,10 +1333,19 @@ final class FlickAppModel {
 
         do {
             try await publishAutomationInstance(automation, scheduledAt: now)
-            markAutomationManualRun(automationID, succeededAt: now, preservingNextScheduledAt: preservedNextScheduledAt)
+            markAutomationManualRun(
+                automationID,
+                succeededAt: Date(),
+                preservingNextScheduledAt: preservedNextScheduledAt
+            )
             createWorkflowMessage = "Automation run completed."
         } catch {
-            markAutomationManualRun(automationID, failedAt: now, error: error, preservingNextScheduledAt: preservedNextScheduledAt)
+            markAutomationManualRun(
+                automationID,
+                failedAt: Date(),
+                error: error,
+                preservingNextScheduledAt: preservedNextScheduledAt
+            )
         }
 
         do {
@@ -1357,14 +1375,20 @@ final class FlickAppModel {
     }
 
     private func processDueAutomation(id automationID: UUID, now: Date) async {
-        guard let automation = overview.automations.first(where: { $0.id == automationID }) else { return }
-        let scheduledAt = automation.nextScheduledAt ?? now
+        guard
+            let automation = overview.automations.first(where: { $0.id == automationID }),
+            automation.status == .active,
+            let scheduledAt = automation.nextScheduledAt,
+            scheduledAt <= now
+        else {
+            return
+        }
 
         do {
             try await publishAutomationInstance(automation, scheduledAt: scheduledAt)
-            markAutomation(automationID, succeededAt: now)
+            markAutomation(automationID, succeededAt: Date())
         } catch {
-            markAutomation(automationID, failedAt: now, error: error)
+            markAutomation(automationID, failedAt: Date(), error: error)
         }
 
         do {
@@ -1377,7 +1401,11 @@ final class FlickAppModel {
 
     func runAutomationWorkerLoop(interval: Duration = .seconds(60)) async {
         while !Task.isCancelled {
-            await processDueAutomations()
+            await refresh()
+            guard !Task.isCancelled else { return }
+            if !isRefreshing {
+                await processDueAutomations()
+            }
             try? await Task.sleep(for: interval)
         }
     }
@@ -3932,19 +3960,15 @@ private extension FlickAppModel {
 
     func markAutomation(_ automationID: UUID, succeededAt date: Date) {
         guard let index = overview.automations.firstIndex(where: { $0.id == automationID }) else { return }
-        overview.automations[index].lastRunAt = date
-        overview.automations[index].lastErrorMessage = nil
-        overview.automations[index].consecutiveFailureCount = 0
-        overview.automations[index].nextScheduledAt = overview.automations[index].nextOccurrence(after: date)
-        overview.automations[index].updatedAt = date
+        overview.automations[index].recordScheduledRunSucceeded(at: date)
     }
 
     func markAutomation(_ automationID: UUID, failedAt date: Date, error: Error) {
         guard let index = overview.automations.firstIndex(where: { $0.id == automationID }) else { return }
-        overview.automations[index].lastErrorMessage = error.localizedDescription
-        overview.automations[index].consecutiveFailureCount += 1
-        overview.automations[index].nextScheduledAt = overview.automations[index].nextOccurrence(after: date)
-        overview.automations[index].updatedAt = date
+        overview.automations[index].recordScheduledRunFailed(
+            at: date,
+            errorMessage: error.localizedDescription
+        )
         let diagnostics = publishErrorDiagnostics(for: error)
         logger.error("[FlickAutomationFailure] automationID=\(automationID.uuidString, privacy: .public) run=scheduled details=\(diagnostics, privacy: .public)")
     }
@@ -3955,11 +3979,10 @@ private extension FlickAppModel {
         preservingNextScheduledAt nextScheduledAt: Date?
     ) {
         guard let index = overview.automations.firstIndex(where: { $0.id == automationID }) else { return }
-        overview.automations[index].lastRunAt = date
-        overview.automations[index].lastErrorMessage = nil
-        overview.automations[index].consecutiveFailureCount = 0
-        overview.automations[index].nextScheduledAt = nextScheduledAt
-        overview.automations[index].updatedAt = date
+        overview.automations[index].recordManualRunSucceeded(
+            at: date,
+            preservingNextScheduledAt: nextScheduledAt
+        )
     }
 
     func markAutomationManualRun(
@@ -3969,10 +3992,11 @@ private extension FlickAppModel {
         preservingNextScheduledAt nextScheduledAt: Date?
     ) {
         guard let index = overview.automations.firstIndex(where: { $0.id == automationID }) else { return }
-        overview.automations[index].lastErrorMessage = error.localizedDescription
-        overview.automations[index].consecutiveFailureCount += 1
-        overview.automations[index].nextScheduledAt = nextScheduledAt
-        overview.automations[index].updatedAt = date
+        overview.automations[index].recordManualRunFailed(
+            at: date,
+            errorMessage: error.localizedDescription,
+            preservingNextScheduledAt: nextScheduledAt
+        )
         let diagnostics = publishErrorDiagnostics(for: error)
         logger.error("[FlickAutomationFailure] automationID=\(automationID.uuidString, privacy: .public) run=manual details=\(diagnostics, privacy: .public)")
     }

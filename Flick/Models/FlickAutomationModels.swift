@@ -790,6 +790,40 @@ struct ContentAutomation: Identifiable, Codable, Hashable {
         schedule.nextOccurrence(after: referenceDate, automationID: id, calendar: calendar)
     }
 
+    mutating func recordScheduledRunSucceeded(at date: Date) {
+        lastRunAt = date
+        lastErrorMessage = nil
+        consecutiveFailureCount = 0
+        nextScheduledAt = status == .active ? nextOccurrence(after: date) : nil
+        updatedAt = date
+    }
+
+    mutating func recordScheduledRunFailed(at date: Date, errorMessage: String) {
+        lastErrorMessage = errorMessage
+        consecutiveFailureCount += 1
+        nextScheduledAt = status == .active ? nextOccurrence(after: date) : nil
+        updatedAt = date
+    }
+
+    mutating func recordManualRunSucceeded(at date: Date, preservingNextScheduledAt: Date?) {
+        lastRunAt = date
+        lastErrorMessage = nil
+        consecutiveFailureCount = 0
+        nextScheduledAt = status == .active ? preservingNextScheduledAt : nil
+        updatedAt = date
+    }
+
+    mutating func recordManualRunFailed(
+        at date: Date,
+        errorMessage: String,
+        preservingNextScheduledAt: Date?
+    ) {
+        lastErrorMessage = errorMessage
+        consecutiveFailureCount += 1
+        nextScheduledAt = status == .active ? preservingNextScheduledAt : nil
+        updatedAt = date
+    }
+
     var isReadyToSchedule: Bool {
         (!templateIDs.isEmpty || !templateNicheIDs.isEmpty)
             && (productID == nil || !productImageAssetIDs.isEmpty)

@@ -626,7 +626,10 @@ struct MacCreateView: View {
         )
         .macCreateListRows()
 
-        CreateImageVibeSection(imageVibe: $automationImageVibe)
+        CreateImageVibeSection(
+            imageVibe: $automationImageVibe,
+            includesNone: true
+        )
             .macCreateListRows()
 
         CreateTikTokSettingsSection(

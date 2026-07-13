@@ -7,6 +7,11 @@ import SwiftUI
 
 struct CreateImageVibeSection: View {
     @Binding var imageVibe: SlideshowImageVibe
+    var includesNone = false
+
+    private var availableImageVibes: [SlideshowImageVibe] {
+        SlideshowImageVibe.allCases.filter { includesNone || $0 != .none }
+    }
 
     var body: some View {
         Section("Visuals") {
@@ -16,7 +21,7 @@ struct CreateImageVibeSection: View {
                 iconColor: FlickStyle.appTint
             ) {
                 Picker("Filter", selection: $imageVibe) {
-                    ForEach(SlideshowImageVibe.allCases) { vibe in
+                    ForEach(availableImageVibes) { vibe in
                         Text(vibe.displayName).tag(vibe)
                     }
                 }

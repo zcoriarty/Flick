@@ -597,7 +597,10 @@ struct IOSCreateView: View {
             selectedProductImageAssetIDs: $selectedAutomationProductImageAssetIDs
         )
 
-        CreateImageVibeSection(imageVibe: $automationImageVibe)
+        CreateImageVibeSection(
+            imageVibe: $automationImageVibe,
+            includesNone: true
+        )
 
         CreateTikTokSettingsSection(
             accountSummary: tiktokAccountSummary,
