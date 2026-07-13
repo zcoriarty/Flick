@@ -40,6 +40,20 @@ final class CoreDataFlickRepository: FlickRepository {
     }
 
     func saveOverview(_ state: FlickOverviewState) async throws {
+        try syncOverview(state)
+        try saveIfNeeded()
+    }
+
+    func saveOverview(
+        _ state: FlickOverviewState,
+        deletingAutomationIDs: Set<UUID>
+    ) async throws {
+        try syncOverview(state)
+        try deleteAutomations(ids: deletingAutomationIDs)
+        try saveIfNeeded()
+    }
+
+    private func syncOverview(_ state: FlickOverviewState) throws {
         try syncConnectedAccounts(state.accounts)
         try syncProducts(state.products)
         try syncCreationModels(state.creationModels)
@@ -51,7 +65,6 @@ final class CoreDataFlickRepository: FlickRepository {
         try syncAutomationPostProgresses(state.automationPostProgresses)
         try syncPublishingJobs(state.publishingJobs)
         try syncPublishedPosts(state.publishedPosts)
-        try saveIfNeeded()
     }
 
     func saveMacRunnerHeartbeat(_ heartbeat: MacRunnerHeartbeat) async throws {
@@ -308,14 +321,18 @@ final class CoreDataFlickRepository: FlickRepository {
             idKey: AutomationKey.id,
             updatedAtKey: AutomationKey.updatedAt
         )
-        let stateIDs = Set(automations.map(\.id))
-
         for automation in automations {
             let object = existingByID.removeValue(forKey: automation.id) ?? insertAutomationObject()
             apply(automation, to: object)
         }
+    }
 
-        for (id, object) in existingByID where !stateIDs.contains(id) {
+    private func deleteAutomations(ids: Set<UUID>) throws {
+        guard !ids.isEmpty else { return }
+
+        let request = automationFetchRequest()
+        request.predicate = NSPredicate(format: "%K IN %@", AutomationKey.id, ids as NSSet)
+        for object in try context.fetch(request) {
             context.delete(object)
         }
     }

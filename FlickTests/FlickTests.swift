@@ -1376,6 +1376,36 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(loaded.dashboard.nextAutomationPostAt, nextScheduledAt)
     }
 
+    func testCoreDataSavePreservesAutomationMissingFromStaleOverview() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let persistenceController = PersistenceController(inMemory: true)
+        let repository = CoreDataFlickRepository(
+            context: persistenceController.container.viewContext,
+            cloudAvailability: { false }
+        )
+        let automation = ContentAutomation(
+            name: "Synced from iPhone",
+            templateIDs: ["local-template:\(UUID().uuidString)"],
+            productID: nil,
+            productImageAssetIDs: [],
+            schedule: AutomationSchedule.default,
+            tikTokSettings: DraftTikTokSettings(
+                title: "Try Flick",
+                privacyLevel: .publicToEveryone
+            ),
+            createdAt: now,
+            updatedAt: now
+        )
+        var syncedState = FlickEmptyState.make()
+        syncedState.automations = [automation]
+
+        try await repository.saveOverview(syncedState)
+        try await repository.saveOverview(FlickEmptyState.make())
+
+        let loaded = try await repository.loadOverview()
+        XCTAssertEqual(loaded.automations, [automation])
+    }
+
     func testContentAutomationDecodesLegacyPayloadWithoutAccountSelections() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let automation = ContentAutomation(

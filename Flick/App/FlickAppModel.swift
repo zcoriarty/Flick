@@ -1258,7 +1258,10 @@ final class FlickAppModel {
         overview.refreshDerivedState()
 
         do {
-            try await repository.saveOverview(overview)
+            try await repository.saveOverview(
+                overview,
+                deletingAutomationIDs: [automationID]
+            )
             lastErrorMessage = nil
         } catch {
             overview = previousOverview

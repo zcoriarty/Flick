@@ -9,6 +9,10 @@ import Foundation
 protocol FlickRepository {
     func loadOverview() async throws -> FlickOverviewState
     func saveOverview(_ state: FlickOverviewState) async throws
+    func saveOverview(
+        _ state: FlickOverviewState,
+        deletingAutomationIDs: Set<UUID>
+    ) async throws
     func saveMacRunnerHeartbeat(_ heartbeat: MacRunnerHeartbeat) async throws
     func saveAutomationPostProgresses(_ progresses: [AutomationPostProgress]) async throws
     func upsertConnectedAccount(_ account: ConnectedAccount) async throws
@@ -16,6 +20,16 @@ protocol FlickRepository {
     func upsertProduct(_ product: FlickProduct) async throws
     func upsertAsset(_ asset: MediaAsset) async throws
     func deleteAsset(id: UUID) async throws
+}
+
+extension FlickRepository {
+    func saveOverview(
+        _ state: FlickOverviewState,
+        deletingAutomationIDs: Set<UUID>
+    ) async throws {
+        _ = deletingAutomationIDs
+        try await saveOverview(state)
+    }
 }
 
 struct EmptyFlickRepository: FlickRepository {
