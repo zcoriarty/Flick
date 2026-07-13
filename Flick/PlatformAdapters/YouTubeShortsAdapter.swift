@@ -248,6 +248,12 @@ enum YouTubePublishAPIError: LocalizedError {
         }
     }
 
+    var statusCode: Int? {
+        switch self {
+        case let .api(code, _, _, _): code
+        }
+    }
+
     var rawResponse: String {
         switch self {
         case let .api(_, _, _, rawResponse): rawResponse

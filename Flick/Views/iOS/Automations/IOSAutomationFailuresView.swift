@@ -8,6 +8,9 @@ import SwiftUI
 
 struct IOSAutomationFailuresView: View {
     @Environment(FlickAppModel.self) private var appModel
+    @State private var isRetryConfirmationPresented = false
+    @State private var isRetrying = false
+    @State private var retryResult: PublishingRetrySummary?
 
     var automationID: UUID
     var exampleTemplates: [ExampleSlideshowTemplate]
@@ -33,6 +36,23 @@ struct IOSAutomationFailuresView: View {
                 }
                 .flickSettingsListStyle()
                 .flickToolbarTitle("Failures")
+                .confirmationDialog(
+                    "Retry all failed posts?",
+                    isPresented: $isRetryConfirmationPresented,
+                    titleVisibility: .visible
+                ) {
+                    Button("Retry \(failedJobs(for: item).count) Failed Post\(failedJobs(for: item).count == 1 ? "" : "s")") {
+                        retryAllFailures()
+                    }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    Text("Flick will inspect each saved post, reuse existing rendered files, repair only missing Cloudflare uploads, check any prior platform submission, and resume from the first incomplete step. It will not regenerate AI images.")
+                }
+                .alert("Retry finished", isPresented: retryResultBinding) {
+                    Button("OK", role: .cancel) { }
+                } message: {
+                    Text(retryResult?.message ?? "")
+                }
             } else {
                 ContentUnavailableView(
                     "Automation unavailable",
@@ -46,6 +66,20 @@ struct IOSAutomationFailuresView: View {
 
     private func summarySection(for item: AutomationDashboardItem) -> some View {
         Section("Summary") {
+            Button {
+                isRetryConfirmationPresented = true
+            } label: {
+                FlickSettingsRowLabel(
+                    title: isRetrying ? "Retrying Failed Posts" : "Retry All Failed Posts",
+                    systemImage: isRetrying ? "arrow.clockwise" : "arrow.clockwise.circle.fill",
+                    iconColor: .blue,
+                    value: isRetrying ? "Checking media and publishing…" : "Repair media and publish again",
+                    valueLineLimit: 2
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(failedJobs(for: item).isEmpty || isRetrying || appModel.isPublishingSlideshow)
+
             FlickSettingsValueRow(
                 title: "Consecutive failures",
                 systemImage: "exclamationmark.triangle",
@@ -186,10 +220,7 @@ private struct IOSAutomationFailureJobRow: View {
             }
 
             if let failure = job.lastError {
-                Text(failure.message)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                PublishingFailureDetailsView(failure: failure, job: job)
             }
 
             if slides.isEmpty {
@@ -212,7 +243,29 @@ private struct IOSAutomationFailureJobRow: View {
             }
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
+    }
+}
+
+private extension IOSAutomationFailuresView {
+    var retryResultBinding: Binding<Bool> {
+        Binding(
+            get: { retryResult != nil },
+            set: { isPresented in
+                if !isPresented {
+                    retryResult = nil
+                }
+            }
+        )
+    }
+
+    func retryAllFailures() {
+        guard !isRetrying else { return }
+        isRetrying = true
+        Task {
+            let result = await appModel.retryFailedPublishingJobs(automationID: automationID)
+            isRetrying = false
+            retryResult = result
+        }
     }
 }
 

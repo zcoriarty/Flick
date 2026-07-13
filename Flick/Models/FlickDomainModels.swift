@@ -700,11 +700,42 @@ struct PublishingJob: Identifiable, Codable, Hashable {
     var updatedAt: Date
 }
 
+enum PublishingPipelineStage: String, Codable, Hashable {
+    case prerequisites
+    case authorization
+    case platformStatus
+    case renderedMedia
+    case cloudflareUpload
+    case platformSubmission
+
+    var displayName: String {
+        switch self {
+        case .prerequisites:
+            "Post prerequisites"
+        case .authorization:
+            "Account authorization"
+        case .platformStatus:
+            "Existing platform submission check"
+        case .renderedMedia:
+            "Rendered media check"
+        case .cloudflareUpload:
+            "Cloudflare media check"
+        case .platformSubmission:
+            "Platform submission"
+        }
+    }
+}
+
 struct PlatformFailure: Codable, Hashable {
     var kind: PlatformErrorKind
     var message: String
     var suggestedFix: String
     var rawResponse: String?
+    var pipelineStage: PublishingPipelineStage? = nil
+    var httpStatusCode: Int? = nil
+    var platformCode: String? = nil
+    var platformLogID: String? = nil
+    var failedAt: Date? = nil
 }
 
 struct PublishedPost: Identifiable, Codable, Hashable {

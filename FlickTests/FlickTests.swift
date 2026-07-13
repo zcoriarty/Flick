@@ -2227,6 +2227,7 @@ final class FlickTests: XCTestCase {
             paths.all,
             [
                 paths.productMedia,
+                paths.templateImports,
                 paths.generatedImages,
                 paths.renderedImages,
                 paths.referenceImages,
@@ -3321,6 +3322,408 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(reconciledAccount.tokenStatus, .valid)
         XCTAssertTrue(reconciledAccount.isPublishingEnabled)
         XCTAssertTrue(reconciledAccount.canPublishToTikTok)
+    }
+
+    func testLoginKitTokenReconciliationUsesCurrentBundleScopes() throws {
+        let secretStore = MemorySecretStore()
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var account = makeConnectedAccount(now: now.addingTimeInterval(-120))
+        account.scopes = ["user.info.basic"]
+        account.status = .missingScope
+        account.isPublishingEnabled = false
+        let tokenStore = LoginKitTokenStore(store: secretStore)
+        try tokenStore.save(
+            LoginKitTokenBundle(
+                platform: .tiktok,
+                platformUserID: account.platformUserID,
+                accessToken: "access-token",
+                refreshToken: "refresh-token",
+                tokenType: "Bearer",
+                scopes: ["user.info.basic", "video.publish"],
+                accessTokenExpiresAt: now.addingTimeInterval(86_400),
+                refreshTokenExpiresAt: now.addingTimeInterval(31_536_000),
+                updatedAt: now
+            ),
+            for: account
+        )
+        let client = TikTokLoginKitClient(
+            accountStore: LoginKitAccountStore(store: secretStore),
+            tokenStore: tokenStore
+        )
+        let model = FlickAppModel(
+            repository: InMemoryFlickRepository(state: FlickEmptyState.make()),
+            configuration: makeTestAppConfiguration(),
+            tiktokLoginKitClient: client
+        )
+        model.overview.accounts = [account]
+
+        XCTAssertTrue(model.reconcileLoginKitAccountTokenStatus(now: now))
+
+        let reconciledAccount = try XCTUnwrap(model.overview.accounts.first)
+        XCTAssertEqual(reconciledAccount.status, .connected)
+        XCTAssertEqual(reconciledAccount.scopes, ["user.info.basic", "video.publish"])
+        XCTAssertTrue(reconciledAccount.isPublishingEnabled)
+        XCTAssertTrue(model.canPublish(reconciledAccount, on: .tiktok))
+    }
+
+    func testRetryFailedPublishingJobPersistsDetailedAccountFailure() async throws {
+        let secretStore = MemorySecretStore()
+        let account = makeConnectedAccount()
+        var draft = makeSlideshowDraft()
+        draft.accountSelections = [PlatformAccountSelection(platform: .tiktok, accountID: account.id)]
+        draft.tikTokSettings = DraftTikTokSettings(title: "Retry me", privacyLevel: .publicToEveryone)
+        var job = makePublishingJob(status: .failed)
+        job.accountID = account.id
+        job.draftID = draft.id
+        job.attemptCount = 2
+        job.lastError = PlatformFailure(
+            kind: .unknownServerError,
+            message: "Previous failure",
+            suggestedFix: "Retry",
+            rawResponse: nil
+        )
+        var state = FlickEmptyState.make()
+        state.accounts = [account]
+        state.drafts = [draft]
+        state.publishingJobs = [job]
+        let repository = InMemoryFlickRepository(state: state)
+        let client = TikTokLoginKitClient(
+            accountStore: LoginKitAccountStore(store: secretStore),
+            tokenStore: LoginKitTokenStore(store: secretStore)
+        )
+        let model = FlickAppModel(
+            repository: repository,
+            configuration: makeTestAppConfiguration(),
+            tiktokLoginKitClient: client
+        )
+        model.overview = state
+
+        let didRetry = await model.retryPublishingJob(id: job.id)
+        XCTAssertFalse(didRetry)
+
+        let retriedJob = try XCTUnwrap(model.overview.publishingJobs.first)
+        XCTAssertEqual(retriedJob.status, .failed)
+        XCTAssertEqual(retriedJob.attemptCount, 3)
+        XCTAssertEqual(retriedJob.lastError?.kind, .authExpired)
+        XCTAssertEqual(retriedJob.lastError?.pipelineStage, .authorization)
+        XCTAssertNotNil(retriedJob.lastError?.failedAt)
+        XCTAssertTrue(retriedJob.lastError?.rawResponse?.contains("missingStoredToken") == true)
+        XCTAssertTrue(model.lastErrorMessage?.contains("Keychain") == true)
+    }
+
+    func testRetryReusesAccessibleRenderedMediaWithoutRenderingOrUploading() async throws {
+        defer { CapturingURLProtocol.requestHandler = nil }
+        let secretStore = MemorySecretStore()
+        let account = makeConnectedAccount()
+        try LoginKitTokenStore(store: secretStore).save(
+            LoginKitTokenBundle(
+                platform: .tiktok,
+                platformUserID: account.platformUserID,
+                accessToken: "valid-access-token",
+                refreshToken: "refresh-token",
+                tokenType: "Bearer",
+                scopes: account.scopes,
+                accessTokenExpiresAt: Date(timeIntervalSinceNow: 3_600),
+                refreshTokenExpiresAt: Date(timeIntervalSinceNow: 86_400),
+                updatedAt: Date()
+            ),
+            for: account
+        )
+
+        let renderedURL = try XCTUnwrap(URL(string: "https://media.example.com/rendered-slide.jpg"))
+        let renderedAsset = makeMediaAsset(
+            source: .rendered,
+            storagePath: "rendered-slide.jpg",
+            publicURL: renderedURL,
+            width: 720,
+            height: 1_080
+        )
+        var draft = makeSlideshowDraft()
+        draft.exportedImageAssetIDs = [renderedAsset.id]
+        draft.tikTokSettings = DraftTikTokSettings(title: "Retry me", privacyLevel: .publicToEveryone)
+        var job = makePublishingJob(status: .failed)
+        job.accountID = account.id
+        job.draftID = draft.id
+
+        CapturingURLProtocol.requestHandler = { request in
+            switch request.url?.path.removingTrailingSlash {
+            case "/rendered-slide.jpg":
+                XCTAssertEqual(request.httpMethod, "HEAD")
+                return (
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: ["Content-Type": "image/jpeg", "Content-Length": "1024"]
+                    )!,
+                    Data()
+                )
+            case "/v2/post/publish/content/init":
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data(
+                        """
+                        {
+                            "data": { "publish_id": "publish-reused-media" },
+                            "error": { "code": "ok", "message": "", "log_id": "log-reused-media" }
+                        }
+                        """.utf8
+                    )
+                )
+            default:
+                XCTFail("Unexpected request URL: \(request.url?.absoluteString ?? "nil")")
+                return (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+            }
+        }
+
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [CapturingURLProtocol.self]
+        let loginKitClient = TikTokLoginKitClient(
+            urlSession: URLSession(configuration: sessionConfiguration),
+            accountStore: LoginKitAccountStore(store: secretStore),
+            tokenStore: LoginKitTokenStore(store: secretStore)
+        )
+        var state = FlickEmptyState.make()
+        state.accounts = [account]
+        state.assets = [renderedAsset]
+        state.drafts = [draft]
+        state.publishingJobs = [job]
+        let storage = FakeMediaStorage()
+        let model = FlickAppModel(
+            repository: InMemoryFlickRepository(state: state),
+            configuration: makeTestAppConfiguration(values: [
+                "TIKTOK_CLIENT_ID": "client-key",
+                "TIKTOK_VERIFIED_BASE_URL": "https://media.example.com"
+            ]),
+            tiktokLoginKitClient: loginKitClient,
+            mediaStorageFactory: { _ in storage }
+        )
+        model.overview = state
+
+        let didRetry = await model.retryPublishingJob(id: job.id)
+        XCTAssertTrue(didRetry)
+        XCTAssertTrue(storage.uploadedPaths.isEmpty)
+        XCTAssertEqual(model.overview.publishingJobs.first?.status, .published)
+        XCTAssertEqual(model.overview.publishingJobs.first?.platformPublishID, "publish-reused-media")
+    }
+
+    func testRetryRepairsOnlyBrokenCloudflareURLFromSavedRenderedFile() async throws {
+        defer { CapturingURLProtocol.requestHandler = nil }
+        let secretStore = MemorySecretStore()
+        let account = makeConnectedAccount()
+        try LoginKitTokenStore(store: secretStore).save(
+            LoginKitTokenBundle(
+                platform: .tiktok,
+                platformUserID: account.platformUserID,
+                accessToken: "valid-access-token",
+                refreshToken: "refresh-token",
+                tokenType: "Bearer",
+                scopes: account.scopes,
+                accessTokenExpiresAt: Date(timeIntervalSinceNow: 3_600),
+                refreshTokenExpiresAt: Date(timeIntervalSinceNow: 86_400),
+                updatedAt: Date()
+            ),
+            for: account
+        )
+
+        let localRenderedURL = FileManager.default.temporaryDirectory
+            .appending(path: "flick-retry-rendered-\(UUID().uuidString).jpg")
+        try Data([0xFF, 0xD8, 0xFF, 0xD9]).write(to: localRenderedURL, options: [.atomic])
+        defer { try? FileManager.default.removeItem(at: localRenderedURL) }
+
+        let brokenURL = try XCTUnwrap(URL(string: "https://media.example.com/broken-rendered-slide.jpg"))
+        var renderedAsset = makeMediaAsset(
+            source: .rendered,
+            localFilePath: localRenderedURL.path,
+            storagePath: "old-rendered-slide.jpg",
+            publicURL: brokenURL,
+            width: 720,
+            height: 1_080
+        )
+        renderedAsset.storageBucket = "old-bucket"
+        var draft = makeSlideshowDraft()
+        draft.exportedImageAssetIDs = [renderedAsset.id]
+        draft.tikTokSettings = DraftTikTokSettings(title: "Repair me", privacyLevel: .publicToEveryone)
+        var job = makePublishingJob(status: .failed)
+        job.accountID = account.id
+        job.draftID = draft.id
+
+        CapturingURLProtocol.requestHandler = { request in
+            if request.httpMethod == "HEAD", request.url?.path == "/broken-rendered-slide.jpg" {
+                return (
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 404,
+                        httpVersion: nil,
+                        headerFields: ["Content-Type": "text/html"]
+                    )!,
+                    Data()
+                )
+            }
+            if request.httpMethod == "HEAD", request.url?.host == "media.example.com" {
+                return (
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: ["Content-Type": "image/jpeg", "Content-Length": "4"]
+                    )!,
+                    Data()
+                )
+            }
+            if request.url?.path.removingTrailingSlash == "/v2/post/publish/content/init" {
+                return (
+                    HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    Data(
+                        """
+                        {
+                            "data": { "publish_id": "publish-repaired-media" },
+                            "error": { "code": "ok", "message": "", "log_id": "log-repaired-media" }
+                        }
+                        """.utf8
+                    )
+                )
+            }
+            XCTFail("Unexpected request URL: \(request.url?.absoluteString ?? "nil")")
+            return (HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!, Data())
+        }
+
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [CapturingURLProtocol.self]
+        let loginKitClient = TikTokLoginKitClient(
+            urlSession: URLSession(configuration: sessionConfiguration),
+            accountStore: LoginKitAccountStore(store: secretStore),
+            tokenStore: LoginKitTokenStore(store: secretStore)
+        )
+        var state = FlickEmptyState.make()
+        state.accounts = [account]
+        state.assets = [renderedAsset]
+        state.drafts = [draft]
+        state.publishingJobs = [job]
+        let storage = FakeMediaStorage()
+        let model = FlickAppModel(
+            repository: InMemoryFlickRepository(state: state),
+            configuration: makeTestAppConfiguration(values: [
+                "TIKTOK_CLIENT_ID": "client-key",
+                "TIKTOK_VERIFIED_BASE_URL": "https://media.example.com"
+            ]),
+            tiktokLoginKitClient: loginKitClient,
+            mediaStorageFactory: { _ in storage }
+        )
+        model.overview = state
+
+        let didRetry = await model.retryPublishingJob(id: job.id)
+        XCTAssertTrue(didRetry)
+        XCTAssertEqual(storage.uploadedPaths.count, 1)
+        let repairedAsset = try XCTUnwrap(model.overview.assets.first(where: { $0.id == renderedAsset.id }))
+        XCTAssertEqual(repairedAsset.localFilePath, localRenderedURL.path)
+        XCTAssertNotEqual(repairedAsset.publicURL, brokenURL)
+        XCTAssertEqual(model.overview.drafts.first?.exportedImageAssetIDs, [renderedAsset.id])
+    }
+
+    func testRetryChecksExistingTikTokPublishBeforeMediaAndAvoidsDuplicateSubmission() async throws {
+        defer { CapturingURLProtocol.requestHandler = nil }
+        let secretStore = MemorySecretStore()
+        let account = makeConnectedAccount()
+        try LoginKitTokenStore(store: secretStore).save(
+            LoginKitTokenBundle(
+                platform: .tiktok,
+                platformUserID: account.platformUserID,
+                accessToken: "valid-access-token",
+                refreshToken: "refresh-token",
+                tokenType: "Bearer",
+                scopes: account.scopes,
+                accessTokenExpiresAt: Date(timeIntervalSinceNow: 3_600),
+                refreshTokenExpiresAt: Date(timeIntervalSinceNow: 86_400),
+                updatedAt: Date()
+            ),
+            for: account
+        )
+
+        var draft = makeSlideshowDraft()
+        draft.tikTokSettings = DraftTikTokSettings(title: "Already sent", privacyLevel: .publicToEveryone)
+        var job = makePublishingJob(status: .failed)
+        job.accountID = account.id
+        job.draftID = draft.id
+        job.platformPublishID = "existing-publish-id"
+
+        CapturingURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url?.path.removingTrailingSlash, "/v2/post/publish/status/fetch")
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                Data(
+                    """
+                    {
+                        "data": {
+                            "status": "PUBLISH_COMPLETE",
+                            "publicly_available_post_id": ["existing-public-post-id"]
+                        },
+                        "error": { "code": "ok", "message": "", "log_id": "status-log-existing" }
+                    }
+                    """.utf8
+                )
+            )
+        }
+
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [CapturingURLProtocol.self]
+        let loginKitClient = TikTokLoginKitClient(
+            urlSession: URLSession(configuration: sessionConfiguration),
+            accountStore: LoginKitAccountStore(store: secretStore),
+            tokenStore: LoginKitTokenStore(store: secretStore)
+        )
+        var state = FlickEmptyState.make()
+        state.accounts = [account]
+        state.drafts = [draft]
+        state.publishingJobs = [job]
+        let storage = FakeMediaStorage()
+        let model = FlickAppModel(
+            repository: InMemoryFlickRepository(state: state),
+            configuration: makeTestAppConfiguration(values: [
+                "TIKTOK_CLIENT_ID": "client-key",
+                "TIKTOK_VERIFIED_BASE_URL": "https://media.example.com"
+            ]),
+            tiktokLoginKitClient: loginKitClient,
+            mediaStorageFactory: { _ in storage }
+        )
+        model.overview = state
+
+        let didRetry = await model.retryPublishingJob(id: job.id)
+        XCTAssertTrue(didRetry)
+        XCTAssertTrue(storage.uploadedPaths.isEmpty)
+        XCTAssertEqual(model.overview.publishingJobs.first?.status, .published)
+        XCTAssertEqual(model.overview.publishingJobs.first?.platformPublishID, "existing-publish-id")
+        XCTAssertEqual(model.overview.publishedPosts.first?.platformPostID, "existing-public-post-id")
+        XCTAssertTrue(model.createWorkflowMessage?.contains("without posting it twice") == true)
+    }
+
+    func testTikTokPublishErrorKeepsHTTPStatusAndLogID() {
+        let error = TikTokPublishAPIError(
+            code: "invalid_param",
+            statusCode: 400,
+            message: "Invalid request.",
+            logID: "tiktok-log-123",
+            rawResponse: #"{"error":"invalid_param"}"#
+        )
+
+        XCTAssertEqual(error.statusCode, 400)
+        XCTAssertEqual(error.logID, "tiktok-log-123")
+        XCTAssertTrue(error.localizedDescription.contains("HTTP 400"))
+        XCTAssertTrue(error.diagnosticDescription.contains("httpStatus=400"))
+    }
+
+    func testPlatformFailureDecodesOlderPersistedPayload() throws {
+        let data = Data(
+            #"{"kind":"rateLimit","message":"Slow down","suggestedFix":"Wait","rawResponse":null}"#.utf8
+        )
+
+        let failure = try JSONDecoder.flick.decode(PlatformFailure.self, from: data)
+
+        XCTAssertEqual(failure.kind, .rateLimit)
+        XCTAssertNil(failure.httpStatusCode)
+        XCTAssertNil(failure.platformCode)
+        XCTAssertNil(failure.pipelineStage)
+        XCTAssertNil(failure.failedAt)
     }
 
     func testTikTokAdapterUsesCurrentPrivacyOptions() async throws {

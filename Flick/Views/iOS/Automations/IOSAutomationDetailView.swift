@@ -10,6 +10,9 @@ struct IOSAutomationDetailView: View {
     @Environment(FlickAppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
     @State private var isDeleteConfirmationPresented = false
+    @State private var isRetryConfirmationPresented = false
+    @State private var isRetryingFailures = false
+    @State private var retryResult: PublishingRetrySummary?
 
     var automationID: UUID
     var exampleTemplates: [ExampleSlideshowTemplate]
@@ -46,6 +49,23 @@ struct IOSAutomationDetailView: View {
                     Button("Cancel", role: .cancel) { }
                 } message: {
                     Text("This deletes the automation and its generated drafts, slides, progress, jobs, and published post records.")
+                }
+                .confirmationDialog(
+                    "Retry all failed posts?",
+                    isPresented: $isRetryConfirmationPresented,
+                    titleVisibility: .visible
+                ) {
+                    Button("Retry \(item.failedJobCount) Failed Post\(item.failedJobCount == 1 ? "" : "s")") {
+                        retryAllFailedPosts()
+                    }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    Text("Flick will reuse saved generated and rendered images, repair only missing Cloudflare uploads, check any prior platform submission, and resume from the first incomplete step. It will not regenerate AI images.")
+                }
+                .alert("Retry finished", isPresented: retryResultBinding) {
+                    Button("OK", role: .cancel) { }
+                } message: {
+                    Text(retryResult?.message ?? "")
                 }
             } else {
                 ContentUnavailableView(
@@ -86,6 +106,22 @@ struct IOSAutomationDetailView: View {
             }
             .buttonStyle(.plain)
             .disabled(appModel.isProcessingAutomations || !item.activeProgresses.isEmpty)
+
+            if item.failedJobCount > 0 {
+                Button {
+                    isRetryConfirmationPresented = true
+                } label: {
+                    FlickSettingsRowLabel(
+                        title: isRetryingFailures ? "Retrying Failed Posts" : "Retry All Failed Posts",
+                        systemImage: isRetryingFailures ? "arrow.clockwise" : "arrow.clockwise.circle.fill",
+                        iconColor: .blue,
+                        value: isRetryingFailures ? "Checking media and publishing…" : "\(item.failedJobCount) post\(item.failedJobCount == 1 ? "" : "s")",
+                        valueLineLimit: 1
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(isRetryingFailures || appModel.isPublishingSlideshow)
+            }
 
             Button {
                 updateStatus(to: item.automation.status == .active ? .paused : .active)
@@ -304,6 +340,27 @@ struct IOSAutomationDetailView: View {
         }
     }
 
+    private var retryResultBinding: Binding<Bool> {
+        Binding(
+            get: { retryResult != nil },
+            set: { isPresented in
+                if !isPresented {
+                    retryResult = nil
+                }
+            }
+        )
+    }
+
+    private func retryAllFailedPosts() {
+        guard !isRetryingFailures else { return }
+        isRetryingFailures = true
+        Task {
+            let result = await appModel.retryFailedPublishingJobs(automationID: automationID)
+            isRetryingFailures = false
+            retryResult = result
+        }
+    }
+
     private func deleteAutomation() {
         Task {
             await appModel.deleteAutomation(id: automationID)
@@ -361,6 +418,9 @@ private struct IOSAutomationPostDetailView: View {
     @Environment(FlickAppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
     @State private var fullSizePreview: CreateSlidePreviewSelection?
+    @State private var pendingPublishAction: AutomationPostPublishAction?
+    @State private var isPublishing = false
+    @State private var publishResultMessage: String?
 
     var automationID: UUID
     var previewID: UUID
@@ -388,6 +448,25 @@ private struct IOSAutomationPostDetailView: View {
                 .flickToolbarTitle(preview.displayTitle)
                 .sheet(item: $fullSizePreview) { preview in
                     CreateSlideFullSizePreviewSheet(slide: preview.slide, asset: preview.asset)
+                }
+                .confirmationDialog(
+                    pendingPublishAction?.confirmationTitle ?? "Publish this post again?",
+                    isPresented: pendingPublishActionBinding,
+                    titleVisibility: .visible
+                ) {
+                    if let pendingPublishAction {
+                        Button(pendingPublishAction.buttonTitle) {
+                            perform(pendingPublishAction)
+                        }
+                    }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    Text(pendingPublishAction?.confirmationMessage ?? "")
+                }
+                .alert("Publish result", isPresented: publishResultBinding) {
+                    Button("OK", role: .cancel) { }
+                } message: {
+                    Text(publishResultMessage ?? "")
                 }
             } else {
                 ContentUnavailableView(
@@ -469,12 +548,16 @@ private struct IOSAutomationPostDetailView: View {
                 )
             }
             if let failure = preview.lastError {
-                DashboardMessageRow(
-                    title: "Failure",
-                    message: failure.message,
-                    systemImage: "xmark.octagon",
-                    iconColor: .red
-                )
+                if let job = preview.job {
+                    PublishingFailureDetailsView(failure: failure, job: job)
+                } else {
+                    DashboardMessageRow(
+                        title: "Failure",
+                        message: failure.message,
+                        systemImage: "xmark.octagon",
+                        iconColor: .red
+                    )
+                }
             }
             if let platformURL = preview.platformURL {
                 Link(destination: platformURL) {
@@ -493,6 +576,28 @@ private struct IOSAutomationPostDetailView: View {
 
     private func actionsSection(for preview: AutomationPostPreview) -> some View {
         Section("Actions") {
+            if isPublishing {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text("Checking media and publishing…")
+                        .foregroundStyle(.secondary)
+                }
+            } else if preview.draft != nil, let publishAction = publishAction(for: preview) {
+                Button {
+                    pendingPublishAction = publishAction
+                } label: {
+                    FlickSettingsRowLabel(
+                        title: publishAction.buttonTitle,
+                        systemImage: publishAction.systemImage,
+                        iconColor: .blue,
+                        value: publishAction.value,
+                        valueLineLimit: 2
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(appModel.isPublishingSlideshow)
+            }
+
             if let draft = preview.draft {
                 Button {
                     openDraftForRepost(draft)
@@ -557,6 +662,62 @@ private struct IOSAutomationPostDetailView: View {
             appModel.duplicateDraft(draft)
         }
         dismiss()
+    }
+
+    private var pendingPublishActionBinding: Binding<Bool> {
+        Binding(
+            get: { pendingPublishAction != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingPublishAction = nil
+                }
+            }
+        )
+    }
+
+    private var publishResultBinding: Binding<Bool> {
+        Binding(
+            get: { publishResultMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    publishResultMessage = nil
+                }
+            }
+        )
+    }
+
+    private func publishAction(for preview: AutomationPostPreview) -> AutomationPostPublishAction? {
+        if preview.status == .failed, let job = preview.job {
+            return .retryJob(job.id)
+        }
+        if let job = preview.job {
+            return .repostJob(job.id)
+        }
+        if let post = preview.post {
+            return .repostPost(post.id)
+        }
+        return nil
+    }
+
+    private func perform(_ action: AutomationPostPublishAction) {
+        pendingPublishAction = nil
+        guard !isPublishing else { return }
+        isPublishing = true
+        Task {
+            let succeeded: Bool
+            switch action {
+            case let .retryJob(jobID):
+                succeeded = await appModel.retryPublishingJob(id: jobID)
+            case let .repostJob(jobID):
+                succeeded = await appModel.repostPublishingJob(id: jobID)
+            case let .repostPost(postID):
+                succeeded = await appModel.repostPublishedPost(id: postID)
+            }
+            isPublishing = false
+            publishResultMessage = succeeded
+                ? "The post was submitted successfully."
+                : (appModel.lastErrorMessage ?? "The post could not be submitted. Open its failure details for diagnostics.")
+        }
     }
 }
 

@@ -4,8 +4,14 @@
 //
 
 import Foundation
+import OSLog
 
 struct OpenAIClient {
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.orion.Flick",
+        category: "OpenAI"
+    )
+
     var apiKey: String?
     var urlSession: URLSession
     var planningModel: String
@@ -127,7 +133,11 @@ struct OpenAIClient {
             throw OpenAIClientError.invalidResponse("OpenAI did not return an HTTP response.")
         }
         guard (200..<300).contains(httpResponse.statusCode) else {
-            throw OpenAIClientError.requestFailed(statusCode: httpResponse.statusCode, message: OpenAIErrorMessage(data: data).message)
+            let message = OpenAIErrorMessage(data: data).message
+            let requestID = httpResponse.value(forHTTPHeaderField: "x-request-id") ?? "none"
+            let responseBody = String(data: data.prefix(4_000), encoding: .utf8) ?? "unreadable"
+            Self.logger.error("OpenAI request failed endpoint=\(request.url?.path ?? "unknown", privacy: .public) httpStatus=\(httpResponse.statusCode, privacy: .public) requestID=\(requestID, privacy: .public) message=\(message, privacy: .public) response=\(responseBody, privacy: .private)")
+            throw OpenAIClientError.requestFailed(statusCode: httpResponse.statusCode, message: message)
         }
         return data
     }

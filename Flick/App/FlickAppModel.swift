@@ -15,6 +15,26 @@ enum MoveDirection {
     case later
 }
 
+struct PublishingRetrySummary: Identifiable, Hashable {
+    let id = UUID()
+    var attemptedCount: Int
+    var succeededCount: Int
+
+    var failedCount: Int {
+        max(0, attemptedCount - succeededCount)
+    }
+
+    var message: String {
+        guard attemptedCount > 0 else {
+            return "No failed publish jobs were available to retry."
+        }
+        if failedCount == 0 {
+            return "Retried all \(succeededCount) failed publish job\(succeededCount == 1 ? "" : "s") successfully."
+        }
+        return "Submitted \(succeededCount) of \(attemptedCount) retried posts. Open the remaining failures for exact diagnostics and suggested fixes."
+    }
+}
+
 enum ProductManagementError: LocalizedError {
     case missingName
     case missingProductSelection
@@ -53,6 +73,27 @@ private struct LocalMediaMetadata {
     var width: Int
     var height: Int
     var duration: TimeInterval?
+}
+
+private enum ExistingTikTokSubmissionRecovery: Equatable {
+    case none
+    case completed
+    case stillProcessing
+
+    var didRecover: Bool {
+        self != .none
+    }
+
+    var completionMessage: String? {
+        switch self {
+        case .none:
+            nil
+        case .completed:
+            "TikTok had already completed this submission. Flick restored the saved result without posting it twice."
+        case .stillProcessing:
+            "TikTok is still processing the existing submission. Flick kept its publish ID and did not post it twice."
+        }
+    }
 }
 
 @MainActor
@@ -217,11 +258,12 @@ final class FlickAppModel {
             let didReconcilePublishedPosts = reconcilePublishedPostsFromCompletedJobs()
             clearActiveCreateDraftIfUnavailable()
             let didPruneProgresses = pruneAutomationPostProgresses()
+            let didReconcileCompletedSlideImages = reconcileCompletedSlideImages()
             if didNormalizeOverviewRecords
                 || didReconcileMediaURLs
                 || didReconcileLoginKitTokens
                 || didRefreshAccountAuthorizations
-                || reconcileCompletedSlideImages()
+                || didReconcileCompletedSlideImages
                 || didUpdateTikTokStatuses
                 || didReconcilePublishedPosts
                 || didReconcileAutomationProductImages
@@ -433,7 +475,7 @@ final class FlickAppModel {
     private func refreshedAuthorizationAccount(for account: ConnectedAccount) async throws -> ConnectedAccount {
         switch account.platform {
         case .tiktok:
-            let adapter = TikTokAdapter(configuration: configuration.tiktok)
+            let adapter = makeTikTokAdapter()
             let bundle = try await adapter.validTokenBundle(for: account, forceRefresh: true)
             let scopes = bundle.scopes.isEmpty ? account.scopes : bundle.scopes
             return try await tiktokLoginKitClient.refreshAuthorizedAccount(
@@ -441,7 +483,7 @@ final class FlickAppModel {
                 scopes: scopes
             )
         case .youtubeShorts:
-            let adapter = YouTubeShortsAdapter(configuration: configuration.youtube)
+            let adapter = makeYouTubeAdapter()
             let bundle = try await adapter.validTokenBundle(for: account, forceRefresh: true)
             let scopes = bundle.scopes.isEmpty ? account.scopes : bundle.scopes
             return try await youtubeOAuthClient.refreshAuthorizedAccount(
@@ -1608,9 +1650,13 @@ final class FlickAppModel {
             }
             startPublishStep(ManualPublishProgressStepID.validate, detail: "Checking account, media, and TikTok options.")
             reconcileLoginKitAccountTokenStatus()
-            guard let account = publishingTikTokAccount(for: draft) else {
+            guard let selectedAccount = selectedAccount(for: .tiktok, in: draft.accountSelections) else {
                 throw ManualPublishError.missingTikTokAccount
             }
+            let account = try await publishingReadyAccount(
+                selectedAccount,
+                requiredScope: settings.postAsDraft ? "video.upload" : "video.publish"
+            )
             completePublishStep(ManualPublishProgressStepID.validate, detail: "Ready to publish with \(account.displayName).")
 
             startPublishStep(ManualPublishProgressStepID.createJob, detail: "Recording this manual publish attempt.")
@@ -1663,7 +1709,7 @@ final class FlickAppModel {
                 videoURL: nil,
                 warnings: []
             )
-            let adapter = TikTokAdapter(configuration: configuration.tiktok)
+            let adapter = makeTikTokAdapter()
             try await waitForTikTokPublishRequestWindow(accountID: account.id)
             reserveTikTokPublishRequestWindow(accountID: account.id)
             let result = try await adapter.publish(job, account: account, media: media, settings: settings)
@@ -1776,6 +1822,7 @@ final class FlickAppModel {
             }
 
             startPublishStep(ManualPublishProgressStepID.validate, detail: "Checking selected accounts and platform settings.")
+            reconcileLoginKitAccountTokenStatus()
             let tikTokAccountIDs = tikTokSettings == nil ? [] : draft.accountSelections.accountIDs(for: .tiktok)
             let youtubeAccountIDs = youtubeSettings == nil ? [] : draft.accountSelections.accountIDs(for: .youtubeShorts)
             guard !tikTokAccountIDs.isEmpty || !youtubeAccountIDs.isEmpty else {
@@ -1872,25 +1919,25 @@ final class FlickAppModel {
             var successfulJobCount = 0
             var lastFailure: Error?
             let accountsByID = overview.accounts.latestRecordsByID()
-            let tikTokAdapter = TikTokAdapter(configuration: configuration.tiktok)
-            let youtubeAdapter = YouTubeShortsAdapter(configuration: configuration.youtube)
+            let tikTokAdapter = makeTikTokAdapter()
+            let youtubeAdapter = makeYouTubeAdapter()
 
             for job in jobs {
                 updatePublishingJob(job.id, status: .publishing)
                 do {
-                    guard let account = accountsByID[job.accountID] else {
+                    guard let storedAccount = accountsByID[job.accountID] else {
                         throw ManualPublishError.missingPlatformAccounts
                     }
-                    guard canPublish(account, on: job.platform) else {
-                        switch job.platform {
-                        case .tiktok:
-                            throw ManualPublishError.missingTikTokAccount
-                        case .youtubeShorts:
-                            throw YouTubeOAuthError.missingStoredToken(accountID: account.id, platformUserID: account.platformUserID)
-                        case .instagram, .threads, .x:
-                            throw PlatformAdapterError.futurePlatform(job.platform)
-                        }
+                    let requiredScope: String
+                    switch job.platform {
+                    case .tiktok:
+                        requiredScope = tikTokSettings?.postAsDraft == true ? "video.upload" : "video.publish"
+                    case .youtubeShorts:
+                        requiredScope = YouTubeConfiguration.uploadScope
+                    case .instagram, .threads, .x:
+                        throw PlatformAdapterError.futurePlatform(job.platform)
                     }
+                    let account = try await publishingReadyAccount(storedAccount, requiredScope: requiredScope)
 
                     switch job.platform {
                     case .tiktok:
@@ -1978,6 +2025,593 @@ final class FlickAppModel {
             finishManualPublishProgress(errorMessage: error.localizedDescription)
             return false
         }
+    }
+
+    @discardableResult
+    func retryPublishingJob(id jobID: UUID) async -> Bool {
+        guard !isPublishingSlideshow else {
+            lastErrorMessage = "Another publish is already in progress."
+            return false
+        }
+        guard overview.publishingJobs.contains(where: { $0.id == jobID && $0.status == .failed }) else {
+            lastErrorMessage = "Only failed publish jobs can be retried."
+            return false
+        }
+
+        isPublishingSlideshow = true
+        manualPublishProgress = nil
+        defer { isPublishingSlideshow = false }
+        return await performPublishingAttempt(jobID: jobID, reason: "retry")
+    }
+
+    func retryFailedPublishingJobs(automationID: UUID) async -> PublishingRetrySummary {
+        guard !isPublishingSlideshow else {
+            lastErrorMessage = "Another publish is already in progress."
+            return PublishingRetrySummary(attemptedCount: 0, succeededCount: 0)
+        }
+
+        let jobIDs = overview.publishingJobs
+            .filter { $0.automationID == automationID && $0.status == .failed }
+            .sorted { $0.updatedAt < $1.updatedAt }
+            .map(\.id)
+        guard !jobIDs.isEmpty else {
+            return PublishingRetrySummary(attemptedCount: 0, succeededCount: 0)
+        }
+
+        isPublishingSlideshow = true
+        manualPublishProgress = nil
+        defer { isPublishingSlideshow = false }
+
+        var succeededCount = 0
+        for jobID in jobIDs {
+            guard !Task.isCancelled else { break }
+            if await performPublishingAttempt(jobID: jobID, reason: "retry-all") {
+                succeededCount += 1
+            }
+        }
+
+        return PublishingRetrySummary(
+            attemptedCount: jobIDs.count,
+            succeededCount: succeededCount
+        )
+    }
+
+    @discardableResult
+    func repostPublishingJob(id sourceJobID: UUID) async -> Bool {
+        guard !isPublishingSlideshow else {
+            lastErrorMessage = "Another publish is already in progress."
+            return false
+        }
+        guard let sourceJob = overview.publishingJobs.first(where: { $0.id == sourceJobID }) else {
+            lastErrorMessage = "The original publish job is no longer available."
+            return false
+        }
+
+        let newJobID = createRepostJob(
+            platform: sourceJob.platform,
+            accountID: sourceJob.accountID,
+            automationID: sourceJob.automationID,
+            draftID: sourceJob.draftID,
+            publishMode: sourceJob.publishMode
+        )
+        isPublishingSlideshow = true
+        manualPublishProgress = nil
+        defer { isPublishingSlideshow = false }
+        return await performPublishingAttempt(jobID: newJobID, reason: "repost")
+    }
+
+    @discardableResult
+    func repostPublishedPost(id postID: UUID) async -> Bool {
+        guard !isPublishingSlideshow else {
+            lastErrorMessage = "Another publish is already in progress."
+            return false
+        }
+        guard
+            let post = overview.publishedPosts.first(where: { $0.id == postID }),
+            let draft = overview.drafts.first(where: { $0.id == post.draftID })
+        else {
+            lastErrorMessage = "The original post or its generated draft is no longer available."
+            return false
+        }
+
+        let publishMode: PublishMode
+        switch post.platform {
+        case .tiktok:
+            publishMode = draft.tikTokSettings?
+                .manualPublishSettings(description: draft.publishDescription)?
+                .publishMode
+                ?? .photoDirectPost
+        case .youtubeShorts:
+            publishMode = .videoDirectPost
+        case .instagram, .threads, .x:
+            lastErrorMessage = "\(post.platform.displayName) reposting is not available yet."
+            return false
+        }
+
+        let newJobID = createRepostJob(
+            platform: post.platform,
+            accountID: post.accountID,
+            automationID: post.automationID,
+            draftID: post.draftID,
+            publishMode: publishMode
+        )
+        isPublishingSlideshow = true
+        manualPublishProgress = nil
+        defer { isPublishingSlideshow = false }
+        return await performPublishingAttempt(jobID: newJobID, reason: "repost")
+    }
+
+    private func createRepostJob(
+        platform: SocialPlatform,
+        accountID: UUID,
+        automationID: UUID?,
+        draftID: UUID,
+        publishMode: PublishMode
+    ) -> UUID {
+        let now = Date()
+        let job = PublishingJob(
+            id: UUID(),
+            platform: platform,
+            accountID: accountID,
+            automationID: automationID,
+            draftID: draftID,
+            status: .rendering,
+            publishMode: publishMode,
+            attemptCount: 0,
+            lastAttemptAt: nil,
+            lastError: nil,
+            platformPublishID: nil,
+            createdAt: now,
+            updatedAt: now
+        )
+        overview.publishingJobs.insert(job, at: 0)
+        return job.id
+    }
+
+    private func performPublishingAttempt(jobID: UUID, reason: String) async -> Bool {
+        guard let jobIndex = overview.publishingJobs.firstIndex(where: { $0.id == jobID }) else {
+            lastErrorMessage = "The publish job is no longer available."
+            return false
+        }
+
+        var failureStage = PublishingPipelineStage.prerequisites
+        var successMessage = "Post submitted successfully."
+        let now = Date()
+        overview.publishingJobs[jobIndex].status = .rendering
+        overview.publishingJobs[jobIndex].attemptCount += 1
+        overview.publishingJobs[jobIndex].lastAttemptAt = now
+        overview.publishingJobs[jobIndex].lastError = nil
+        overview.publishingJobs[jobIndex].updatedAt = now
+        let attemptNumber = overview.publishingJobs[jobIndex].attemptCount
+        logPublish("Publish \(reason) started jobID=\(jobID.uuidString) attempt=\(attemptNumber)")
+
+        do {
+            try await repository.saveOverview(overview)
+            guard let draft = overview.drafts.first(where: { $0.id == overview.publishingJobs[jobIndex].draftID }) else {
+                throw SlideshowCreationError.missingDraft
+            }
+            guard let storedAccount = overview.accounts.first(where: { $0.id == overview.publishingJobs[jobIndex].accountID }) else {
+                throw ManualPublishError.missingPlatformAccounts
+            }
+
+            let publishedPostIDsBeforeRecording = currentPublishedPostIDs()
+            let activeJob = overview.publishingJobs[jobIndex]
+            switch activeJob.platform {
+            case .tiktok:
+                var draftSettings = draft.tikTokSettings ?? DraftTikTokSettings()
+                draftSettings.postAsDraft = activeJob.publishMode == .photoUploadForCompletion
+                guard let settings = draftSettings.manualPublishSettings(description: draft.publishDescription) else {
+                    throw PlatformAdapterError.notConfigured("The saved TikTok post settings are incomplete. Choose a visibility or draft upload mode before retrying.")
+                }
+                failureStage = .authorization
+                let account = try await publishingReadyAccount(
+                    storedAccount,
+                    requiredScope: settings.postAsDraft ? "video.upload" : "video.publish"
+                )
+                let adapter = makeTikTokAdapter()
+
+                failureStage = .platformStatus
+                let existingSubmission = try await recoverExistingTikTokSubmission(
+                    jobID: jobID,
+                    account: account,
+                    adapter: adapter
+                )
+                if existingSubmission.didRecover {
+                    successMessage = existingSubmission.completionMessage ?? successMessage
+                    break
+                }
+
+                let imageURLs = try await retryTikTokImageURLs(
+                    for: draft,
+                    adapter: adapter,
+                    stageChanged: { failureStage = $0 }
+                )
+                failureStage = .platformSubmission
+                updatePublishingJob(jobID, status: .publishing)
+                try await repository.saveOverview(overview)
+                try await waitForTikTokPublishRequestWindow(accountID: account.id)
+                reserveTikTokPublishRequestWindow(accountID: account.id)
+                guard let refreshedJob = overview.publishingJobs.first(where: { $0.id == jobID }) else {
+                    throw SlideshowCreationError.missingDraft
+                }
+                let result = try await adapter.publish(
+                    refreshedJob,
+                    account: account,
+                    media: PreparedPlatformMedia(
+                        mode: settings.publishMode,
+                        imageURLs: imageURLs,
+                        videoURL: nil,
+                        warnings: []
+                    ),
+                    settings: settings
+                )
+                if settings.postAsDraft {
+                    completeDraftUploadJob(jobID, result: result)
+                    await publishDraftUploadNotificationIfNeeded(jobID: jobID, result: result)
+                } else {
+                    completePublishingJob(jobID, result: result, draft: draft)
+                }
+            case .youtubeShorts:
+                failureStage = .platformStatus
+                if restorePublishingJobFromRecordedPost(jobID: jobID) {
+                    successMessage = "This platform submission was already saved. Flick restored the result without posting it twice."
+                    break
+                }
+                guard let settings = draft.youtubeSettings?.manualPublishSettings(
+                    fallbackTitle: draft.title,
+                    fallbackDescription: draft.publishDescription,
+                    fallbackHashtags: draft.hashtags
+                ) else {
+                    throw PlatformAdapterError.notConfigured("The saved YouTube Shorts settings are incomplete.")
+                }
+                failureStage = .authorization
+                let account = try await publishingReadyAccount(
+                    storedAccount,
+                    requiredScope: YouTubeConfiguration.uploadScope
+                )
+                failureStage = .renderedMedia
+                let renderedVideo = try await renderYouTubeShortsVideoForPublish(for: draft.id)
+                failureStage = .platformSubmission
+                updatePublishingJob(jobID, status: .publishing)
+                try await repository.saveOverview(overview)
+                guard let refreshedJob = overview.publishingJobs.first(where: { $0.id == jobID }) else {
+                    throw SlideshowCreationError.missingDraft
+                }
+                let result = try await makeYouTubeAdapter().publish(
+                    refreshedJob,
+                    account: account,
+                    media: PreparedPlatformMedia(
+                        mode: .videoDirectPost,
+                        imageURLs: [],
+                        videoURL: renderedVideo.fileURL,
+                        warnings: []
+                    ),
+                    settings: settings
+                )
+                completePublishingJob(jobID, result: result, draft: draft)
+            case .instagram, .threads, .x:
+                throw PlatformAdapterError.futurePlatform(activeJob.platform)
+            }
+
+            clearAutomationFailureAfterSuccessfulRetry(automationID: activeJob.automationID)
+            overview.refreshDerivedState()
+            try await repository.saveOverview(overview)
+            await publishNotificationsForNewPosts(since: publishedPostIDsBeforeRecording)
+            lastErrorMessage = nil
+            createWorkflowMessage = successMessage
+            logPublish("Publish \(reason) completed jobID=\(jobID.uuidString) attempt=\(attemptNumber)")
+            return true
+        } catch {
+            if let failedJob = overview.publishingJobs.first(where: { $0.id == jobID }) {
+                _ = markAccountTokenUnavailableIfNeeded(
+                    error,
+                    accountID: failedJob.accountID,
+                    platform: failedJob.platform
+                )
+            }
+            failPublishingJob(jobID, error: error, stage: failureStage)
+            overview.refreshDerivedState()
+            do {
+                try await repository.saveOverview(overview)
+            } catch {
+                logger.error("Failed to persist publish retry failure jobID=\(jobID.uuidString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            }
+            lastErrorMessage = error.localizedDescription
+            createWorkflowMessage = nil
+            return false
+        }
+    }
+
+    private func recoverExistingTikTokSubmission(
+        jobID: UUID,
+        account: ConnectedAccount,
+        adapter: TikTokAdapter
+    ) async throws -> ExistingTikTokSubmissionRecovery {
+        guard
+            let jobIndex = overview.publishingJobs.firstIndex(where: { $0.id == jobID }),
+            let publishID = overview.publishingJobs[jobIndex].platformPublishID?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            !publishID.isEmpty
+        else {
+            logPublish("Retry checkpoint platformStatus=no-existing-publish-id jobID=\(jobID.uuidString)")
+            return .none
+        }
+
+        if restorePublishingJobFromRecordedPost(jobID: jobID) {
+            logPublish("Retry checkpoint platformStatus=already-recorded jobID=\(jobID.uuidString) publishID=\(publishID)")
+            return .completed
+        }
+
+        logPublish("Retry checkpoint platformStatus=checking jobID=\(jobID.uuidString) publishID=\(publishID)")
+        let status = try await adapter.fetchPublishStatus(publishID: publishID, account: account)
+        if status.isFailed {
+            overview.publishingJobs[jobIndex].platformPublishID = nil
+            overview.publishingJobs[jobIndex].lastError = nil
+            overview.publishingJobs[jobIndex].updatedAt = Date()
+            try await repository.saveOverview(overview)
+            logPublish("Retry checkpoint platformStatus=confirmed-failed jobID=\(jobID.uuidString) publishID=\(publishID) platformCode=\(status.failReason ?? "FAILED")")
+            return .none
+        }
+
+        if status.isPublishComplete {
+            _ = applyTikTokPublishStatus(status, to: jobID)
+            logPublish("Retry checkpoint platformStatus=complete jobID=\(jobID.uuidString) publishID=\(publishID)")
+            return .completed
+        }
+
+        overview.publishingJobs[jobIndex].status = .awaitingUserCompletion
+        overview.publishingJobs[jobIndex].lastError = nil
+        overview.publishingJobs[jobIndex].updatedAt = Date()
+        deferTikTokStatusRefresh(
+            forJobID: jobID,
+            until: Date().addingTimeInterval(tikTokPendingInboxStatusRefreshInterval)
+        )
+        logPublish("Retry checkpoint platformStatus=still-processing jobID=\(jobID.uuidString) publishID=\(publishID) status=\(status.status)")
+        return .stillProcessing
+    }
+
+    private func restorePublishingJobFromRecordedPost(jobID: UUID) -> Bool {
+        guard
+            let jobIndex = overview.publishingJobs.firstIndex(where: { $0.id == jobID }),
+            let platformPublishID = overview.publishingJobs[jobIndex].platformPublishID?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            !platformPublishID.isEmpty,
+            overview.publishedPosts.contains(where: { post in
+                post.platform == overview.publishingJobs[jobIndex].platform
+                    && post.accountID == overview.publishingJobs[jobIndex].accountID
+                    && post.platformPostID == platformPublishID
+            })
+        else {
+            return false
+        }
+
+        let now = Date()
+        overview.publishingJobs[jobIndex].status = .published
+        overview.publishingJobs[jobIndex].lastError = nil
+        overview.publishingJobs[jobIndex].updatedAt = now
+        if let draftIndex = overview.drafts.firstIndex(where: { $0.id == overview.publishingJobs[jobIndex].draftID }) {
+            overview.drafts[draftIndex].status = .published
+            overview.drafts[draftIndex].updatedAt = now
+        }
+        return true
+    }
+
+    private func retryTikTokImageURLs(
+        for draft: SlideshowDraft,
+        adapter: TikTokAdapter,
+        stageChanged: (PublishingPipelineStage) -> Void
+    ) async throws -> [URL] {
+        reconcileStoredMediaPublicURLs()
+        let slides = draft.slides.sorted { $0.index < $1.index }
+        guard !slides.isEmpty else {
+            throw RenderingError.missingSlides
+        }
+
+        let sourceAssetsByID = overview.assets.latestRecordsByID()
+        let availableSourceCount = slides.filter { slideHasAvailableCreateImage($0, assetsByID: sourceAssetsByID) }.count
+        logPublish("Retry checkpoint generatedVisuals=\(availableSourceCount)/\(slides.count) draftID=\(draft.id.uuidString)")
+
+        let storage = mediaStorageFactory(credentialVault.loadValues())
+        let originalExportedIDs = draft.exportedImageAssetIDs
+        var recoveredAssetIDs: [UUID] = []
+        var recoveredImageURLs: [URL] = []
+
+        for (offset, slide) in slides.enumerated() {
+            let originalAssetID = originalExportedIDs.indices.contains(offset)
+                ? originalExportedIDs[offset]
+                : nil
+            var renderedAsset = originalAssetID
+                .flatMap { overview.assets.latestRecordsByID()[$0] }
+                .flatMap { $0.source == .rendered ? $0 : nil }
+            var existingPublicURL = renderedAsset?.publicURL
+            if existingPublicURL == nil,
+               let storagePath = renderedAsset?.storagePath,
+               let derivedPublicURL = try? storage.publicURL(path: storagePath) {
+                existingPublicURL = derivedPublicURL
+                renderedAsset?.publicURL = derivedPublicURL
+                renderedAsset?.updatedAt = Date()
+            }
+
+            if let renderedAsset, let existingPublicURL {
+                stageChanged(.cloudflareUpload)
+                do {
+                    let summary = try await adapter.preflightPhotoMediaURL(existingPublicURL)
+                    recoveredAssetIDs.append(renderedAsset.id)
+                    recoveredImageURLs.append(existingPublicURL)
+                    try await checkpointRenderedAsset(
+                        renderedAsset,
+                        draftID: draft.id,
+                        exportedAssetIDs: checkpointedExportedAssetIDs(
+                            recoveredAssetIDs: recoveredAssetIDs,
+                            originalExportedAssetIDs: originalExportedIDs,
+                            completedOffset: offset
+                        )
+                    )
+                    logPublish("Retry checkpoint cloudflare=ready draftID=\(draft.id.uuidString) slide=\(offset + 1) assetID=\(renderedAsset.id.uuidString) details=\(summary.replacingOccurrences(of: "\n", with: " | "))")
+                    continue
+                } catch {
+                    logPublish("Retry checkpoint cloudflare=broken draftID=\(draft.id.uuidString) slide=\(offset + 1) assetID=\(renderedAsset.id.uuidString) \(publishErrorDiagnostics(for: error))")
+                }
+            }
+
+            stageChanged(.renderedMedia)
+            let localRenderedURL: URL
+            if let existingLocalURL = renderedAsset?.localFileURL {
+                localRenderedURL = existingLocalURL
+                logPublish("Retry checkpoint renderedMedia=stored-file draftID=\(draft.id.uuidString) slide=\(offset + 1) path=\(existingLocalURL.path)")
+            } else if let deterministicLocalURL = readableRenderedImageURL(for: slide) {
+                localRenderedURL = deterministicLocalURL
+                logPublish("Retry checkpoint renderedMedia=recovered-file draftID=\(draft.id.uuidString) slide=\(offset + 1) path=\(deterministicLocalURL.path)")
+            } else {
+                let currentAssetsByID = overview.assets.latestRecordsByID()
+                guard slideHasAvailableCreateImage(slide, assetsByID: currentAssetsByID) else {
+                    throw ManualPublishError.missingRenderedAndSourceImage(slideNumber: offset + 1)
+                }
+
+                var singleSlideDraft = draft
+                singleSlideDraft.slides = [slide]
+                logPublish("Retry checkpoint renderedMedia=rebuilding-local-overlay draftID=\(draft.id.uuidString) slide=\(offset + 1) aiGeneration=false")
+                let rebuiltImages = try await TextOverlayRenderService(renderDirectory: configuration.renderDirectory)
+                    .renderImages(
+                        from: singleSlideDraft,
+                        assets: overview.assets,
+                        options: .tikTokPhotoPost
+                    )
+                guard let rebuiltImage = rebuiltImages.first else {
+                    throw ManualPublishError.missingRenderedAndSourceImage(slideNumber: offset + 1)
+                }
+                localRenderedURL = rebuiltImage.fileURL
+            }
+
+            let dimensions = imageDimensions(at: localRenderedURL)
+            let now = Date()
+            if renderedAsset == nil {
+                renderedAsset = MediaAsset(
+                    id: UUID(),
+                    mediaType: .image,
+                    source: .rendered,
+                    localFilePath: localRenderedURL.path,
+                    storageBucket: nil,
+                    storagePath: nil,
+                    publicURL: nil,
+                    signedURLExpiration: nil,
+                    width: dimensions?.width ?? ImageRenderOptions.tikTokPhotoPost.width,
+                    height: dimensions?.height ?? ImageRenderOptions.tikTokPhotoPost.height,
+                    duration: nil,
+                    fileSize: fileSize(at: localRenderedURL),
+                    checksum: nil,
+                    trendTags: [],
+                    createdAt: now,
+                    updatedAt: now
+                )
+            } else if var updatedAsset = renderedAsset {
+                updatedAsset.localFilePath = localRenderedURL.path
+                updatedAsset.width = dimensions?.width ?? updatedAsset.width
+                updatedAsset.height = dimensions?.height ?? updatedAsset.height
+                updatedAsset.fileSize = fileSize(at: localRenderedURL)
+                updatedAsset.updatedAt = now
+                renderedAsset = updatedAsset
+            }
+
+            guard var renderedAsset else {
+                throw ManualPublishError.missingRenderedAndSourceImage(slideNumber: offset + 1)
+            }
+
+            let checkpointIDs = checkpointedExportedAssetIDs(
+                recoveredAssetIDs: recoveredAssetIDs + [renderedAsset.id],
+                originalExportedAssetIDs: originalExportedIDs,
+                completedOffset: offset
+            )
+            try await checkpointRenderedAsset(
+                renderedAsset,
+                draftID: draft.id,
+                exportedAssetIDs: checkpointIDs
+            )
+
+            stageChanged(.cloudflareUpload)
+            let data = try Data(contentsOf: localRenderedURL)
+            let path = renderedStoragePath(
+                draftID: draft.id,
+                slideID: slide.id,
+                assetID: UUID()
+            )
+            logPublish("Retry checkpoint cloudflare=uploading-local-file draftID=\(draft.id.uuidString) slide=\(offset + 1) assetID=\(renderedAsset.id.uuidString) path=\(path)")
+            let remote = try await storage.uploadAsset(
+                LocalMediaAsset(data: data, contentType: ImageRenderOptions.tikTokPhotoPost.contentType),
+                path: path
+            )
+            let repairedPublicURL = try resolvedPublicURL(for: remote, storage: storage)
+            renderedAsset.storageBucket = remote.storageBucket
+            renderedAsset.storagePath = remote.storagePath
+            renderedAsset.publicURL = repairedPublicURL
+            renderedAsset.signedURLExpiration = remote.signedURLExpiration
+            renderedAsset.updatedAt = Date()
+            try await checkpointRenderedAsset(
+                renderedAsset,
+                draftID: draft.id,
+                exportedAssetIDs: checkpointIDs
+            )
+
+            let summary = try await adapter.preflightPhotoMediaURL(repairedPublicURL)
+            recoveredAssetIDs.append(renderedAsset.id)
+            recoveredImageURLs.append(repairedPublicURL)
+            logPublish("Retry checkpoint cloudflare=repaired draftID=\(draft.id.uuidString) slide=\(offset + 1) assetID=\(renderedAsset.id.uuidString) details=\(summary.replacingOccurrences(of: "\n", with: " | "))")
+        }
+
+        guard let draftIndex = overview.drafts.firstIndex(where: { $0.id == draft.id }) else {
+            throw SlideshowCreationError.missingDraft
+        }
+        if overview.drafts[draftIndex].exportedImageAssetIDs != recoveredAssetIDs {
+            overview.drafts[draftIndex].exportedImageAssetIDs = recoveredAssetIDs
+            overview.drafts[draftIndex].updatedAt = Date()
+            try await repository.saveOverview(overview)
+        }
+
+        logPublish("Retry checkpoint media=ready draftID=\(draft.id.uuidString) renderedCount=\(recoveredAssetIDs.count) cloudflareURLCount=\(recoveredImageURLs.count) aiGeneration=false")
+        return recoveredImageURLs
+    }
+
+    private func checkpointedExportedAssetIDs(
+        recoveredAssetIDs: [UUID],
+        originalExportedAssetIDs: [UUID],
+        completedOffset: Int
+    ) -> [UUID] {
+        recoveredAssetIDs + originalExportedAssetIDs.dropFirst(completedOffset + 1)
+    }
+
+    private func checkpointRenderedAsset(
+        _ asset: MediaAsset,
+        draftID: UUID,
+        exportedAssetIDs: [UUID]
+    ) async throws {
+        overview.assets.removeAll { $0.id == asset.id }
+        overview.assets.insert(asset, at: 0)
+        guard let draftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) else {
+            throw SlideshowCreationError.missingDraft
+        }
+        overview.drafts[draftIndex].exportedImageAssetIDs = exportedAssetIDs
+        overview.drafts[draftIndex].updatedAt = Date()
+        try await repository.saveOverview(overview)
+    }
+
+    private func readableRenderedImageURL(for slide: Slide) -> URL? {
+        let filename = "slide-\(String(format: "%02d", slide.index + 1))-\(slide.id.uuidString).\(ImageRenderOptions.tikTokPhotoPost.fileExtension)"
+        let fileURL = configuration.renderDirectory.appending(path: filename)
+        return FileManager.default.isReadableFile(atPath: fileURL.path) ? fileURL : nil
+    }
+
+    private func clearAutomationFailureAfterSuccessfulRetry(automationID: UUID?) {
+        guard
+            let automationID,
+            !overview.publishingJobs.contains(where: { $0.automationID == automationID && $0.status == .failed }),
+            let automationIndex = overview.automations.firstIndex(where: { $0.id == automationID })
+        else {
+            return
+        }
+
+        overview.automations[automationIndex].lastErrorMessage = nil
+        overview.automations[automationIndex].consecutiveFailureCount = 0
+        overview.automations[automationIndex].updatedAt = Date()
     }
 
     func duplicateSlide(_ slideID: UUID, in draftID: UUID) {
@@ -2215,10 +2849,12 @@ final class FlickAppModel {
             }
 
             var updatedAccount = account
+            let effectiveScopes = bundle.scopes.isEmpty ? account.scopes : bundle.scopes
+            updatedAccount.scopes = effectiveScopes
             updatedAccount.tokenStatus = bundle.accessTokenExpiresAt <= now.addingTimeInterval(60) ? .expiresSoon : .valid
-            updatedAccount.status = account.scopes.contains("user.info.basic") ? .connected : .missingScope
+            updatedAccount.status = effectiveScopes.contains("user.info.basic") ? .connected : .missingScope
             updatedAccount.isPublishingEnabled = updatedAccount.status == .connected
-                && account.scopes.contains { $0 == "video.publish" || $0 == "video.upload" }
+                && effectiveScopes.contains { $0 == "video.publish" || $0 == "video.upload" }
 
             if updatedAccount != account {
                 updatedAccount.updatedAt = now
@@ -2355,8 +2991,6 @@ final class FlickAppModel {
             guard
                 account.platform == .tiktok,
                 account.authorizationSource == .loginKit,
-                account.status == .connected,
-                account.isPublishingEnabled,
                 account.tokenStatus != .refreshFailed,
                 account.tokenStatus != .expired
             else {
@@ -2366,8 +3000,10 @@ final class FlickAppModel {
                 return false
             }
             let now = Date()
+            let effectiveScopes = bundle.scopes.isEmpty ? account.scopes : bundle.scopes
             return bundle.refreshTokenExpiresAt > now
-                && account.scopes.contains { $0 == "video.publish" || $0 == "video.upload" }
+                && effectiveScopes.contains("user.info.basic")
+                && effectiveScopes.contains { $0 == "video.publish" || $0 == "video.upload" }
         case .youtubeShorts:
             guard
                 account.platform == .youtubeShorts,
@@ -2386,6 +3022,70 @@ final class FlickAppModel {
         case .instagram, .threads, .x:
             return account.platform == platform && account.isPublishingEnabled
         }
+    }
+
+    private func makeTikTokAdapter() -> TikTokAdapter {
+        TikTokAdapter(
+            configuration: configuration.tiktok,
+            tokenStore: tiktokLoginKitClient.tokenStore.store,
+            urlSession: tiktokLoginKitClient.urlSession
+        )
+    }
+
+    private func makeYouTubeAdapter() -> YouTubeShortsAdapter {
+        YouTubeShortsAdapter(
+            configuration: configuration.youtube,
+            tokenStore: youtubeOAuthClient.tokenStore,
+            urlSession: youtubeOAuthClient.urlSession
+        )
+    }
+
+    private func publishingReadyAccount(
+        _ account: ConnectedAccount,
+        requiredScope: String
+    ) async throws -> ConnectedAccount {
+        let bundle: LoginKitTokenBundle
+        switch account.platform {
+        case .tiktok:
+            guard account.authorizationSource == .loginKit else {
+                throw ManualPublishError.missingTikTokAccount
+            }
+            bundle = try await makeTikTokAdapter().validTokenBundle(for: account)
+        case .youtubeShorts:
+            guard account.authorizationSource == .nativeOAuth else {
+                throw ManualPublishError.missingYouTubeAccount
+            }
+            bundle = try await makeYouTubeAdapter().validTokenBundle(for: account)
+        case .instagram, .threads, .x:
+            throw PlatformAdapterError.futurePlatform(account.platform)
+        }
+
+        let effectiveScopes = bundle.scopes.isEmpty ? account.scopes : bundle.scopes
+        guard effectiveScopes.contains(requiredScope) else {
+            throw PublishingAccountReadinessError(
+                platform: account.platform,
+                accountName: account.displayName,
+                requiredScope: requiredScope,
+                availableScopes: effectiveScopes
+            )
+        }
+
+        let now = Date()
+        var readyAccount = account
+        readyAccount.scopes = effectiveScopes
+        readyAccount.status = .connected
+        readyAccount.tokenStatus = bundle.accessTokenExpiresAt <= now.addingTimeInterval(60) ? .expiresSoon : .valid
+        readyAccount.isPublishingEnabled = true
+        readyAccount.lastValidatedAt = now
+
+        if readyAccount != account,
+           let accountIndex = overview.accounts.firstIndex(where: { $0.id == account.id }) {
+            readyAccount.updatedAt = now
+            overview.accounts[accountIndex] = readyAccount
+            applyConnectedAccounts()
+        }
+
+        return readyAccount
     }
 
     func publishingAccount(for platform: SocialPlatform, in selections: [PlatformAccountSelection]) -> ConnectedAccount? {
@@ -2516,6 +3216,7 @@ enum ManualPublishError: LocalizedError {
     case missingPlatformAccounts
     case missingPublishableImageURLs
     case missingUploadedMediaPublicURL
+    case missingRenderedAndSourceImage(slideNumber: Int)
 
     var errorDescription: String? {
         switch self {
@@ -2529,7 +3230,25 @@ enum ManualPublishError: LocalizedError {
             "Rendered slide images need public URLs before TikTok can publish them."
         case .missingUploadedMediaPublicURL:
             "Uploaded media needs a public URL before platforms can publish it."
+        case let .missingRenderedAndSourceImage(slideNumber):
+            "Slide \(slideNumber) has neither a saved rendered image nor an available source image. Restore or regenerate only that slide, then retry."
         }
+    }
+}
+
+struct PublishingAccountReadinessError: LocalizedError {
+    var platform: SocialPlatform
+    var accountName: String
+    var requiredScope: String
+    var availableScopes: [String]
+
+    var errorDescription: String? {
+        "\(platform.displayName) account \(accountName) is connected, but its current OAuth token does not include \(requiredScope). Reconnect the account and approve publishing access."
+    }
+
+    var diagnosticDescription: String {
+        let scopes = availableScopes.isEmpty ? "none" : availableScopes.sorted().joined(separator: ",")
+        return "missingScope platform=\(platform.rawValue) account=\(accountName) required=\(requiredScope) available=\(scopes)"
     }
 }
 
@@ -2711,6 +3430,10 @@ private extension FlickAppModel {
         overview.automationPostProgresses[progressIndex].errorMessage = error.localizedDescription
         overview.automationPostProgresses[progressIndex].finishedAt = now
         overview.automationPostProgresses[progressIndex].updatedAt = now
+        let progress = overview.automationPostProgresses[progressIndex]
+        let failedStep = stepIndex.map { progress.steps[$0].id } ?? "unknown"
+        let diagnostics = publishErrorDiagnostics(for: error)
+        logger.error("[FlickAutomationFailure] progressID=\(progress.id.uuidString, privacy: .public) automationID=\(progress.automationID.uuidString, privacy: .public) draftID=\(progress.draftID?.uuidString ?? "none", privacy: .public) step=\(failedStep, privacy: .public) details=\(diagnostics, privacy: .public)")
         await persistAutomationPostProgresses()
     }
 
@@ -3222,6 +3945,8 @@ private extension FlickAppModel {
         overview.automations[index].consecutiveFailureCount += 1
         overview.automations[index].nextScheduledAt = overview.automations[index].nextOccurrence(after: date)
         overview.automations[index].updatedAt = date
+        let diagnostics = publishErrorDiagnostics(for: error)
+        logger.error("[FlickAutomationFailure] automationID=\(automationID.uuidString, privacy: .public) run=scheduled details=\(diagnostics, privacy: .public)")
     }
 
     func markAutomationManualRun(
@@ -3248,6 +3973,8 @@ private extension FlickAppModel {
         overview.automations[index].consecutiveFailureCount += 1
         overview.automations[index].nextScheduledAt = nextScheduledAt
         overview.automations[index].updatedAt = date
+        let diagnostics = publishErrorDiagnostics(for: error)
+        logger.error("[FlickAutomationFailure] automationID=\(automationID.uuidString, privacy: .public) run=manual details=\(diagnostics, privacy: .public)")
     }
 
     func deterministicIndex(seed: String, count: Int) -> Int {
@@ -3575,9 +4302,40 @@ private extension FlickAppModel {
             detail: "Rendered \(renderedImages.count) edited slides."
         )
 
+        let renderedAssets = renderedImages.map { renderedImage in
+            let now = Date()
+            return MediaAsset(
+                id: UUID(),
+                mediaType: .image,
+                source: .rendered,
+                localFilePath: renderedImage.fileURL.path,
+                storageBucket: nil,
+                storagePath: nil,
+                publicURL: nil,
+                signedURLExpiration: nil,
+                width: renderedImage.width,
+                height: renderedImage.height,
+                duration: nil,
+                fileSize: fileSize(at: renderedImage.fileURL),
+                checksum: nil,
+                trendTags: [],
+                createdAt: now,
+                updatedAt: now
+            )
+        }
+        let renderedAssetIDs = renderedAssets.map(\.id)
+        let committedAssetIDs = Set(renderedAssetIDs)
+        overview.assets.removeAll { committedAssetIDs.contains($0.id) }
+        overview.assets.insert(contentsOf: renderedAssets, at: 0)
+        guard let refreshedDraftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) else {
+            throw SlideshowCreationError.missingDraft
+        }
+        overview.drafts[refreshedDraftIndex].exportedImageAssetIDs = renderedAssetIDs
+        overview.drafts[refreshedDraftIndex].updatedAt = Date()
+        try await repository.saveOverview(overview)
+        logPublish("Publish checkpoint renderedMedia=stored-locally draftID=\(draftID.uuidString) renderedCount=\(renderedAssetIDs.count)")
+
         createWorkflowMessage = "Uploading rendered images..."
-        var renderedAssetIDs: [UUID] = []
-        var renderedAssets: [MediaAsset] = []
         var imageURLs: [URL] = []
         for (offset, renderedImage) in renderedImages.enumerated() {
             let uploadStepID = ManualPublishProgressStepID.uploadSlide(renderedImage.slideID)
@@ -3588,11 +4346,11 @@ private extension FlickAppModel {
             )
             startPublishStep(uploadStepID, detail: "Uploading rendered image to Cloudflare R2.")
             let data = try Data(contentsOf: renderedImage.fileURL)
-            let assetID = UUID()
+            var asset = renderedAssets[offset]
             let path = renderedStoragePath(
                 draftID: draftID,
                 slideID: renderedImage.slideID,
-                assetID: assetID
+                assetID: asset.id
             )
             let storage = mediaStorageFactory(credentialVault.loadValues())
             let remote = try await storage.uploadAsset(
@@ -3603,28 +4361,18 @@ private extension FlickAppModel {
                 path: path
             )
             let publicURL = try resolvedPublicURL(for: remote, storage: storage)
-
-            let asset = MediaAsset(
-                id: assetID,
-                mediaType: .image,
-                source: .rendered,
-                localFilePath: renderedImage.fileURL.path,
-                storageBucket: remote.storageBucket,
-                storagePath: remote.storagePath,
-                publicURL: publicURL,
-                signedURLExpiration: remote.signedURLExpiration,
-                width: renderedImage.width,
-                height: renderedImage.height,
-                duration: nil,
-                fileSize: fileSize(at: renderedImage.fileURL),
-                checksum: nil,
-                trendTags: [],
-                createdAt: Date(),
-                updatedAt: Date()
+            asset.storageBucket = remote.storageBucket
+            asset.storagePath = remote.storagePath
+            asset.publicURL = publicURL
+            asset.signedURLExpiration = remote.signedURLExpiration
+            asset.updatedAt = Date()
+            try await checkpointRenderedAsset(
+                asset,
+                draftID: draftID,
+                exportedAssetIDs: renderedAssetIDs
             )
-            renderedAssets.append(asset)
-            renderedAssetIDs.append(assetID)
             imageURLs.append(publicURL)
+            logPublish("Publish checkpoint cloudflare=uploaded draftID=\(draftID.uuidString) slide=\(offset + 1) assetID=\(asset.id.uuidString) path=\(remote.storagePath)")
             completePublishStep(uploadStepID, detail: "Uploaded rendered image to Cloudflare R2.")
         }
         await completeAutomationPostProgressStep(
@@ -3633,16 +4381,6 @@ private extension FlickAppModel {
             detail: "Uploaded \(renderedAssetIDs.count) rendered images."
         )
 
-        let committedAssetIDs = Set(renderedAssetIDs)
-        overview.assets.removeAll { committedAssetIDs.contains($0.id) }
-        overview.assets.insert(contentsOf: renderedAssets, at: 0)
-        guard let refreshedDraftIndex = overview.drafts.firstIndex(where: { $0.id == draftID }) else {
-            throw SlideshowCreationError.missingDraft
-        }
-        overview.drafts[refreshedDraftIndex].exportedImageAssetIDs = renderedAssetIDs
-        overview.drafts[refreshedDraftIndex].updatedAt = Date()
-
-        try await repository.saveOverview(overview)
         logPublish("Rendered publish image sequence draftID=\(draftID.uuidString) renderedCount=\(renderedAssetIDs.count) publicURLCount=\(imageURLs.count)")
         return RenderedPublishImageSequence(assetIDs: renderedAssetIDs, imageURLs: imageURLs)
     }
@@ -3767,7 +4505,7 @@ private extension FlickAppModel {
         guard !awaitingJobs.isEmpty else { return false }
 
         let accountsByID = overview.accounts.latestRecordsByID()
-        let adapter = TikTokAdapter(configuration: configuration.tiktok)
+        let adapter = makeTikTokAdapter()
         var didChange = false
 
         for job in awaitingJobs {
@@ -3975,15 +4713,21 @@ private extension FlickAppModel {
 
         if status.isFailed {
             let failReason = status.failReason ?? "FAILED"
+            let now = Date()
             overview.publishingJobs[jobIndex].status = .failed
             overview.publishingJobs[jobIndex].lastError = PlatformFailure(
                 kind: platformFailureKind(forTikTokCode: failReason),
                 message: "TikTok reports this draft upload failed: \(failReason).",
                 suggestedFix: suggestedFix(for: platformFailureKind(forTikTokCode: failReason)),
-                rawResponse: status.rawResponse
+                rawResponse: status.rawResponse,
+                platformCode: failReason,
+                failedAt: now
             )
-            overview.publishingJobs[jobIndex].lastAttemptAt = Date()
-            overview.publishingJobs[jobIndex].updatedAt = Date()
+            overview.publishingJobs[jobIndex].lastAttemptAt = now
+            overview.publishingJobs[jobIndex].updatedAt = now
+            if let failure = overview.publishingJobs[jobIndex].lastError {
+                logPublishingFailure(failure, job: overview.publishingJobs[jobIndex])
+            }
             return true
         }
 
@@ -4108,12 +4852,21 @@ private extension FlickAppModel {
         }
     }
 
-    func failPublishingJob(_ jobID: UUID, error: Error) {
+    func failPublishingJob(
+        _ jobID: UUID,
+        error: Error,
+        stage: PublishingPipelineStage? = nil
+    ) {
         guard let jobIndex = overview.publishingJobs.firstIndex(where: { $0.id == jobID }) else { return }
+        let now = Date()
+        var failure = platformFailure(from: error)
+        failure.pipelineStage = failure.pipelineStage ?? stage
+        failure.failedAt = now
         overview.publishingJobs[jobIndex].status = .failed
-        overview.publishingJobs[jobIndex].lastError = platformFailure(from: error)
-        overview.publishingJobs[jobIndex].lastAttemptAt = Date()
-        overview.publishingJobs[jobIndex].updatedAt = Date()
+        overview.publishingJobs[jobIndex].lastError = failure
+        overview.publishingJobs[jobIndex].lastAttemptAt = now
+        overview.publishingJobs[jobIndex].updatedAt = now
+        logPublishingFailure(failure, job: overview.publishingJobs[jobIndex])
     }
 
     func platformFailure(from error: Error) -> PlatformFailure {
@@ -4123,18 +4876,80 @@ private extension FlickAppModel {
                 kind: kind,
                 message: error.errorDescription ?? "TikTok publishing failed.",
                 suggestedFix: suggestedFix(for: kind),
-                rawResponse: error.rawResponse
+                rawResponse: error.rawResponse,
+                httpStatusCode: error.statusCode,
+                platformCode: error.code,
+                platformLogID: error.logID
             )
         }
 
         if let error = error as? PlatformAdapterError {
-            let kind: PlatformErrorKind = error == .missingAccountToken ? .authExpired : .unknownServerError
+            let kind: PlatformErrorKind
+            switch error {
+            case .missingAccountToken:
+                kind = .authExpired
+            case let .notConfigured(message) where message.localizedCaseInsensitiveContains("scope"):
+                kind = .missingScope
+            case let .notConfigured(message) where message.localizedCaseInsensitiveContains("Cloudflare")
+                || message.localizedCaseInsensitiveContains("media URL prefix"):
+                kind = .urlOwnershipUnverified
+            case let .notConfigured(message) where message.localizedCaseInsensitiveContains("image URL"):
+                kind = .mediaURLInaccessible
+            default:
+                kind = .unknownServerError
+            }
             return PlatformFailure(
                 kind: kind,
                 message: error.localizedDescription,
                 suggestedFix: suggestedFix(for: kind),
                 rawResponse: nil
             )
+        }
+
+        if let error = error as? PublishingAccountReadinessError {
+            return PlatformFailure(
+                kind: .missingScope,
+                message: error.localizedDescription,
+                suggestedFix: suggestedFix(for: .missingScope, platform: error.platform),
+                rawResponse: error.diagnosticDescription,
+                platformCode: "missing_scope"
+            )
+        }
+
+        if let error = error as? MediaStorageError {
+            switch error {
+            case let .requestFailed(operation, statusCode, response):
+                return PlatformFailure(
+                    kind: .mediaURLInaccessible,
+                    message: error.localizedDescription,
+                    suggestedFix: "Check Cloudflare R2 credentials, bucket access, and the public custom domain, then retry.",
+                    rawResponse: response.isEmpty ? "operation=\(operation)" : "operation=\(operation) response=\(response)",
+                    httpStatusCode: statusCode,
+                    platformCode: "r2_\(operation.replacingOccurrences(of: " ", with: "_"))"
+                )
+            default:
+                return PlatformFailure(
+                    kind: .mediaURLInaccessible,
+                    message: error.localizedDescription,
+                    suggestedFix: "Check Cloudflare R2 configuration and public access, then retry.",
+                    rawResponse: nil,
+                    platformCode: "r2_configuration"
+                )
+            }
+        }
+
+        if let error = error as? ManualPublishError {
+            switch error {
+            case .missingPublishableImageURLs, .missingUploadedMediaPublicURL, .missingRenderedAndSourceImage:
+                return PlatformFailure(
+                    kind: .mediaURLInaccessible,
+                    message: error.localizedDescription,
+                    suggestedFix: "Open the failed post to confirm its saved slide media, then retry. Flick will reuse any completed images and uploads.",
+                    rawResponse: nil
+                )
+            case .missingTikTokAccount, .missingYouTubeAccount, .missingPlatformAccounts:
+                break
+            }
         }
 
         if let error = error as? TikTokOAuthTokenError {
@@ -4161,7 +4976,9 @@ private extension FlickAppModel {
                 kind: kind,
                 message: error.localizedDescription,
                 suggestedFix: suggestedFix(for: kind, platform: .youtubeShorts),
-                rawResponse: error.rawResponse
+                rawResponse: error.rawResponse,
+                httpStatusCode: error.statusCode,
+                platformCode: error.status
             )
         }
 
@@ -4171,6 +4988,20 @@ private extension FlickAppModel {
             suggestedFix: suggestedFix(for: .unknownServerError),
             rawResponse: nil
         )
+    }
+
+    private func logPublishingFailure(_ failure: PlatformFailure, job: PublishingJob) {
+        let httpStatus = failure.httpStatusCode.map(String.init) ?? "none"
+        let platformCode = failure.platformCode ?? "none"
+        let platformLogID = failure.platformLogID ?? "none"
+        let pipelineStage = failure.pipelineStage?.rawValue ?? "unknown"
+        let rawResponse = failure.rawResponse?
+            .prefix(4_000)
+            .replacingOccurrences(of: "\n", with: " ")
+            ?? "none"
+        let detail = "jobID=\(job.id.uuidString) automationID=\(job.automationID?.uuidString ?? "none") draftID=\(job.draftID.uuidString) accountID=\(job.accountID.uuidString) platform=\(job.platform.rawValue) attempt=\(job.attemptCount) stage=\(pipelineStage) kind=\(failure.kind.rawValue) httpStatus=\(httpStatus) platformCode=\(platformCode) platformLogID=\(platformLogID) message=\(failure.message) suggestedFix=\(failure.suggestedFix) rawResponse=\(rawResponse)"
+        logger.error("[FlickPublishFailure] \(detail, privacy: .public)")
+        print("[FlickPublishFailure] \(detail)")
     }
 
     func platformFailureKind(forTikTokCode code: String) -> PlatformErrorKind {
@@ -4313,13 +5144,19 @@ private extension FlickAppModel {
     }
 
     func publishErrorDiagnostics(for error: Error) -> String {
-        if let error = error as? TikTokPublishAPIError {
-            return "error=\(error.localizedDescription) details=\(error.diagnosticDescription)"
-        }
-        if let error = error as? TikTokOAuthTokenError {
-            return "error=\(error.localizedDescription) details=\(error.diagnosticDescription)"
-        }
-        return "error=\(error.localizedDescription)"
+        let failure = platformFailure(from: error)
+        return [
+            "kind=\(failure.kind.rawValue)",
+            failure.pipelineStage.map { "stage=\($0.rawValue)" },
+            failure.httpStatusCode.map { "httpStatus=\($0)" },
+            failure.platformCode.map { "platformCode=\($0)" },
+            failure.platformLogID.map { "platformLogID=\($0)" },
+            "error=\(failure.message)",
+            "suggestedFix=\(failure.suggestedFix)",
+            failure.rawResponse.map { "rawResponse=\($0.prefix(4_000))" }
+        ]
+        .compactMap(\.self)
+        .joined(separator: " ")
     }
 
     func applyGenerationFailure(_ error: Error, slideID: UUID, draftID: UUID) async {

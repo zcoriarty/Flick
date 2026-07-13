@@ -100,26 +100,11 @@ struct TikTokAdapter: SocialPlatformAdapter {
         guard configuration.clientIDPresent else {
             throw PlatformAdapterError.notConfigured("TikTok client ID is missing.")
         }
-        guard let verifiedBaseURL = configuration.verifiedBaseURL else {
-            throw PlatformAdapterError.notConfigured("TikTok photo publishing requires a verified Cloudflare R2 custom domain or media URL prefix.")
-        }
-        guard !media.imageURLs.isEmpty else {
-            throw PlatformAdapterError.notConfigured("TikTok photo publishing needs at least one rendered image URL.")
-        }
-        guard media.imageURLs.allSatisfy({ $0.isUnderMediaBaseURL(verifiedBaseURL) }) else {
-            throw PlatformAdapterError.notConfigured("TikTok photo publishing image URLs must use the verified Cloudflare R2 custom domain or configured media URL prefix.")
-        }
-        guard media.imageURLs.count <= 35 else {
-            throw PlatformAdapterError.notConfigured("TikTok photo publishing supports up to 35 images.")
-        }
         guard account.scopes.contains(settings.requiredScope) else {
             throw PlatformAdapterError.notConfigured("TikTok account is missing the \(settings.requiredScope) scope.")
         }
         let tokenBundle = try await validTokenBundle(for: account)
-        let mediaPreflightResults = try await preflightMediaURLs(media.imageURLs)
-        let mediaPreflightSummary = mediaPreflightResults
-            .map(\.diagnosticDescription)
-            .joined(separator: "\n")
+        let mediaPreflightSummary = try await preflightPhotoMediaURLs(media.imageURLs)
 
         logger.info("Initializing TikTok photo publish jobID=\(job.id.uuidString, privacy: .public) mode=\(settings.tikTokPostMode.rawValue, privacy: .public) images=\(media.imageURLs.count, privacy: .public) privacy=\(settings.privacyLevel.rawValue, privacy: .public)")
         var request = URLRequest(url: URL(string: "https://open.tiktokapis.com/v2/post/publish/content/init/")!)
@@ -147,6 +132,7 @@ struct TikTokAdapter: SocialPlatformAdapter {
         } catch {
             let apiError = TikTokPublishAPIError(
                 code: "invalid_response",
+                statusCode: httpResponse.statusCode,
                 message: "TikTok returned an unreadable publish response: \(error.localizedDescription)",
                 logID: nil,
                 rawResponse: rawResponse
@@ -157,6 +143,7 @@ struct TikTokAdapter: SocialPlatformAdapter {
         guard (200..<300).contains(httpResponse.statusCode), payload.error.code == "ok" else {
             let apiError = TikTokPublishAPIError(
                 code: payload.error.code,
+                statusCode: httpResponse.statusCode,
                 message: payload.error.message.isEmpty ? "TikTok publish initialization failed with HTTP \(httpResponse.statusCode)." : payload.error.message,
                 logID: payload.error.logID,
                 rawResponse: rawResponse
@@ -201,6 +188,29 @@ struct TikTokAdapter: SocialPlatformAdapter {
             platformStatus: statusSnapshot?.data?.status.rawValue,
             rawResponse: statusSnapshot?.combinedRawResponse ?? rawResponse.withMediaPreflightSummary(mediaPreflightSummary)
         )
+    }
+
+    func preflightPhotoMediaURLs(_ imageURLs: [URL]) async throws -> String {
+        guard let verifiedBaseURL = configuration.verifiedBaseURL else {
+            throw PlatformAdapterError.notConfigured("TikTok photo publishing requires a verified Cloudflare R2 custom domain or media URL prefix.")
+        }
+        guard !imageURLs.isEmpty else {
+            throw PlatformAdapterError.notConfigured("TikTok photo publishing needs at least one rendered image URL.")
+        }
+        guard imageURLs.allSatisfy({ $0.isUnderMediaBaseURL(verifiedBaseURL) }) else {
+            throw PlatformAdapterError.notConfigured("TikTok photo publishing image URLs must use the verified Cloudflare R2 custom domain or configured media URL prefix.")
+        }
+        guard imageURLs.count <= 35 else {
+            throw PlatformAdapterError.notConfigured("TikTok photo publishing supports up to 35 images.")
+        }
+
+        return try await preflightMediaURLs(imageURLs)
+            .map(\.diagnosticDescription)
+            .joined(separator: "\n")
+    }
+
+    func preflightPhotoMediaURL(_ imageURL: URL) async throws -> String {
+        try await preflightPhotoMediaURLs([imageURL])
     }
 
     func fetchPublishStatus(publishID: String, account: ConnectedAccount) async throws -> TikTokPublishStatusResult {
@@ -318,6 +328,7 @@ struct TikTokAdapter: SocialPlatformAdapter {
         } catch {
             let apiError = TikTokPublishAPIError(
                 code: "invalid_response",
+                statusCode: httpResponse.statusCode,
                 message: "TikTok returned an unreadable status response: \(error.localizedDescription)",
                 logID: nil,
                 rawResponse: combinedRawResponse
@@ -329,6 +340,7 @@ struct TikTokAdapter: SocialPlatformAdapter {
         guard (200..<300).contains(httpResponse.statusCode), payload.error.code == "ok" else {
             let apiError = TikTokPublishAPIError(
                 code: payload.error.code,
+                statusCode: httpResponse.statusCode,
                 message: payload.error.message.isEmpty ? "TikTok publish status fetch failed with HTTP \(httpResponse.statusCode)." : payload.error.message,
                 logID: payload.error.logID,
                 rawResponse: combinedRawResponse
@@ -560,29 +572,42 @@ enum TikTokOAuthTokenError: LocalizedError {
 }
 
 enum TikTokPublishAPIError: LocalizedError {
-    case api(code: String, message: String, logID: String?, rawResponse: String)
+    case api(code: String, statusCode: Int?, message: String, logID: String?, rawResponse: String)
 
-    init(code: String, message: String, logID: String?, rawResponse: String) {
-        self = .api(code: code, message: message, logID: logID, rawResponse: rawResponse)
+    init(code: String, statusCode: Int? = nil, message: String, logID: String?, rawResponse: String) {
+        self = .api(code: code, statusCode: statusCode, message: message, logID: logID, rawResponse: rawResponse)
     }
 
     var code: String {
         switch self {
-        case let .api(code, _, _, _): code
+        case let .api(code, _, _, _, _): code
+        }
+    }
+
+    var statusCode: Int? {
+        switch self {
+        case let .api(_, statusCode, _, _, _): statusCode
+        }
+    }
+
+    var logID: String? {
+        switch self {
+        case let .api(_, _, _, logID, _): logID
         }
     }
 
     var rawResponse: String {
         switch self {
-        case let .api(_, _, _, rawResponse): rawResponse
+        case let .api(_, _, _, _, rawResponse): rawResponse
         }
     }
 
     var diagnosticDescription: String {
         switch self {
-        case let .api(code, message, logID, rawResponse):
+        case let .api(code, statusCode, message, logID, rawResponse):
             [
                 "code=\(code)",
+                statusCode.map { "httpStatus=\($0)" },
                 logID.map { "logID=\($0)" },
                 "message=\(message)",
                 rawResponse.isEmpty ? nil : "rawResponse=\(rawResponse)"
@@ -594,9 +619,10 @@ enum TikTokPublishAPIError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case let .api(code, message, logID, _):
+        case let .api(code, statusCode, message, logID, _):
+            let httpSuffix = statusCode.map { " HTTP \($0)." } ?? ""
             let suffix = logID.map { " TikTok log ID: \($0)." } ?? ""
-            return "\(message) (\(code)).\(suffix)"
+            return "\(message) (\(code)).\(httpSuffix)\(suffix)"
         }
     }
 }
@@ -894,6 +920,7 @@ private struct TikTokMediaURLPreflightResult: Hashable {
             let statusText = statusCode.map { "HTTP \($0)" } ?? "unknown HTTP status"
             throw TikTokPublishAPIError(
                 code: "media_url_inaccessible",
+                statusCode: statusCode,
                 message: "TikTok media URL preflight failed with \(statusText).",
                 logID: nil,
                 rawResponse: diagnosticDescription
