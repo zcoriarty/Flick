@@ -38,7 +38,7 @@ enum SlideshowImagePromptFormatter {
 
         \(SlideshowPromptBuilder.modelIdentityContract(for: creationModel))
 
-        \(imageVibe.promptSectionTitle):
+        \(imageVibe.promptSectionTitle)
         \(imageVibe.combinedGenerationContract)
 
         Output format:

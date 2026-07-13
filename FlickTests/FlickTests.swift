@@ -1325,7 +1325,7 @@ final class FlickTests: XCTestCase {
             productID: product.id,
             productImageAssetIDs: [productImageID],
             creationModel: creationModel.generationReference,
-            imageVibe: .flashCandid,
+            imageVibe: .none,
             schedule: AutomationSchedule(
                 weekdays: [.monday, .wednesday, .friday],
                 fixedTimes: [
@@ -1370,7 +1370,7 @@ final class FlickTests: XCTestCase {
 
         XCTAssertEqual(loadedAutomation, automation)
         XCTAssertEqual(loadedAutomation.creationModel?.name, creationModel.name)
-        XCTAssertEqual(loadedAutomation.imageVibe, .flashCandid)
+        XCTAssertEqual(loadedAutomation.imageVibe, .none)
         XCTAssertTrue(loadedAutomation.creationModel?.aiMetadataJSONString().contains("\"skin_details\"") == true)
         XCTAssertEqual(loaded.dashboard.activeAutomationCount, 1)
         XCTAssertEqual(loaded.dashboard.nextAutomationPostAt, nextScheduledAt)
@@ -4655,6 +4655,27 @@ final class FlickTests: XCTestCase {
         XCTAssertTrue(prompt.contains("ordinary phone-camera perspective"))
         XCTAssertTrue(prompt.contains("human-taken camera photo"))
         XCTAssertTrue(prompt.contains("not AI-generated artwork"))
+    }
+
+    func testGeneratedImagePromptWithNoFilterPreservesTemplateStyle() {
+        let prompt = SlideshowImagePromptFormatter.applyVerticalOutputContract(
+            to: "Match the template's hand-cut paper collage and flat ink texture.",
+            settings: .draft,
+            imageVibe: .none
+        )
+
+        XCTAssertTrue(prompt.contains("Image filter: None"))
+        XCTAssertTrue(prompt.contains("Do not apply an additional image-vibe or photography filter"))
+        XCTAssertTrue(prompt.contains("Prioritize fidelity to the selected template's visual medium"))
+        XCTAssertTrue(prompt.contains("Preserve earlier prompt text that describes the selected template's visual style or medium"))
+        XCTAssertTrue(prompt.contains("hand-cut paper collage and flat ink texture"))
+        XCTAssertFalse(prompt.contains("Photographic realism:"))
+        XCTAssertFalse(prompt.contains("human-taken camera photo"))
+        XCTAssertFalse(prompt.contains("ignore that stale style instruction"))
+
+        XCTAssertTrue(SlideshowImageVibe.none.planningInstructions.contains("Image filter: None"))
+        XCTAssertTrue(SlideshowImageVibe.none.plannedPromptVisualRequirement.contains("fidelity to the selected template"))
+        XCTAssertFalse(SlideshowImageVibe.none.planningInstructions.contains("concrete camera, lens"))
     }
 
     func testTemplateAnalysisRequestExtractsSlideBlueprints() async throws {

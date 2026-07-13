@@ -210,7 +210,7 @@ enum SlideshowImageVibe: String, CaseIterable, Codable, Identifiable, Hashable {
             """
         }
 
-        """
+        return """
         Image vibe: \(displayName)
         \(generationContract)
         Every generated image prompt must include a concrete camera, lens, lighting, or capture cue that supports this vibe.
@@ -259,7 +259,7 @@ enum SlideshowImageVibe: String, CaseIterable, Codable, Identifiable, Hashable {
     }
 
     var promptSectionTitle: String {
-        self == .none ? "Image filter" : "Image vibe"
+        self == .none ? "Image filter: None" : "Image vibe: \(displayName)"
     }
 
     var combinedGenerationContract: String {

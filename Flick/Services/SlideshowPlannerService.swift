@@ -505,7 +505,7 @@ enum SlideshowPromptBuilder {
         Template style:
         \(styleGuide.promptSummary)
 
-        \(resolvedImageVibe.promptSectionTitle):
+        \(resolvedImageVibe.promptSectionTitle)
         \(resolvedImageVibe.combinedGenerationContract)
 
         \(modelIdentityContract(for: draft.creationModel))
