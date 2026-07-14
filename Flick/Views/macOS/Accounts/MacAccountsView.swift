@@ -64,6 +64,14 @@ struct MacAccountsView: View {
                     refreshingAccountID: appModel.refreshingAccountID
                 )
             }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close", systemImage: "xmark") {
+                        selectedPlatform = nil
+                    }
+                    .keyboardShortcut(.cancelAction)
+                }
+            }
             .frame(minWidth: 520, minHeight: 620)
         }
     }

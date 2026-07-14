@@ -33,6 +33,20 @@ final class YouTubeOAuthClient {
     }
 
     func authorize(configuration: YouTubeConfiguration) async throws -> ConnectedAccount {
+        try await authorize(configuration: configuration, replacing: nil)
+    }
+
+    func reauthorize(_ account: ConnectedAccount, configuration: YouTubeConfiguration) async throws -> ConnectedAccount {
+        guard account.platform == .youtubeShorts else {
+            throw PlatformAdapterError.futurePlatform(account.platform)
+        }
+        return try await authorize(configuration: configuration, replacing: account)
+    }
+
+    private func authorize(
+        configuration: YouTubeConfiguration,
+        replacing existingAccount: ConnectedAccount?
+    ) async throws -> ConnectedAccount {
         guard AccountManagementPolicy.canAuthorize(.youtubeShorts) else {
             throw YouTubeOAuthError.authorizationUnavailableOnThisPlatform
         }
@@ -52,6 +66,12 @@ final class YouTubeOAuthClient {
 
         let scopes = tokenResponse.scopes.isEmpty ? configuration.requestedScopes : tokenResponse.scopes
         let account = try await refreshAuthorizedAccount(accessToken: tokenResponse.accessToken, scopes: scopes)
+        if let existingAccount, account.platformUserID != existingAccount.platformUserID {
+            throw YouTubeOAuthError.authorizedChannelMismatch(
+                expectedChannelID: existingAccount.platformUserID,
+                actualChannelID: account.platformUserID
+            )
+        }
         let bundle = tokenResponse.tokenBundle(
             platformUserID: account.platformUserID,
             refreshToken: refreshToken,
@@ -310,9 +330,11 @@ enum YouTubeOAuthError: LocalizedError {
     case stateMismatch
     case missingAuthorizationCode
     case missingRefreshToken
+    case authorizedChannelMismatch(expectedChannelID: String, actualChannelID: String)
     case missingStoredToken(accountID: UUID, platformUserID: String)
     case keychainReadFailed(accountID: UUID, underlyingMessage: String)
     case refreshTokenExpired(accountID: UUID, expiredAt: Date)
+    case reauthorizationRequired(accountID: UUID, statusCode: Int, providerCode: String, rawResponse: String)
     case tokenExchangeFailed(statusCode: Int?, message: String, rawResponse: String)
     case refreshRequestFailed(accountID: UUID, statusCode: Int?, message: String, rawResponse: String)
     case channelRequestFailed(statusCode: Int?, message: String, rawResponse: String)
@@ -333,12 +355,16 @@ enum YouTubeOAuthError: LocalizedError {
             return "YouTube did not return an authorization code."
         case .missingRefreshToken:
             return "Google did not return a refresh token. Try connecting the YouTube channel again and approve offline access."
+        case .authorizedChannelMismatch:
+            return "That Google account opened a different YouTube channel. Choose the channel you are reconnecting and try again."
         case .missingStoredToken:
             return "Authorize this YouTube channel on this Mac before scheduled publishing can use it."
         case let .keychainReadFailed(_, underlyingMessage):
             return "Could not read the YouTube OAuth token bundle from Keychain: \(underlyingMessage)"
         case let .refreshTokenExpired(_, expiredAt):
             return "The stored YouTube refresh token expired at \(expiredAt.formatted(.iso8601)). Reconnect YouTube and try again."
+        case .reauthorizationRequired:
+            return "Google no longer accepts the saved YouTube authorization. Reconnect this YouTube channel and try again."
         case let .tokenExchangeFailed(statusCode, message, _),
              let .refreshRequestFailed(_, statusCode, message, _),
              let .channelRequestFailed(statusCode, message, _):
@@ -363,18 +389,50 @@ enum YouTubeOAuthError: LocalizedError {
             "missingAuthorizationCode"
         case .missingRefreshToken:
             "missingRefreshToken"
+        case let .authorizedChannelMismatch(expectedChannelID, actualChannelID):
+            "authorizedChannelMismatch expectedChannelID=\(expectedChannelID) actualChannelID=\(actualChannelID)"
         case let .missingStoredToken(accountID, platformUserID):
             "missingStoredToken accountID=\(accountID.uuidString) platformUserID=\(platformUserID)"
         case let .keychainReadFailed(accountID, underlyingMessage):
             "keychainReadFailed accountID=\(accountID.uuidString) underlying=\(underlyingMessage)"
         case let .refreshTokenExpired(accountID, expiredAt):
             "refreshTokenExpired accountID=\(accountID.uuidString) expiredAt=\(expiredAt.formatted(.iso8601))"
+        case let .reauthorizationRequired(accountID, statusCode, providerCode, rawResponse):
+            Self.diagnostic(
+                kind: "reauthorizationRequired providerCode=\(providerCode)",
+                accountID: accountID,
+                statusCode: statusCode,
+                message: "Google rejected the saved YouTube authorization.",
+                rawResponse: rawResponse
+            )
         case let .tokenExchangeFailed(statusCode, message, rawResponse):
             Self.diagnostic(kind: "tokenExchangeFailed", accountID: nil, statusCode: statusCode, message: message, rawResponse: rawResponse)
         case let .refreshRequestFailed(accountID, statusCode, message, rawResponse):
             Self.diagnostic(kind: "refreshRequestFailed", accountID: accountID, statusCode: statusCode, message: message, rawResponse: rawResponse)
         case let .channelRequestFailed(statusCode, message, rawResponse):
             Self.diagnostic(kind: "channelRequestFailed", accountID: nil, statusCode: statusCode, message: message, rawResponse: rawResponse)
+        }
+    }
+
+    var httpStatusCode: Int? {
+        switch self {
+        case let .reauthorizationRequired(_, statusCode, _, _):
+            statusCode
+        case let .tokenExchangeFailed(statusCode, _, _),
+             let .refreshRequestFailed(_, statusCode, _, _),
+             let .channelRequestFailed(statusCode, _, _):
+            statusCode
+        default:
+            nil
+        }
+    }
+
+    var providerCode: String? {
+        switch self {
+        case let .reauthorizationRequired(_, _, providerCode, _):
+            providerCode
+        default:
+            nil
         }
     }
 
@@ -414,6 +472,7 @@ private struct YouTubeAccessTokenResponse: Decodable {
     var accessToken: String
     var expiresIn: TimeInterval
     var refreshToken: String?
+    var refreshTokenExpiresIn: TimeInterval?
     var scope: String?
     var tokenType: String
 
@@ -438,7 +497,7 @@ private struct YouTubeAccessTokenResponse: Decodable {
             tokenType: tokenType,
             scopes: scopes,
             accessTokenExpiresAt: now.addingTimeInterval(expiresIn),
-            refreshTokenExpiresAt: now.addingTimeInterval(60 * 60 * 24 * 365 * 10),
+            refreshTokenExpiresAt: now.addingTimeInterval(refreshTokenExpiresIn ?? 60 * 60 * 24 * 365 * 10),
             updatedAt: now
         )
     }
@@ -447,6 +506,7 @@ private struct YouTubeAccessTokenResponse: Decodable {
         case accessToken = "access_token"
         case expiresIn = "expires_in"
         case refreshToken = "refresh_token"
+        case refreshTokenExpiresIn = "refresh_token_expires_in"
         case scope
         case tokenType = "token_type"
     }

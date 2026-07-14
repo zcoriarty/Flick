@@ -213,6 +213,14 @@ struct YouTubeShortsAdapter: SocialPlatformPublishing {
         }
         guard (200..<300).contains(httpResponse.statusCode) else {
             let payload = try? JSONDecoder().decode(GoogleOAuthRefreshErrorResponse.self, from: data)
+            if payload?.error == "invalid_grant" {
+                throw YouTubeOAuthError.reauthorizationRequired(
+                    accountID: account.id,
+                    statusCode: httpResponse.statusCode,
+                    providerCode: "invalid_grant",
+                    rawResponse: rawResponse
+                )
+            }
             throw YouTubeOAuthError.refreshRequestFailed(
                 accountID: account.id,
                 statusCode: httpResponse.statusCode,

@@ -47,7 +47,6 @@ struct IOSDashboardView: View {
             }
         }
         .flickSettingsListStyle()
-        .contentMargins(.top, 0, for: .scrollContent)
         .refreshable {
             await appModel.refresh()
         }

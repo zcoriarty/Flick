@@ -673,9 +673,16 @@ final class FlickAppModel {
         }
 
         do {
-            let refreshedAccount = try await refreshedAuthorizationAccount(for: account)
+            let refreshedAccount: ConnectedAccount
+            if account.platform == .youtubeShorts {
+                refreshedAccount = try await youtubeOAuthClient.reauthorize(account, configuration: configuration.youtube)
+            } else {
+                refreshedAccount = try await refreshedAuthorizationAccount(for: account)
+            }
             try await upsertConnectedAccount(refreshedAccount)
-            accountConnectionMessage = "Refreshed \(refreshedAccount.displayName)."
+            accountConnectionMessage = account.platform == .youtubeShorts
+                ? "Reconnected \(refreshedAccount.displayName)."
+                : "Refreshed \(refreshedAccount.displayName)."
         } catch {
             let didMarkAccountUnavailable = markAccountTokenUnavailableIfNeeded(
                 error,
@@ -3464,6 +3471,10 @@ final class FlickAppModel {
             return markAccountTokenUnavailable(accountID: accountID, tokenStatus: .notStored, now: now)
         case .refreshTokenExpired:
             return markAccountTokenUnavailable(accountID: accountID, tokenStatus: .expired, now: now)
+        case .reauthorizationRequired:
+            logger.error("YouTube account authorization must be renewed accountID=\(accountID.uuidString, privacy: .public) details=\(tokenError.diagnosticDescription, privacy: .public)")
+            print("[YouTubePublishing] Account authorization must be renewed accountID=\(accountID.uuidString) details=\(tokenError.diagnosticDescription)")
+            return markAccountTokenUnavailable(accountID: accountID, tokenStatus: .expired, now: now)
         case .keychainReadFailed, .refreshRequestFailed:
             logger.error("YouTube account token refresh unavailable accountID=\(accountID.uuidString, privacy: .public) details=\(tokenError.diagnosticDescription, privacy: .public)")
             print("[YouTubePublishing] Account token refresh unavailable accountID=\(accountID.uuidString) details=\(tokenError.diagnosticDescription)")
@@ -3475,7 +3486,8 @@ final class FlickAppModel {
              .authorizationFailedMessage,
              .stateMismatch,
              .missingAuthorizationCode,
-             .missingRefreshToken:
+             .missingRefreshToken,
+             .authorizedChannelMismatch:
             return false
         }
     }
@@ -5518,7 +5530,9 @@ private extension FlickAppModel {
                 kind: .authExpired,
                 message: error.localizedDescription,
                 suggestedFix: suggestedFix(for: .authExpired, platform: .youtubeShorts),
-                rawResponse: error.diagnosticDescription
+                rawResponse: error.diagnosticDescription,
+                httpStatusCode: error.httpStatusCode,
+                platformCode: error.providerCode
             )
         }
 
@@ -5591,7 +5605,7 @@ private extension FlickAppModel {
         if platform == .youtubeShorts {
             switch kind {
             case .authExpired:
-                return "Authorize this YouTube channel on the Mac that runs scheduled publishing."
+                return "Reconnect this YouTube channel on the Mac that runs scheduled publishing, then retry."
             case .missingScope:
                 return "Reconnect YouTube and approve the upload scope."
             case .rateLimit:

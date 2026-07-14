@@ -1012,6 +1012,98 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(status["containsSyntheticMedia"] as? Bool, true)
     }
 
+    func testRetryYouTubeInvalidGrantRequiresReconnectAndExpiresAccount() async throws {
+        let now = Date()
+        let secretStore = MemorySecretStore()
+        let tokenStore = YouTubeTokenStore(store: secretStore)
+        let account = makeYouTubeAccount(now: now.addingTimeInterval(-120))
+        try tokenStore.save(
+            LoginKitTokenBundle(
+                platform: .youtubeShorts,
+                platformUserID: account.platformUserID,
+                accessToken: "expired-access-token",
+                refreshToken: "invalid-refresh-token",
+                tokenType: "Bearer",
+                scopes: account.scopes,
+                accessTokenExpiresAt: now.addingTimeInterval(-60),
+                refreshTokenExpiresAt: now.addingTimeInterval(86_400),
+                updatedAt: now.addingTimeInterval(-120)
+            ),
+            for: account
+        )
+
+        var draft = makeSlideshowDraft(now: now)
+        draft.youtubeSettings = DraftYouTubeSettings(title: "Retry this Short")
+        var job = makePublishingJob(status: .failed)
+        job.platform = .youtubeShorts
+        job.accountID = account.id
+        job.draftID = draft.id
+        job.publishMode = .videoDirectPost
+        job.lastError = PlatformFailure(
+            kind: .unknownServerError,
+            message: "Previous failure",
+            suggestedFix: "Retry",
+            rawResponse: nil
+        )
+
+        var state = FlickEmptyState.make()
+        state.accounts = [account]
+        state.drafts = [draft]
+        state.publishingJobs = [job]
+
+        CapturingURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url?.absoluteString, "https://oauth2.googleapis.com/token")
+            XCTAssertTrue(request.encodedBodyString.contains("grant_type=refresh_token"))
+            XCTAssertTrue(request.encodedBodyString.contains("refresh_token=invalid-refresh-token"))
+            return (
+                try XCTUnwrap(HTTPURLResponse(
+                    url: try XCTUnwrap(request.url),
+                    statusCode: 400,
+                    httpVersion: nil,
+                    headerFields: nil
+                )),
+                Data(
+                    """
+                    {
+                        "error": "invalid_grant",
+                        "error_description": "Bad Request"
+                    }
+                    """.utf8
+                )
+            )
+        }
+        defer { CapturingURLProtocol.requestHandler = nil }
+
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [CapturingURLProtocol.self]
+        let appConfiguration = makeTestAppConfiguration(values: ["GOOGLE_CLIENT_ID": "client-id"])
+        let model = FlickAppModel(
+            repository: InMemoryFlickRepository(state: state),
+            configuration: appConfiguration,
+            youtubeOAuthClient: YouTubeOAuthClient(
+                urlSession: URLSession(configuration: sessionConfiguration),
+                tokenStore: tokenStore
+            )
+        )
+        model.overview = state
+
+        let didRetry = await model.retryPublishingJob(id: job.id)
+        XCTAssertFalse(didRetry)
+
+        let failedJob = try XCTUnwrap(model.overview.publishingJobs.first)
+        XCTAssertEqual(failedJob.lastError?.kind, .authExpired)
+        XCTAssertEqual(failedJob.lastError?.pipelineStage, .authorization)
+        XCTAssertEqual(failedJob.lastError?.httpStatusCode, 400)
+        XCTAssertEqual(failedJob.lastError?.platformCode, "invalid_grant")
+        XCTAssertTrue(failedJob.lastError?.message.contains("Reconnect this YouTube channel") == true)
+        XCTAssertTrue(failedJob.lastError?.suggestedFix.contains("Reconnect this YouTube channel") == true)
+
+        let unavailableAccount = try XCTUnwrap(model.overview.accounts.first)
+        XCTAssertEqual(unavailableAccount.status, .needsAuth)
+        XCTAssertEqual(unavailableAccount.tokenStatus, .expired)
+        XCTAssertFalse(unavailableAccount.isPublishingEnabled)
+    }
+
     func testPlatformAdaptersReadCachedTokensThroughConcurrentSecretStorePath() async throws {
         let now = Date()
         let secretStore = ConcurrentRecordingSecretStore()

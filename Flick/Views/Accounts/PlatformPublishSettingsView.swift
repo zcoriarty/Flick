@@ -289,10 +289,10 @@ private struct PlatformAccountDetailView: View {
                     ProgressView()
                         .controlSize(.small)
                 } else {
-                    Image(systemName: "arrow.clockwise")
+                    Image(systemName: authActionSystemImage)
                 }
 
-                Text(isRefreshing ? "Refreshing Auth" : "Refresh Auth")
+                Text(authActionTitle)
             }
             .font(.headline)
             .frame(maxWidth: .infinity)
@@ -304,6 +304,17 @@ private struct PlatformAccountDetailView: View {
         .glassEffect(.regular.interactive(), in: .capsule)
         .disabled(isRefreshing)
         .accessibilityIdentifier("refresh-platform-account-auth-button")
+    }
+
+    private var authActionTitle: String {
+        if account.platform == .youtubeShorts {
+            return isRefreshing ? "Reconnecting YouTube" : "Reconnect YouTube"
+        }
+        return isRefreshing ? "Refreshing Auth" : "Refresh Auth"
+    }
+
+    private var authActionSystemImage: String {
+        account.platform == .youtubeShorts ? "arrow.clockwise.circle" : "arrow.clockwise"
     }
 
     private var removeButton: some View {
