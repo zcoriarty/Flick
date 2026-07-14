@@ -3215,6 +3215,33 @@ final class FlickAppModel {
     }
 
     @discardableResult
+    func importCredentialValues(_ values: [String: String]) async -> CredentialImportResult? {
+        do {
+            let result = try await Task.detached(priority: .userInitiated) {
+                try CredentialVault().storeValues(values)
+            }.value
+
+            for key in result.storedKeys {
+                credentialValues[key] = values[key]?.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            reloadCredentialConfiguration()
+
+            let storedCount = result.storedKeys.count
+            let ignoredCount = result.ignoredKeys.count
+            credentialMessage = "Imported \(storedCount) credential\(storedCount == 1 ? "" : "s") into Keychain."
+            if ignoredCount > 0 {
+                credentialMessage?.append(" Ignored \(ignoredCount) unsupported or empty entr\(ignoredCount == 1 ? "y" : "ies").")
+            }
+            lastErrorMessage = nil
+            return result
+        } catch {
+            credentialMessage = nil
+            lastErrorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    @discardableResult
     func deleteStoredCredential(for key: String) async -> Bool {
         do {
             try await Task.detached(priority: .userInitiated) {

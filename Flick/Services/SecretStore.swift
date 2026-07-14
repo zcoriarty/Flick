@@ -58,18 +58,26 @@ nonisolated enum SecretStoreError: LocalizedError {
     }
 }
 
-nonisolated enum CredentialVaultError: LocalizedError {
+nonisolated enum CredentialVaultError: LocalizedError, Equatable {
     case emptyValue(String)
+    case noImportableValues
     case unsupportedKey(String)
 
     var errorDescription: String? {
         switch self {
         case let .emptyValue(key):
             "\(key) cannot be stored with an empty value."
+        case .noImportableValues:
+            "The JSON did not contain any supported, nonempty Flick credentials."
         case let .unsupportedKey(key):
             "\(key) is not a supported credential."
         }
     }
+}
+
+nonisolated struct CredentialImportResult: Hashable, Sendable {
+    var storedKeys: [String]
+    var ignoredKeys: [String]
 }
 
 nonisolated struct KeychainSecretStore: SecretStoring {
@@ -246,6 +254,34 @@ nonisolated struct CredentialVault {
         }
 
         try store.save(Data(trimmedValue.utf8), for: key)
+    }
+
+    func storeValues(_ values: [String: String]) throws -> CredentialImportResult {
+        var normalizedValues: [String: String] = [:]
+        var ignoredKeys: [String] = []
+
+        for (key, value) in values.sorted(by: { $0.key < $1.key }) {
+            let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard Self.supportedKeys.contains(key), !trimmedValue.isEmpty else {
+                ignoredKeys.append(key)
+                continue
+            }
+            normalizedValues[key] = trimmedValue
+        }
+
+        guard !normalizedValues.isEmpty else {
+            throw CredentialVaultError.noImportableValues
+        }
+
+        let storedValues = normalizedValues.sorted(by: { $0.key < $1.key })
+        for (key, value) in storedValues {
+            try store.save(Data(value.utf8), for: key)
+        }
+
+        return CredentialImportResult(
+            storedKeys: storedValues.map { $0.key },
+            ignoredKeys: ignoredKeys
+        )
     }
 
     func deleteValue(for key: String) throws {

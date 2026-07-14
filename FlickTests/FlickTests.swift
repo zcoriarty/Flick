@@ -2607,6 +2607,36 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(String(data: try XCTUnwrap(store.data(for: "TIKTOK_CLIENT_ID")), encoding: .utf8), "client-id")
     }
 
+    func testCredentialVaultBulkImportStoresSupportedValuesAndReportsIgnoredKeys() throws {
+        let store = MemorySecretStore()
+        let vault = CredentialVault(store: store)
+
+        let result = try vault.storeValues([
+            "TIKTOK_CLIENT_ID": " client-id ",
+            "R2_BUCKET": "flick-media",
+            "OPENAI_API_KEY": "  ",
+            "UNKNOWN_KEY": "ignored"
+        ])
+
+        XCTAssertEqual(result.storedKeys, ["R2_BUCKET", "TIKTOK_CLIENT_ID"])
+        XCTAssertEqual(result.ignoredKeys, ["OPENAI_API_KEY", "UNKNOWN_KEY"])
+        XCTAssertEqual(String(data: try XCTUnwrap(store.data(for: "TIKTOK_CLIENT_ID")), encoding: .utf8), "client-id")
+        XCTAssertEqual(String(data: try XCTUnwrap(store.data(for: "R2_BUCKET")), encoding: .utf8), "flick-media")
+        XCTAssertNil(try store.data(for: "OPENAI_API_KEY"))
+        XCTAssertNil(try store.data(for: "UNKNOWN_KEY"))
+    }
+
+    func testCredentialVaultBulkImportRequiresSupportedNonemptyValue() {
+        let vault = CredentialVault(store: MemorySecretStore())
+
+        XCTAssertThrowsError(try vault.storeValues([
+            "OPENAI_API_KEY": " ",
+            "UNKNOWN_KEY": "ignored"
+        ])) { error in
+            XCTAssertEqual(error as? CredentialVaultError, .noImportableValues)
+        }
+    }
+
     func testCredentialVaultClearsRetiredCredentialKeys() throws {
         let store = MemorySecretStore()
         let vault = CredentialVault(store: store)
@@ -2659,6 +2689,29 @@ final class FlickTests: XCTestCase {
         XCTAssertEqual(decodedValues["TIKTOK_CLIENT_ID"], "tiktok-client-id")
         XCTAssertLessThan(googleKeyRange.lowerBound, tiktokKeyRange.lowerBound)
         XCTAssertTrue(json.hasSuffix("\n"))
+    }
+
+    func testCredentialImportDocumentReadsExportedCredentialJSON() throws {
+        let exportDocument = CredentialExportDocument(values: [
+            "TIKTOK_CLIENT_ID": "tiktok-client-id",
+            "GOOGLE_CLIENT_ID": "google-client-id"
+        ])
+
+        let importDocument = try CredentialImportDocument(data: exportDocument.jsonData())
+
+        XCTAssertEqual(importDocument.values, exportDocument.values)
+    }
+
+    func testCredentialImportDocumentRejectsNonObjectJSON() {
+        XCTAssertThrowsError(try CredentialImportDocument(jsonText: #"["not", "an", "object"]"#)) { error in
+            XCTAssertEqual(error as? CredentialImportDocumentError, .topLevelObjectRequired)
+        }
+    }
+
+    func testCredentialImportDocumentRejectsNonStringValues() {
+        XCTAssertThrowsError(try CredentialImportDocument(jsonText: #"{"OPENAI_API_KEY": 123}"#)) { error in
+            XCTAssertEqual(error as? CredentialImportDocumentError, .nonStringValue("OPENAI_API_KEY"))
+        }
     }
 
     func testR2ConfigurationRecognizesBucketAndDerivedEndpoint() {

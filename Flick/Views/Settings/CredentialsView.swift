@@ -12,10 +12,11 @@ struct CredentialsView: View {
     @State private var credentialDrafts: [CredentialEditorDraft] = []
     @State private var credentialsExportDocument = CredentialExportDocument(values: [:])
     @State private var isClearCredentialsConfirmationPresented = false
+    @State private var isCredentialImportPresented = false
 
     var body: some View {
         List {
-            Section("Credentials") {
+            Section {
                 if let credentialMessage = appModel.credentialMessage {
                     SettingsMessageRow(title: "Credential status", message: credentialMessage)
                 }
@@ -49,14 +50,24 @@ struct CredentialsView: View {
                 } message: {
                     Text("This removes every credential Flick has stored in Keychain.")
                 }
+            } header: {
+                Text("Credentials")
+            } footer: {
+                Text("Credentials are stored in this device's Keychain and do not automatically sync between iPhone and Mac. Use Import and Export to copy them between devices.")
             }
         }
         .flickSettingsListStyle()
         .flickToolbarTitle("Credentials")
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button("Import", systemImage: "square.and.arrow.down") {
+                    isCredentialImportPresented = true
+                }
                 exportButton
             }
+        }
+        .sheet(isPresented: $isCredentialImportPresented, onDismiss: reloadCredentialDrafts) {
+            CredentialImportView()
         }
         .onAppear(perform: reloadCredentialDrafts)
     }
